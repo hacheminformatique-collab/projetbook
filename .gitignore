@@ -13,8 +13,8 @@
 # testing
 /coverage
 
-# next.js
-/.next/
+# build output
+/dist/
 /out/
 
 # production
@@ -30,13 +30,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
-!.env.example
 
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# local cPanel configuration and uploads
+/public/api/config.php
+/public/storage-data/*
+!/public/storage-data/.htaccess

@@ -57,7 +57,7 @@ export const algerianWilayas = [
   { code: "56", name: "Djanet" },
   { code: "57", name: "El M'Ghair" },
   { code: "58", name: "El Meniaa" },
-] as const;
+];
 
 export const beautyCategories = [
   { label: "Coiffeur", value: "coiffeur" },
@@ -66,12 +66,12 @@ export const beautyCategories = [
   { label: "Institut de beauté", value: "institut" },
   { label: "Bien-être", value: "bien-etre" },
   { label: "Offrir", value: "cadeau" },
-] as const;
+];
 
-export function getWilayaName(code: string | undefined) {
+export function getWilayaName(code) {
   return algerianWilayas.find((wilaya) => wilaya.code === code)?.name;
 }
 
-export function isWilayaCode(value: string) {
+export function isWilayaCode(value) {
   return algerianWilayas.some((wilaya) => wilaya.code === value);
 }

@@ -1,56 +1,63 @@
 # BOOKILI
 
-Projet de plateforme de réservation beauté et bien-être en Algérie.
+Site de recherche et de réservation de prestations beauté et bien-être en Algérie.
+Le site public est une application React/Vite statique. Les endpoints PHP et la
+base MySQL/MariaDB résident sur le même hébergement cPanel.
 
-## Démarrage
+## Développement local
 
-Prérequis : Node.js 20.9 ou supérieur et npm.
+Prérequis : Node.js 20.9 ou supérieur pour construire le site, et PHP 8.1 ou
+supérieur pour tester l'API.
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Le site est accessible sur <http://localhost:3000>. Pour vérifier le projet :
+Le site de développement s'ouvre sur <http://localhost:5173>. Les vérifications
+du projet sont :
 
 ```bash
 npm run lint
 npm run build
+php -l public/api/health.php
+php -l public/api/database.php
 ```
 
-## Connexion PostgreSQL
+Le serveur Node.js n'est nécessaire que pour construire le site localement. Il
+n'est pas nécessaire sur cPanel : le dossier généré `dist/` contient le site
+statique et l'API PHP.
 
-Créez une base et un utilisateur PostgreSQL dans cPanel. Copiez `.env.example`
-vers `.env.local`, puis remplacez `DATABASE_URL` par les paramètres transmis
-par l'hébergeur. Gardez cette valeur privée : ne la commitez jamais et ne la
-placez jamais dans une variable `NEXT_PUBLIC_*`.
+## Installation sur cPanel
 
-Vérifiez la connexion depuis l'environnement qui hébergera l'application :
+1. Dans **MySQL Databases**, créer une base et un utilisateur, puis leur
+   attribuer les droits nécessaires. cPanel ajoute souvent le préfixe du compte
+   devant les deux noms.
+2. Dans **phpMyAdmin**, sélectionner cette base et importer
+   `database/schema.sql`.
+3. Créer `config.php` dans `public/api/`, à partir de
+   `public/api/config.example.php`, puis renseigner l'hôte, le nom de base,
+   l'utilisateur et le mot de passe fournis par cPanel. `.gitignore` exclut ce
+   fichier du dépôt, et le fichier `.htaccess` de l'API en interdit l'accès web.
+4. Construire le projet avec `npm ci && npm run build`, puis téléverser **le
+   contenu de `dist/`** dans `public_html/` avec le Gestionnaire de fichiers ou
+   FTP.
+5. Vérifier `https://votre-domaine/api/health.php`. Une réponse
+   `{"status":"ok"}` confirme que PHP et MySQL communiquent.
 
-```bash
-npm run db:check
-```
-
-Appliquez les migrations versionnées avec :
-
-```bash
-npm run db:migrate
-```
-
-Le pilote et le pool PostgreSQL sont prévus pour les accès côté serveur. La
-migration initiale crée les comptes, profils clients, demandes professionnelles,
-salons et prestations. Les tables des rendez-vous seront ajoutées avec leur
-gestion des créneaux et des conflits de réservation.
+Le serveur doit avoir PHP 8.1+ avec PDO MySQL, MySQL/MariaDB et Apache avec
+`mod_rewrite` pour les pages de l'application. Aucun processus Node.js à
+maintenir sur le serveur.
 
 ## État du projet
 
-Cette première étape comprend la page d'accueil responsive, sa FAQ et des pages
-indiquant que les espaces client et professionnel sont en préparation. Le
-parcours de recherche accepte un nom de salon ou une prestation, une catégorie,
-et les 58 wilayas algériennes. Les critères sont conservés dans l'URL. L'annuaire
-et la réservation ne sont pas encore connectés : aucun résultat fictif n'est
-affiché.
+Le socle comprend la page d'accueil et sa FAQ, une recherche par catégorie et
+les 58 wilayas algériennes, ainsi que des pages d'attente pour les espaces
+client et professionnel. L'annuaire réel, les comptes et les rendez-vous
+restent à développer. Le schéma MySQL initial pour les comptes, profils,
+demandes professionnelles, salons et prestations est disponible dans
+`database/schema.sql`.
 
-L'authentification, les rendez-vous, les espaces d'administration, le
-téléversement de l'image d'accueil et l'installation comme PWA restent à
-développer. Le fond de l'accueil est gris par défaut.
+Les rendez-vous ne doivent pas être stockés dans des fichiers JSON : la
+réservation nécessitera des transactions SQL afin d'éviter les créneaux en
+double et de séparer les données de chaque établissement.
