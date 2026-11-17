@@ -18,6 +18,23 @@ npm run lint
 npm run build
 ```
 
+## Connexion PostgreSQL
+
+Créez une base et un utilisateur PostgreSQL dans cPanel. Copiez `.env.example`
+vers `.env.local`, puis remplacez `DATABASE_URL` par les paramètres transmis
+par l'hébergeur. Gardez cette valeur privée : ne la commitez jamais et ne la
+placez jamais dans une variable `NEXT_PUBLIC_*`.
+
+Vérifiez la connexion depuis l'environnement qui hébergera l'application :
+
+```bash
+npm run db:check
+```
+
+Le pilote et le pool PostgreSQL sont prévus pour les accès côté serveur. Les
+tables de l'application et leurs migrations seront ajoutées avant d'enregistrer
+des comptes ou rendez-vous.
+
 ## État du projet
 
 Cette première étape comprend la page d'accueil responsive, sa FAQ et des pages
