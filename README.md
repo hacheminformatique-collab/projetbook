@@ -21,9 +21,11 @@ npm run build
 ## État du projet
 
 Cette première étape comprend la page d'accueil responsive, sa FAQ et des pages
-indiquant que les espaces client et professionnel sont en préparation. La
-recherche est volontairement désactivée : aucune base de professionnels ni
-validation géographique n'est encore connectée.
+indiquant que les espaces client et professionnel sont en préparation. Le
+parcours de recherche accepte un nom de salon ou une prestation, une catégorie,
+et les 58 wilayas algériennes. Les critères sont conservés dans l'URL. L'annuaire
+et la réservation ne sont pas encore connectés : aucun résultat fictif n'est
+affiché.
 
 L'authentification, les rendez-vous, les espaces d'administration, le
 téléversement de l'image d'accueil et l'installation comme PWA restent à

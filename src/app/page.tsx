@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Header from "./site-header";
+import { algerianWilayas } from "../lib/algerian-wilayas";
 
 const questions = [
   {
@@ -10,7 +11,7 @@ const questions = [
   {
     question: "Comment prendre rendez-vous sur BOOKILI ?",
     answer:
-      "La recherche et la réservation sont en cours de préparation. Vous pourrez choisir une prestation, un professionnel et un créneau disponible.",
+      "Le formulaire permet de préciser votre recherche en Algérie. L’annuaire des professionnels et la réservation en ligne sont encore en préparation.",
   },
   {
     question: "Est-ce que je dois payer en ligne sur BOOKILI ?",
@@ -39,20 +40,29 @@ export default function Home() {
             <h1 id="hero-title">Réservez en beauté</h1>
             <p className="hero-subtitle">Simple · Immédiat · 24h/24</p>
 
-            <div className="search-panel" aria-label="Recherche en préparation">
+            <form className="search-panel" action="/recherche" method="get">
               <div className="search-field">
                 <label htmlFor="service">Que cherchez-vous ?</label>
-                <input id="service" placeholder="Nom du salon, prestation..." disabled />
+                <input
+                  id="service"
+                  name="q"
+                  placeholder="Nom du salon, prestation..."
+                  autoComplete="off"
+                  maxLength={100}
+                />
               </div>
               <div className="search-field location-field">
-                <label htmlFor="location">Où en Algérie ?</label>
-                <input id="location" placeholder="Adresse, ville..." disabled />
+                <label htmlFor="wilaya">Où en Algérie ?</label>
+                <select id="wilaya" name="wilaya" defaultValue="">
+                  <option value="">Toutes les wilayas</option>
+                  {algerianWilayas.map(({ code, name }) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
               </div>
-              <button className="search-button" type="button" disabled>
-                Rechercher
-              </button>
-            </div>
-            <p className="hero-notice">La recherche sera disponible prochainement.</p>
+              <button className="search-button" type="submit">Rechercher</button>
+            </form>
+            <p className="hero-notice">Recherche limitée aux 58 wilayas d’Algérie.</p>
           </div>
         </section>
 

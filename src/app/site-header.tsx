@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { beautyCategories } from "../lib/algerian-wilayas";
 
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -25,13 +26,10 @@ export default function Header() {
     <header className={`site-header${scrolled ? " site-header-scrolled" : ""}`}>
       <div className="header-inner">
         <Link className="logo" href="/" aria-label="BOOKILI, accueil">BOOKILI</Link>
-        <nav className="category-nav" aria-label="Catégories à venir">
-          <span>Coiffeur</span>
-          <span>Barbier</span>
-          <span>Manucure</span>
-          <span>Institut de beauté</span>
-          <span>Bien-être</span>
-          <span>Offrir</span>
+        <nav className="category-nav" aria-label="Catégories de beauté">
+          {beautyCategories.map(({ label, value }) => (
+            <Link key={value} href={`/recherche?categorie=${value}`}>{label}</Link>
+          ))}
         </nav>
         <nav className="account-nav" aria-label="Accès aux espaces">
           <Link className="professional-link" href="/professionnels">
