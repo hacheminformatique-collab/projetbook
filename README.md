@@ -31,9 +31,16 @@ Vérifiez la connexion depuis l'environnement qui hébergera l'application :
 npm run db:check
 ```
 
-Le pilote et le pool PostgreSQL sont prévus pour les accès côté serveur. Les
-tables de l'application et leurs migrations seront ajoutées avant d'enregistrer
-des comptes ou rendez-vous.
+Appliquez les migrations versionnées avec :
+
+```bash
+npm run db:migrate
+```
+
+Le pilote et le pool PostgreSQL sont prévus pour les accès côté serveur. La
+migration initiale crée les comptes, profils clients, demandes professionnelles,
+salons et prestations. Les tables des rendez-vous seront ajoutées avec leur
+gestion des créneaux et des conflits de réservation.
 
 ## État du projet
 

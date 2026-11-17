@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:check": "node scripts/check-db.mjs"
+    "db:check": "node scripts/check-db.mjs",
+    "db:migrate": "node scripts/migrate-db.mjs"
   },
   "dependencies": {
+    "dotenv": "^18.0.10",
     "next": "16.4.6",
     "pg": "^8.23.1",
     "react": "19.3.0",
