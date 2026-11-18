@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { algerianDate, apiRequest, appointmentDate, priceLabel } from "./api-client.js";
 
 const minutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
@@ -9,10 +10,27 @@ const dayOffset = (date, offset) => {
   value.setUTCDate(value.getUTCDate() + offset);
   return value.toISOString().slice(0, 10);
 };
+const localClock = new Intl.DateTimeFormat("fr-DZ", { timeZone: "Africa/Algiers", hourCycle: "h23", hour: "2-digit", minute: "2-digit" });
+const shortDay = new Intl.DateTimeFormat("fr-DZ", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" });
+const utcDate = (date) => new Date(`${date}T12:00:00Z`);
+function weekStart(date) {
+  return dayOffset(date, -((utcDate(date).getUTCDay() + 6) % 7));
+}
+function weekNumber(monday) {
+  const thursday = utcDate(dayOffset(monday, 3));
+  return Math.ceil(((thursday - Date.UTC(thursday.getUTCFullYear(), 0, 1, 12)) / 86400000 + 1) / 7);
+}
+function bounds(item, date) {
+  return [
+    item.starts_at.slice(0, 10) < date ? 0 : minutes(item.starts_at.slice(11, 16)),
+    item.ends_at.slice(0, 10) > date ? 1440 : minutes(item.ends_at.slice(11, 16)),
+  ];
+}
 
 function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged, destination }) {
   const [note, setNote] = useState(appointment.private_note);
   const [showClient, setShowClient] = useState(false);
+  const [history, setHistory] = useState(null);
   const [editing, setEditing] = useState(!!destination);
   const [serviceId, setServiceId] = useState(String(appointment.service_id));
   const [staffId, setStaffId] = useState(destination?.staffId ?? (agenda.staff.some((item) => Number(item.is_active) && String(item.id) === String(appointment.staff_id)) ? String(appointment.staff_id) : ""));
@@ -29,13 +47,20 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   const activeStaff = agenda.staff.filter((item) => Number(item.is_active));
   const editable = startsInFuture(appointment);
   useEffect(() => {
+    const controller = new AbortController();
+    apiRequest(`professional-agenda.php?${new URLSearchParams({ historyFor: appointment.id })}`, { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) setHistory(result); })
+      .catch((cause) => { if (!controller.signal.aborted) setHistory({ error: cause.message }); });
+    return () => controller.abort();
+  }, [appointment.id]);
+  useEffect(() => {
     const previous = document.activeElement;
     closeRef.current?.focus();
     const handleKey = (event) => {
       if (event.key === "Escape") onClose();
       if (event.key !== "Tab") return;
       const dialog = closeRef.current?.closest("[role=dialog]");
-      const focusable = dialog?.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]');
+      const focusable = dialog?.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary');
       if (!focusable?.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -140,6 +165,16 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         </label>
         <button type="submit" className="admin-nav-link" disabled={busy}>Enregistrer la note</button>
       </form>
+      <details className="agenda-history">
+        <summary>Notes des précédents rendez-vous</summary>
+        {!history && <p role="status">Chargement des notes…</p>}
+        {history?.error && <p role="alert">{history.error}</p>}
+        {history?.history?.length === 0 && <p>Aucune note sur les rendez-vous passés de ce client dans votre salon.</p>}
+        {history?.history?.map((item) => <article key={item.id}>
+          <strong>{appointmentDate(item.starts_at)} · {item.service_name}</strong>
+          <p>{item.note}</p>
+        </article>)}
+      </details>
       {editable && <div className="review-buttons">
         <button className="admin-nav-link" type="button" disabled={busy} onClick={() => setEditing(!editing)}>{editing ? "Fermer la modification" : "Modifier le rendez-vous"}</button>
         <button className="review-reject" type="button" disabled={busy} onClick={cancel}>Annuler le rendez-vous</button>
@@ -168,47 +203,71 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   </div>;
 }
 
-export default function ProfessionalAgenda({ csrfToken, date, setDate }) {
-  const [agenda, setAgenda] = useState(null);
-  const [error, setError] = useState("");
+export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTarget }) {
+  const [response, setResponse] = useState(null);
+  const [view, setView] = useState("day");
+  const [scale, setScale] = useState(30);
+  const [fullDay, setFullDay] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState(null);
   const [dropTarget, setDropTarget] = useState("");
-  const [staffFilter, setStaffFilter] = useState("");
-  const scrollRef = useRef(null);
+  const [hiddenStaff, setHiddenStaff] = useState([]);
+  const monday = weekStart(date);
+  const firstDay = view === "week" ? monday : date;
+  const dayCount = view === "week" ? 7 : 1;
+  const current = response?.firstDay === firstDay && response.dayCount === dayCount && response.revision === revision ? response : null;
+  const days = current?.days;
   const closeDetail = useCallback(() => setSelected(null), []);
   useEffect(() => {
     setSelected(null);
   }, [date]);
   useEffect(() => {
-    const controller = new AbortController();
-    setAgenda(null);
-    setError("");
-    apiRequest(`professional-agenda.php?${new URLSearchParams({ date })}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) setAgenda(result); })
-      .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
-    return () => controller.abort();
-  }, [date, revision]);
+    const timer = setInterval(() => setNow(new Date()), 5000);
+    return () => clearInterval(timer);
+  }, []);
   useEffect(() => {
-    if (agenda && scrollRef.current) scrollRef.current.scrollTop = 8 * 4 * 24;
-  }, [agenda]);
+    const controller = new AbortController();
+    const fetchDay = (index) => apiRequest(`professional-agenda.php?${new URLSearchParams({ date: dayOffset(firstDay, index) })}`, { signal: controller.signal });
+    Promise.all(Array.from({ length: dayCount }, (_, index) => fetchDay(index)))
+      .then((days) => { if (!controller.signal.aborted) setResponse({ firstDay, dayCount, revision, days }); })
+      .catch((cause) => { if (!controller.signal.aborted) setResponse({ firstDay, dayCount, revision, error: cause.message }); });
+    return () => controller.abort();
+  }, [firstDay, dayCount, revision]);
 
-  const visibleStaff = agenda?.staff.filter((member) => Number(member.is_active) || agenda.appointments.some((item) => String(item.staff_id) === String(member.id))) || [];
-  const hasActiveStaff = visibleStaff.some((member) => Number(member.is_active));
-  const unassigned = agenda?.appointments.filter((item) => !item.staff_id) || [];
-  const columns = [
-    ...visibleStaff,
-    ...(!hasActiveStaff || unassigned.length ? [{
-      id: "", name: hasActiveStaff ? "Non attribués" : "Agenda du salon",
-      opens_at: agenda?.hours?.opens_at, closes_at: agenda?.hours?.closes_at,
-    }] : []),
-  ];
-  const filtered = staffFilter && columns.some((member) => String(member.id) === staffFilter)
-    ? columns.filter((member) => String(member.id) === staffFilter) : columns;
-  const rows = Array.from({ length: 96 }, (_, index) => index * 15);
+  const appointments = days?.flatMap((day) => day.appointments) ?? [];
+  const assigned = new Set(appointments.map((item) => String(item.staff_id || "")));
+  const team = days?.[0].staff.filter((member) => Number(member.is_active) || assigned.has(String(member.id))) ?? [];
+  const hasActiveStaff = team.some((member) => Number(member.is_active));
+  const people = [...team, ...(!hasActiveStaff || assigned.has("") ? [{ id: "", name: hasActiveStaff ? "Non attribués" : "Agenda du salon" }] : [])];
+  const visible = people.filter((member) => !hiddenStaff.includes(String(member.id)));
+  const columns = days?.flatMap((day) => visible.map((member) => ({ day, member }))) ?? [];
+  const ranges = days?.flatMap((day) => [
+    ...(!day.closed && day.hours ? [[minutes(day.hours.opens_at), minutes(day.hours.closes_at)]] : []),
+    ...day.appointments.map((item) => bounds(item, day.date)),
+  ]) ?? [];
+  const start = fullDay ? 0 : ranges.length ? Math.floor(Math.min(...ranges.map(([from]) => from)) / 15) * 15 : 8 * 60;
+  const end = fullDay ? 1440 : ranges.length ? Math.ceil(Math.max(...ranges.map(([, to]) => to)) / 15) * 15 : 18 * 60;
+  const unit = 40 / scale;
+  const rows = Array.from({ length: (end - start) / 15 }, (_, index) => start + index * 15);
   const maxBookingDate = algerianDate(60);
-  const now = new Date();
+  const selectedDay = days?.find((day) => day.date === selected?.sourceDate);
+  const filters = days && <fieldset className="agenda-filters"><legend>Collaborateurs</legend>
+    <label><input type="checkbox" checked={visible.length === people.length} ref={(input) => { if (input) input.indeterminate = visible.length > 0 && visible.length < people.length; }}
+      onChange={(event) => setHiddenStaff(event.target.checked ? [] : people.map((member) => String(member.id)))} /> Toute l’équipe</label>
+    {people.map((member) => <label key={member.id}>
+      <input type="checkbox" checked={!hiddenStaff.includes(String(member.id))} onChange={(event) => {
+        const id = String(member.id);
+        const checked = event.target.checked;
+        setHiddenStaff((ids) => checked ? ids.filter((value) => value !== id) : [...ids, id]);
+      }} /> {member.name}{member.id && !Number(member.is_active) ? " (inactif)" : ""}
+    </label>)}
+  </fieldset>;
+  function navigateDate(value) {
+    setSelected(null);
+    setDate(value);
+  }
   function changed(close, message, nextDate) {
     if (close) setSelected(null);
     if (message) setNotice(message);
@@ -217,42 +276,50 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate }) {
   }
   return <div className="pro-agenda">
     <div className="agenda-toolbar">
-      <button className="admin-nav-link" type="button" onClick={() => { setDate(dayOffset(date, -1)); setSelected(null); }}>‹ Jour précédent</button>
-      <label>Journée<input type="date" value={date} onChange={(event) => { if (event.target.value) { setDate(event.target.value); setSelected(null); } }} /></label>
-      <button className="admin-nav-link" type="button" onClick={() => { setDate(algerianDate()); setSelected(null); }}>Aujourd’hui</button>
-      <button className="admin-nav-link" type="button" onClick={() => { setDate(dayOffset(date, 1)); setSelected(null); }}>Jour suivant ›</button>
-      <label>Collaborateur<select value={staffFilter} onChange={(event) => setStaffFilter(event.target.value)}>
-        <option value="">Toute l’équipe</option>{visibleStaff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+      <button className="admin-nav-link" type="button" onClick={() => navigateDate(algerianDate())}>Aujourd’hui</button>
+      <button className="admin-nav-link" type="button" aria-label={view === "day" ? "Jour précédent" : "Semaine précédente"} onClick={() => navigateDate(dayOffset(date, -dayCount))}>‹</button>
+      <button className="admin-nav-link" type="button" aria-label={view === "day" ? "Jour suivant" : "Semaine suivante"} onClick={() => navigateDate(dayOffset(date, dayCount))}>›</button>
+      <button className="admin-nav-link agenda-view" type="button" aria-pressed={view === "day"} onClick={() => { setSelected(null); setView("day"); }}>Vue jour<small>{shortDay.format(utcDate(date))}</small></button>
+      <button className="admin-nav-link agenda-view" type="button" aria-pressed={view === "week"} onClick={() => { setSelected(null); setView("week"); }}>Vue semaine<small>Semaine {weekNumber(monday)}</small></button>
+      <label>Échelle<select value={scale} onChange={(event) => setScale(Number(event.target.value))}>
+        <option value={15}>15 min</option><option value={30}>30 min</option><option value={60}>1 h</option><option value={120}>2 h</option>
       </select></label>
+      <time className="agenda-clock" aria-label="Heure actuelle en Algérie">{localClock.format(now)}</time>
       <button className="admin-nav-link" type="button" onClick={() => { setSelected(null); setRevision((value) => value + 1); }}>Actualiser</button>
     </div>
-    <p className="field-hint">Heures d’Algérie · Ouvrez un rendez-vous pour le modifier, ou faites-le glisser sur ordinateur puis confirmez. La disponibilité dépend de la durée de la prestation.</p>
+    <div className="agenda-planning-options">
+      {filtersTarget ? createPortal(filters, filtersTarget) : filters}
+      <label className="agenda-full-day"><input type="checkbox" checked={fullDay} onChange={(event) => setFullDay(event.target.checked)} /> Afficher de 0 h à 24 h</label>
+    </div>
+    <p className="field-hint">Heures d’Algérie · Ouvrez un rendez-vous pour le modifier, ou faites-le glisser sur ordinateur puis confirmez.</p>
     {notice && <p className="form-message form-success" role="status">{notice}</p>}
-    {error && <p className="form-message form-error" role="alert">{error}</p>}
-    {!agenda && !error && <p role="status">Chargement de l’agenda…</p>}
-    {agenda?.date === date && <div className="agenda-scroll" ref={scrollRef} tabIndex={0} aria-label="Grille des rendez-vous, défilement horizontal et vertical">
-      <div className="agenda-grid" style={{ gridTemplateColumns: `64px repeat(${filtered.length}, minmax(190px, 1fr))` }}>
+    {current?.error && <p className="form-message form-error" role="alert">{current.error}</p>}
+    {!current && <p role="status">Chargement de l’agenda…</p>}
+    {days && !columns.length && <p role="status">Cochez un collaborateur pour afficher sa colonne.</p>}
+    {columns.length > 0 && <div className="agenda-scroll" tabIndex={0} aria-label="Grille des rendez-vous, défilement horizontal et vertical">
+      <div className="agenda-grid" style={{ "--agenda-row": `${15 * unit}px`, gridTemplateColumns: `64px repeat(${columns.length}, minmax(${view === "day" ? 180 : 142}px, 1fr))` }}>
         <div className="agenda-corner">Heure</div>
-        {filtered.map((member) => <div className="agenda-column-title" key={member.id || "unassigned"}>{member.name}{member.id && !Number(member.is_active) ? " (inactif)" : ""}</div>)}
-        <div className="agenda-times">{rows.map((row) => <div key={row}>{row % 60 === 0 ? timeLabel(row) : ""}</div>)}</div>
-        {filtered.map((member) => {
-          const bookings = agenda.appointments.filter((item) => String(item.staff_id || "") === String(member.id || ""));
-          const blocked = agenda.appointments.filter((item) => member.id ? !item.staff_id : !hasActiveStaff && item.staff_id);
-          const open = !agenda.closed && agenda.hours && member.opens_at && (member.id ? Number(member.is_active) : !hasActiveStaff);
-          const start = open ? Math.max(minutes(agenda.hours.opens_at), minutes(member.opens_at)) : 0;
-          const end = open ? Math.min(minutes(agenda.hours.closes_at), minutes(member.closes_at)) : 0;
-          return <div className="agenda-day-column" key={member.id || "unassigned"}>
+        {columns.map(({ day, member }) => <div className="agenda-column-title" key={`${day.date}:${member.id}`}>
+          {view === "week" && <button type="button" onClick={() => { navigateDate(day.date); setView("day"); }}>{shortDay.format(utcDate(day.date))}</button>}
+          {member.name}{day.closed && <small> · Fermé</small>}
+        </div>)}
+        <div className="agenda-times">{rows.map((row) => <div key={row}>{(row - start) % scale === 0 && <span className="agenda-time-label">{timeLabel(row)}</span>}</div>)}</div>
+        {columns.map(({ day, member }) => {
+          const bookings = day.appointments.filter((item) => String(item.staff_id || "") === String(member.id));
+          const blocked = day.appointments.filter((item) => member.id ? !item.staff_id : !hasActiveStaff && item.staff_id);
+          const busyRanges = [...bookings, ...blocked].map((item) => bounds(item, day.date));
+          const hours = member.id ? day.staff.find((item) => item.id === member.id) : day.hours;
+          const open = !day.closed && day.hours && hours?.opens_at && (member.id ? Number(hours.is_active) : !hasActiveStaff);
+          const opens = open ? Math.max(minutes(day.hours.opens_at), minutes(hours.opens_at)) : 0;
+          const closes = open ? Math.min(minutes(day.hours.closes_at), minutes(hours.closes_at)) : 0;
+          return <div className="agenda-day-column" key={`${day.date}:${member.id}`}>
             {rows.map((row) => {
-              const targetTime = start + Math.ceil((row - start) / 15) * 15;
-              const canDrop = open && date <= maxBookingDate && targetTime >= start && targetTime + 15 <= end
-                && new Date(`${date}T${timeLabel(targetTime)}:00+01:00`) > now;
-              const busy = [...bookings, ...blocked].some((item) => {
-                const from = item.starts_at.slice(0, 10) < date ? 0 : minutes(item.starts_at.slice(11, 16));
-                const to = item.ends_at.slice(0, 10) > date ? 1440 : minutes(item.ends_at.slice(11, 16));
-                return targetTime < to && targetTime + 15 > from;
-              });
+              const targetTime = opens + Math.ceil((row - opens) / 15) * 15;
+              const canDrop = open && day.date <= maxBookingDate && targetTime >= opens && targetTime + 15 <= closes
+                && new Date(`${day.date}T${timeLabel(targetTime)}:00+01:00`) > now;
+              const busy = busyRanges.some(([from, to]) => targetTime < to && targetTime + 15 > from);
               const free = canDrop && !busy;
-              const targetKey = `${member.id}:${row}`;
+              const targetKey = `${day.date}:${member.id}:${row}`;
               return <div key={row} className={`agenda-slot ${free ? "agenda-slot-free" : "agenda-slot-unavailable"}${dropTarget === targetKey ? " agenda-drop-target" : ""}`} aria-label={`${timeLabel(canDrop ? targetTime : row)} : ${free ? "libre" : busy ? "occupé" : "indisponible"}`}
                 onDragOver={free ? (event) => {
                   if (!event.dataTransfer.types.includes("application/x-bookili-appointment")) return;
@@ -265,29 +332,30 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate }) {
                   event.preventDefault();
                   setDropTarget("");
                   const id = event.dataTransfer.getData("application/x-bookili-appointment");
-                  const appointment = agenda.appointments.find((item) => String(item.id) === id && startsInFuture(item));
-                  if (appointment) setSelected({ appointment, destination: { date, staffId: String(member.id), time: timeLabel(targetTime) } });
+                  const source = days.find((entry) => entry.appointments.some((item) => String(item.id) === id));
+                  const appointment = source?.appointments.find((item) => String(item.id) === id && startsInFuture(item));
+                  if (appointment) setSelected({ appointment, sourceDate: source.date, destination: { date: day.date, staffId: String(member.id), time: timeLabel(targetTime) } });
                 } : undefined}
               />;
             })}
             {bookings.map((item) => {
-              const from = item.starts_at.slice(0, 10) < date ? 0 : minutes(item.starts_at.slice(11, 16));
-              const to = item.ends_at.slice(0, 10) > date ? 1440 : minutes(item.ends_at.slice(11, 16));
+              const [from, to] = bounds(item, day.date);
               const draggable = startsInFuture(item, now);
-              return <button type="button" key={item.id} className="agenda-booking" draggable={draggable} style={{ top: `${from / 15 * 24}px`, height: `${(to - from) / 15 * 24}px` }}
+              const label = `${item.starts_at.slice(11, 16)}–${item.ends_at.slice(11, 16)} · ${item.first_name} ${item.last_name}`;
+              return <button type="button" key={item.id} className="agenda-booking" title={`${label} · ${item.service_name}`} draggable={draggable} style={{ top: `${(from - start) * unit}px`, height: `${(to - from) * unit}px`, paddingBlock: (to - from) * unit < 17 ? 0 : undefined }}
                 onDragStart={draggable ? (event) => {
                   event.dataTransfer.effectAllowed = "move";
                   event.dataTransfer.setData("application/x-bookili-appointment", String(item.id));
                 } : undefined}
                 onDragEnd={() => setDropTarget("")}
-                onClick={() => setSelected({ appointment: item })}>
-                <strong>{item.starts_at.slice(11, 16)}–{item.ends_at.slice(11, 16)} · {item.first_name} {item.last_name}</strong><span>{item.service_name}</span>
+                onClick={() => setSelected({ appointment: item, sourceDate: day.date })}>
+                <strong>{label}</strong><span>{item.service_name}</span>
               </button>;
             })}
           </div>;
         })}
       </div>
     </div>}
-    {selected && agenda?.date === date && <AppointmentDetail key={selected.appointment.id} {...selected} agenda={agenda} csrfToken={csrfToken} onClose={closeDetail} onChanged={changed} />}
+    {selected && selectedDay && <AppointmentDetail key={selected.appointment.id} {...selected} agenda={selectedDay} csrfToken={csrfToken} onClose={closeDetail} onChanged={changed} />}
   </div>;
 }

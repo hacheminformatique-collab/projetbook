@@ -244,8 +244,9 @@ créneau ou annuler avant le début. Le professionnel consulte la grille de la
 journée, ouvre les détails et les coordonnées du client, enregistre une note
 privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.
 La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
-un glisser-déposer dans la même journée prépare le déplacement, à confirmer
-depuis la fiche ; sur mobile, la fiche permet de choisir le nouvel horaire.
+un glisser-déposer vers un créneau visible en vue jour ou semaine prépare le
+déplacement, à confirmer depuis la fiche ; sur mobile, la fiche permet de
+choisir le nouvel horaire.
 Les notes permanentes sur la fiche client restent à développer. L'onglet Clients ne montre
 que les clients ayant un rendez-vous non annulé dans son propre salon.
 
@@ -358,13 +359,14 @@ Premier lot livré : grille journalière complète, colonnes d’équipe, fiche
 rendez-vous, coordonnées client et notes privées par rendez-vous. Le changement
 de créneau, de prestation ou de collaborateur se fait depuis la fiche.
 La conformité visuelle intégrale aux ZIP n’est pas encore acquise : restent
-notamment la vue semaine et les interactions avancées de l’agenda,
+notamment la création de rendez-vous par le salon, les prestations multiples et
+le passage de la fiche rendez-vous à l’encaissement,
 la refonte détaillée de Caisse, Clients et Admin, puis le parcours client.
 
 | Références | Éléments à reproduire dans BOOKILI |
 | --- | --- |
-| Accueil, nouvelle maquette rose et blanc | Logo texte et menu transparent sur la couverture puis clair au défilement. Recherche ville ou wilaya + prestation, six raccourcis illustrés et FAQ en accordéon. Fond gris tant que le super-admin n’a pas chargé une photo sans texte incrusté. |
-| Agenda, capture 2 | Calendrier et équipe à gauche, grille horaire centrale avec une colonne par collaborateur, blocs de rendez-vous positionnés dans le temps. |
+| Accueil, nouvelle maquette rose et blanc | Logo texte et menu transparent sur la couverture puis clair au défilement. Recherche par ville + prestation, six raccourcis illustrés et FAQ en accordéon. L’élargissement à la wilaya et les rayons de 5, 10 et 30 km nécessitent un référentiel des villes et la géolocalisation des établissements. Fond gris tant que le super-admin n’a pas chargé une photo sans texte incrusté. |
+| Agenda, capture 2 | Calendrier et filtres d’équipe à gauche, vues jour et semaine, échelle de 15 min à 2 h et horloge en heure algérienne. La grille affiche les horaires d’ouverture par défaut ; les rendez-vous hors de ces horaires restent visibles. La fiche donne accès aux dix dernières notes de rendez-vous passés dans le même salon. |
 | Caisse, captures 3–32 et tableau de bord PDF | Encaissement, tickets et règlements, stocks et cartes cadeaux, vues comptables par période, indicateurs de visites et de ventes en DA. Les modes de paiement et les états fiscaux des exemples ne sont pas importés tels quels. |
 | Clients, captures 33–46 | Fichier client, listes et filtres, historique, vues de suivi et avis ; fiche accessible depuis le rendez-vous. |
 | Admin, captures 47–82 | Paramètres du salon, de l’équipe, des prestations et de la réservation en ligne, médias, notifications et tableaux de suivi. |

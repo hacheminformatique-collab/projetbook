@@ -32,6 +32,26 @@ try {
         bookili_json_response(200, ['message' => 'Note privée enregistrée.']);
     }
 
+    if (isset($_GET['historyFor'])) {
+        $appointmentId = bookili_id($_GET['historyFor']);
+        $statement = $pdo->prepare('SELECT client_id FROM appointments WHERE id = :id AND salon_id = :salon');
+        $statement->execute(['id' => $appointmentId, 'salon' => $salon['id']]);
+        $clientId = $statement->fetchColumn();
+        if ($clientId === false) bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
+        $statement = $pdo->prepare(
+            "SELECT b.id, b.starts_at, b.service_name, n.note
+             FROM appointments b INNER JOIN appointment_private_notes n ON n.appointment_id = b.id
+             WHERE b.salon_id = :salon AND b.client_id = :client AND b.id <> :id
+               AND b.status = 'confirmed' AND b.ends_at <= :now AND n.note <> ''
+             ORDER BY b.starts_at DESC, b.id DESC LIMIT 10"
+        );
+        $statement->execute([
+            'salon' => $salon['id'], 'client' => $clientId, 'id' => $appointmentId,
+            'now' => bookili_now()->format('Y-m-d H:i:s'),
+        ]);
+        bookili_json_response(200, ['history' => $statement->fetchAll()]);
+    }
+
     $day = bookili_calendar_date($_GET['date'] ?? bookili_now()->format('Y-m-d'));
     $statement = $pdo->prepare(
         'SELECT b.id, b.client_id, b.service_id, b.staff_id, b.service_name, b.price_dzd,

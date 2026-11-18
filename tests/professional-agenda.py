@@ -51,6 +51,11 @@ def main():
     agenda = expect(professional.request(agenda_path), 200)
     assert next(item for item in agenda["appointments"] if item["id"] == appointment_id)["private_note"] == note["note"]
     assert "private_note" not in expect(client.request("appointments.php"), 200)["appointments"][0]
+    history_path = f"professional-agenda.php?historyFor={appointment_id}"
+    expect(guest.request(history_path), 401)
+    expect(client.request(history_path), 403)
+    expect(other_pro.request(history_path), 404)
+    assert expect(professional.request(history_path), 200)["history"] == []
 
     available = f"availability.php?salonId={salon['id']}&serviceId={service['id']}&date={day}&appointmentId={appointment_id}"
     assert "09:00" in expect(professional.request(available), 200)["slots"]

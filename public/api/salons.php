@@ -51,8 +51,8 @@ try {
         $params['wilaya'] = $wilaya;
     }
     if (trim($city) !== '') {
-        $sql .= " AND s.city LIKE :city ESCAPE '!'";
-        $params['city'] = '%' . strtr(trim($city), ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
+        $sql .= ' AND s.city = :city';
+        $params['city'] = trim($city);
     }
     if (trim($query) !== '') {
         $sql .= " AND (s.name LIKE :salon_query ESCAPE '!' OR s.city LIKE :city_query ESCAPE '!'

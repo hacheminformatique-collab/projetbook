@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { algerianWilayas } from "./data/algerian-wilayas.js";
 
 const icons = {
   location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></>,
@@ -30,9 +29,7 @@ export default function HomeSearch() {
   function searchLink(category, includeQuery = false) {
     const params = new URLSearchParams();
     const city = location.trim();
-    const wilaya = algerianWilayas.find(({ name }) => name.localeCompare(city, "fr-DZ", { sensitivity: "base" }) === 0);
-    if (wilaya) params.set("wilaya", wilaya.code);
-    else if (city) params.set("ville", city);
+    if (city) params.set("ville", city);
     if (includeQuery && query.trim()) params.set("q", query.trim());
     if (category && category !== "more") params.set("categorie", category);
     return `/recherche${params.size ? `?${params}` : ""}${category === "more" ? "#categories" : ""}`;
@@ -45,11 +42,8 @@ export default function HomeSearch() {
     }}>
       <label className="search-field location-field">
         <Icon name="location" />
-        <span className="visually-hidden">Ville ou wilaya en Algérie</span>
-        <input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Votre ville" maxLength={100} list="homepage-wilayas" />
-        <datalist id="homepage-wilayas">
-          {algerianWilayas.map(({ code, name }) => <option key={code} value={name} />)}
-        </datalist>
+        <span className="visually-hidden">Ville en Algérie</span>
+        <input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Votre ville" maxLength={100} />
       </label>
       <label className="search-field service-field">
         <Icon name="search" />

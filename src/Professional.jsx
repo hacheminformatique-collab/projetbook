@@ -21,6 +21,7 @@ export default function ProfessionalSpace() {
   const [tab, setTab] = useState("agenda");
   const [view, setView] = useState(workspaceViews.agenda[0][0]);
   const [agendaDate, setAgendaDate] = useState(algerianDate);
+  const [agendaFilters, setAgendaFilters] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -76,7 +77,10 @@ export default function ProfessionalSpace() {
               <button key={value} type="button" aria-current={view === value ? "page" : undefined} onClick={() => setView(value)}>{label}</button>
             ))}
           </nav>
-          {view === "planning" && <AgendaCalendar key={agendaDate.slice(0, 7)} date={agendaDate} onChange={setAgendaDate} />}
+          {view === "planning" && <>
+            <AgendaCalendar key={agendaDate.slice(0, 7)} date={agendaDate} onChange={setAgendaDate} />
+            <div className="agenda-sidebar-filters" ref={setAgendaFilters} />
+          </>}
           {Number(configuration.salon.is_public)
             ? <Link className="pro-public-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link>
             : <p className="pro-public-link">Salon non publié</p>}
@@ -86,7 +90,7 @@ export default function ProfessionalSpace() {
           {!configuration && !error && <p role="status">Chargement de votre espace…</p>}
           {configuration && <>
             <h1>{workspaceViews[tab].find(([value]) => value === view)[1]}</h1>
-            {view === "planning" && <ProfessionalAgenda csrfToken={session.csrfToken} date={agendaDate} setDate={setAgendaDate} />}
+            {view === "planning" && <ProfessionalAgenda csrfToken={session.csrfToken} date={agendaDate} setDate={setAgendaDate} filtersTarget={agendaFilters} />}
             {view === "closures" && <ClosureSettings csrfToken={session.csrfToken} />}
             {view === "cash" && <CashRegister csrfToken={session.csrfToken} />}
             {view === "directory" && <ProfessionalClients />}
