@@ -19,10 +19,12 @@ try {
     }
 
     $query = $_GET['q'] ?? '';
+    $city = $_GET['ville'] ?? '';
     $wilaya = $_GET['wilaya'] ?? '';
     $category = $_GET['categorie'] ?? '';
     $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;
-    if (!is_string($query) || strlen($query) > 400 || !is_string($wilaya) || !is_string($category) || $page > 10000
+    if (!is_string($query) || strlen($query) > 400 || !is_string($city) || strlen($city) > 400
+        || !is_string($wilaya) || !is_string($category) || $page > 10000
         || ($wilaya !== '' && !preg_match('/^(0[1-9]|[1-4][0-9]|5[0-8])$/D', $wilaya))
         || ($category !== '' && !in_array($category, [...BOOKILI_SERVICE_CATEGORIES, 'cadeau'], true))) {
         bookili_json_response(422, ['error' => 'Les filtres de recherche sont invalides.']);
@@ -47,6 +49,10 @@ try {
     if ($wilaya !== '') {
         $sql .= ' AND s.wilaya_code = :wilaya';
         $params['wilaya'] = $wilaya;
+    }
+    if (trim($city) !== '') {
+        $sql .= " AND s.city LIKE :city ESCAPE '!'";
+        $params['city'] = '%' . strtr(trim($city), ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
     }
     if (trim($query) !== '') {
         $sql .= " AND (s.name LIKE :salon_query ESCAPE '!' OR s.city LIKE :city_query ESCAPE '!'

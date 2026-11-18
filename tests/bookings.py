@@ -105,6 +105,10 @@ def main():
     expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
     search = expect(guest.request(f"salons.php?q={SUFFIX}&wilaya=19&categorie=coiffeur"), 200)
     assert [int(row["id"]) for row in search["salons"]] == [salon_id]
+    assert [int(row["id"]) for row in expect(guest.request(f"salons.php?ville=Setif&q={SUFFIX}&categorie=coiffeur"), 200)["salons"]] == [salon_id]
+    assert not expect(guest.request(f"salons.php?ville=Paris&q={SUFFIX}"), 200)["salons"]
+    assert not expect(guest.request("salons.php?ville=%25"), 200)["salons"]
+    expect(guest.request("salons.php?ville[]=Setif"), 422)
     assert not expect(guest.request("salons.php?q=%25"), 200)["salons"]
     assert not expect(guest.request("salons.php?categorie=massage"), 200)["salons"]
     assert not expect(guest.request("salons.php?categorie=cadeau"), 200)["salons"]

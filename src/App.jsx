@@ -4,7 +4,8 @@ import { algerianWilayas, beautyCategories, getWilayaName, isWilayaCode } from "
 import { Appointments, DirectoryResults, SalonPage } from "./Booking.jsx";
 import ProfessionalSpace from "./Professional.jsx";
 import PasswordReset from "./PasswordReset.jsx";
-import { apiRequest, apiUrl } from "./api-client.js";
+import { apiRequest, apiUrl, serviceCategories } from "./api-client.js";
+import HomeSearch from "./HomeSearch.jsx";
 import { AdminAccounts, AdminBilling, AdminCampaigns } from "./AdminOperations.jsx";
 
 const questions = [
@@ -38,7 +39,7 @@ function Header() {
   useEffect(() => {
     function updateHeader() {
       const hero = document.getElementById("accueil");
-      setScrolled(!hero || hero.getBoundingClientRect().bottom <= 80);
+      setScrolled(!hero || hero.getBoundingClientRect().bottom <= (document.querySelector(".site-header")?.offsetHeight ?? 80));
     }
 
     if (!isHome) {
@@ -59,11 +60,6 @@ function Header() {
     <header className={`site-header${scrolled ? " site-header-scrolled" : ""}`}>
       <div className="header-inner">
         <Link className="logo" to="/" aria-label="BOOKILI, accueil">BOOKILI</Link>
-        <nav className="category-nav" aria-label="Catégories de beauté">
-          {beautyCategories.map(({ label, value }) => (
-            <Link key={value} to={`/recherche?categorie=${value}`}>{label}</Link>
-          ))}
-        </nav>
         <nav className="account-nav" aria-label="Accès aux espaces">
           <Link className="professional-link" to="/professionnels">
             <span className="professional-long">Je suis un professionnel de beauté</span>
@@ -95,46 +91,6 @@ function Footer() {
   );
 }
 
-function SearchForm() {
-  const navigate = useNavigate();
-  const [query, setQuery] = useState("");
-  const [wilaya, setWilaya] = useState("");
-
-  function submitSearch(event) {
-    event.preventDefault();
-    const params = new URLSearchParams();
-    if (query.trim()) params.set("q", query.trim().slice(0, 100));
-    if (isWilayaCode(wilaya)) params.set("wilaya", wilaya);
-    navigate(`/recherche${params.size ? `?${params}` : ""}`);
-  }
-
-  return (
-    <form className="search-panel" onSubmit={submitSearch}>
-      <div className="search-field">
-        <label htmlFor="service">Que cherchez-vous ?</label>
-        <input
-          id="service"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Nom du salon, prestation..."
-          autoComplete="off"
-          maxLength={100}
-        />
-      </div>
-      <div className="search-field location-field">
-        <label htmlFor="wilaya">Où en Algérie ?</label>
-        <select id="wilaya" value={wilaya} onChange={(event) => setWilaya(event.target.value)}>
-          <option value="">Toutes les wilayas</option>
-          {algerianWilayas.map(({ code, name }) => (
-            <option key={code} value={code}>{name}</option>
-          ))}
-        </select>
-      </div>
-      <button className="search-button" type="submit">Rechercher</button>
-    </form>
-  );
-}
-
 function HomePage() {
   const [hasImage, setHasImage] = useState(false);
   return (
@@ -144,10 +100,9 @@ function HomePage() {
         <section className={`hero${hasImage ? " hero-with-image" : ""}`} id="accueil" aria-labelledby="hero-title">
           <img className="hero-image" src={apiUrl("homepage-image.php")} alt="" aria-hidden="true" onLoad={() => setHasImage(true)} onError={() => setHasImage(false)} />
           <div className="hero-content">
-            <h1 id="hero-title">Réservez en beauté</h1>
-            <p className="hero-subtitle">Simple · Immédiat · 24h/24</p>
-            <SearchForm />
-            <p className="hero-notice">Recherche limitée aux 58 wilayas d’Algérie.</p>
+            <h1 id="hero-title">Trouvez votre professionnel de la beauté<br className="hero-title-break" /> et prenez <span>rendez-vous en ligne</span></h1>
+            <HomeSearch />
+            <p className="hero-notice">Partout en Algérie</p>
           </div>
         </section>
         <section className="faq" id="faq" aria-labelledby="faq-title">
@@ -171,12 +126,24 @@ function HomePage() {
 }
 
 function SearchResults() {
-  const { search } = useLocation();
+  const { search, hash } = useLocation();
+  useEffect(() => {
+    if (hash === "#categories") document.getElementById("categories")?.scrollIntoView();
+    else window.scrollTo({ top: 0, behavior: "instant" });
+  }, [search, hash]);
   const params = new URLSearchParams(search);
   const query = (params.get("q") || "").trim().slice(0, 100);
   const requestedWilaya = params.get("wilaya") || "";
   const wilayaName = isWilayaCode(requestedWilaya) ? getWilayaName(requestedWilaya) : null;
-  const category = beautyCategories.find(({ value }) => value === params.get("categorie"));
+  const city = (params.get("ville") || "").trim();
+  const category = serviceCategories.find(([value]) => value === params.get("categorie"));
+  function categoryLink(value) {
+    const next = new URLSearchParams(params);
+    next.delete("page");
+    if (value) next.set("categorie", value);
+    else next.delete("categorie");
+    return `/recherche${next.size ? `?${next}` : ""}#categories`;
+  }
 
   return (
     <>
@@ -187,10 +154,15 @@ function SearchResults() {
           <p className="eyebrow">RECHERCHE EN ALGÉRIE</p>
           <h1 id="results-title">Professionnels de beauté</h1>
           <p className="results-summary">
-            {category ? `${category.label} · ` : ""}
+            {category ? `${category[1]} · ` : ""}
             {query ? <>Recherche : <strong>« {query} »</strong></> : "Toutes les prestations"}
-            {wilayaName ? <> · {wilayaName}</> : " · Toutes les wilayas"}
+            {city ? <> · {city}</> : wilayaName ? <> · {wilayaName}</> : " · Toutes les wilayas"}
           </p>
+          <nav className="results-categories" aria-label="Catégories de prestation" id="categories">
+            {[["", "Toutes"], ...serviceCategories].map(([value, label]) =>
+              <Link key={value} aria-current={(category?.[0] || "") === value ? "true" : undefined} to={categoryLink(value)}>{label}</Link>
+            )}
+          </nav>
           <DirectoryResults search={search} />
           <Link className="back-link" to="/">Modifier ma recherche</Link>
         </section>

@@ -243,9 +243,10 @@ venir ou passés dans `/espace-client`, puis modifier la prestation et le
 créneau ou annuler avant le début. Le professionnel consulte la grille de la
 journée, ouvre les détails et les coordonnées du client, enregistre une note
 privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.
-La modification utilise les disponibilités et les prix actuels ; le déplacement
-par glisser-déposer et les notes permanentes sur la fiche client restent à
-développer. L'onglet Clients ne montre
+La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
+un glisser-déposer dans la même journée prépare le déplacement, à confirmer
+depuis la fiche ; sur mobile, la fiche permet de choisir le nouvel horaire.
+Les notes permanentes sur la fiche client restent à développer. L'onglet Clients ne montre
 que les clients ayant un rendez-vous non annulé dans son propre salon.
 
 **Périmètre de cette version :**
@@ -357,12 +358,12 @@ Premier lot livré : grille journalière complète, colonnes d’équipe, fiche
 rendez-vous, coordonnées client et notes privées par rendez-vous. Le changement
 de créneau, de prestation ou de collaborateur se fait depuis la fiche.
 La conformité visuelle intégrale aux ZIP n’est pas encore acquise : restent
-notamment le calendrier latéral, les interactions avancées de l’agenda,
+notamment la vue semaine et les interactions avancées de l’agenda,
 la refonte détaillée de Caisse, Clients et Admin, puis le parcours client.
 
 | Références | Éléments à reproduire dans BOOKILI |
 | --- | --- |
-| Accueil, captures 83–84 | Menu transparent sur la couverture puis clair au défilement, recherche à deux champs, FAQ en accordéon. Conserver le fond gris par défaut et la recherche en Algérie. |
+| Accueil, nouvelle maquette rose et blanc | Logo texte et menu transparent sur la couverture puis clair au défilement. Recherche ville ou wilaya + prestation, six raccourcis illustrés et FAQ en accordéon. Fond gris tant que le super-admin n’a pas chargé une photo sans texte incrusté. |
 | Agenda, capture 2 | Calendrier et équipe à gauche, grille horaire centrale avec une colonne par collaborateur, blocs de rendez-vous positionnés dans le temps. |
 | Caisse, captures 3–32 et tableau de bord PDF | Encaissement, tickets et règlements, stocks et cartes cadeaux, vues comptables par période, indicateurs de visites et de ventes en DA. Les modes de paiement et les états fiscaux des exemples ne sont pas importés tels quels. |
 | Clients, captures 33–46 | Fichier client, listes et filtres, historique, vues de suivi et avis ; fiche accessible depuis le rendez-vous. |
