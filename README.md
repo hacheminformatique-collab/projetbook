@@ -127,9 +127,10 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/009_cash_register.sql`,
 `database/migrations/010_gift_cards.sql`,
 `database/migrations/011_admin_billing.sql`,
-`database/migrations/012_multi_staff.sql` et
-`database/migrations/013_marketing_campaigns.sql` et
-`database/migrations/014_staff_hours.sql` dans phpMyAdmin,
+`database/migrations/012_multi_staff.sql`,
+`database/migrations/013_marketing_campaigns.sql`,
+`database/migrations/014_staff_hours.sql`, puis
+`database/migrations/015_password_reset.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -327,6 +328,40 @@ comptable réglementaire.
 Le test `tests/cash.py` utilise les mêmes variables que `tests/bookings.py` et
 nécessite sa propre base jetable et plusieurs workers PHP.
 
+## Récupération du mot de passe
+
+Les clients et les professionnels actifs peuvent demander un lien depuis
+leur écran de connexion. Il expire après 30 minutes, ne fonctionne qu’une
+fois et permet de choisir un nouveau mot de passe sans saisir l’ancien.
+La réinitialisation invalide les anciennes sessions du compte. L’envoi est
+immédiat (sans cron) et utilise `mail_from`, `mail_from_name` et `public_url`
+dans la configuration privée. `public_url` doit être l’URL publique HTTPS
+exacte, sous-dossier compris.
+
+## Feuille de route
+
+1. Valider sur une base de test les migrations et les parcours de réservation,
+   caisse, cartes cadeaux, abonnements, exports et campagnes avant mise en production.
+2. Reprendre intégralement les deux ZIP de référence, écran par écran :
+   accueil, interface professionnelle et parcours client associé. Inventorier
+   les fonctionnalités, les écarts visuels et les interactions à reproduire
+   sur ordinateur et mobile avant de redessiner les écrans. La fidélité de la
+   refonte et la fluidité de l’agenda sont des critères de livraison.
+3. Rendre l’agenda directement visible dans l’espace professionnel : journée
+   complète, créneaux libres et occupés distincts et colonnes par collaborateur.
+   Permettre de déplacer un rendez-vous vers un créneau compatible et de
+   modifier sa prestation. Revérifier tarif, durée et disponibilité au moment
+   de l’enregistrement ; conserver le rendez-vous initial en cas de conflit.
+   Côté client, rendre les disponibilités visuelles et faciliter la réservation
+   et la modification sur mobile.
+4. Ouvrir une fiche au clic sur un rendez-vous, avec le détail de la prestation,
+   sa durée, son prix et des notes internes visibles uniquement par le
+   professionnel du salon concerné. Le nom et le prénom ouvrent la fiche du
+   client et ses informations utiles à la prise en charge. Les notes ne sont
+   ni affichées au client ni intégrées aux e-mails.
+5. Valider les parcours interactifs et la fidélité aux captures avant diffusion,
+   puis documenter la sauvegarde, les migrations et le déploiement cPanel.
+
 ## État du projet
 
 Le socle comprend la page d'accueil et sa FAQ, une recherche par catégorie et
@@ -358,7 +393,8 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/009_cash_register.sql`,
 `database/migrations/010_gift_cards.sql`,
 `database/migrations/011_admin_billing.sql`,
-`database/migrations/012_multi_staff.sql` et
-`database/migrations/013_marketing_campaigns.sql` et
-`database/migrations/014_staff_hours.sql`, dans cet ordre,
+`database/migrations/012_multi_staff.sql`,
+`database/migrations/013_marketing_campaigns.sql`,
+`database/migrations/014_staff_hours.sql` et
+`database/migrations/015_password_reset.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

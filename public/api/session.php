@@ -7,7 +7,8 @@ bookili_require_method('GET');
 
 try {
     bookili_start_session();
-    if (!isset($_SESSION['account_id'], $_SESSION['role'], $_SESSION['email'])) {
+    $account = isset($_SESSION['account_id']) ? bookili_session_account(bookili_database()) : null;
+    if (!$account) {
         bookili_json_response(200, ['authenticated' => false, 'csrfToken' => $_SESSION['csrf_token'] ?? null]);
     }
 
@@ -15,8 +16,8 @@ try {
         'authenticated' => true,
         'csrfToken' => $_SESSION['csrf_token'] ?? null,
         'account' => [
-            'email' => $_SESSION['email'],
-            'role' => $_SESSION['role'],
+            'email' => $account['email'],
+            'role' => $account['role'],
         ],
     ]);
 } catch (Throwable $error) {

@@ -193,7 +193,9 @@ def main():
     expect(professional.request("professional-services.php", {**service_payload, "id": service_id, "isActive": False}), 200)
     expect(first.request("appointments.php", {**booking, "time": "15:00"}), 422)
     assert not expect(guest.request(f"salons.php?q={SUFFIX}"), 200)["salons"]
-    expect(professional.request("professional-services.php", {**service_payload, "id": service_id}), 200)
+    expect(professional.request("professional-services.php", {
+        **service_payload, "id": service_id, "price": booking["expectedPrice"], "duration": booking["expectedDuration"],
+    }), 200)
     assert expect(guest.request(f"salons.php?id={salon_id}"), 200)["services"]
     assert expect(first.request("appointments.php?filter=past"), 200)["appointments"] == []
     expect(guest.request("admin-notifications.php"), 401)
@@ -301,6 +303,7 @@ def main():
     expect(admin.request("admin-accounts.php", {
         "action": "restore", "accountId": int(target_account["id"]), "reason": "Fin du test",
     }), 200)
+    other_pro.token()
     assert other_pro.login(other_account["email"], PASSWORD) == 200
     print("Integration checks passed: reservations, staff scheduling, consent, campaigns, billing and account administration.")
 

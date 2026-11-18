@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { algerianWilayas, beautyCategories, getWilayaName, isWilayaCode } from "./data/algerian-wilayas.js";
 import { Appointments, DirectoryResults, SalonPage } from "./Booking.jsx";
 import ProfessionalSpace from "./Professional.jsx";
+import PasswordReset from "./PasswordReset.jsx";
 import { apiRequest, apiUrl } from "./api-client.js";
 import { AdminAccounts, AdminBilling, AdminCampaigns } from "./AdminOperations.jsx";
 
@@ -407,6 +408,9 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
             {isSubmitting ? "Veuillez patienter…" : mode === "login" ? "Se connecter" : professional ? "Envoyer ma demande" : "Créer mon compte"}
           </button>
         </form>
+        {mode === "login" && !commercial && !superAdmin && (
+          <p className="auth-footnote"><Link to={`/mot-de-passe-oublie?espace=${professional ? "professionnels" : "compte"}`}>Mot de passe oublié ?</Link></p>
+        )}
         {professional && mode === "register" && (
           <p className="auth-footnote">Votre espace sera activé après validation par l’équipe commerciale BOOKILI.</p>
         )}
@@ -1152,6 +1156,8 @@ export default function App() {
       <Route path="/salons/:salonId" element={<SalonPage />} />
       <Route path="/professionnels" element={<AuthPage professional />} />
       <Route path="/compte" element={<AuthPage />} />
+      <Route path="/mot-de-passe-oublie" element={<PasswordReset key="request" />} />
+      <Route path="/nouveau-mot-de-passe" element={<PasswordReset key="confirm" confirm />} />
       <Route path="/gestion-commercial" element={<CommercialGate />} />
       <Route path="/super-admin" element={<SuperAdmin />} />
       <Route path="/espace-client" element={<ClientAccount />} />

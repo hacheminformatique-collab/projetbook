@@ -62,26 +62,34 @@ function bookili_require_csrf(): void
     }
 }
 
-function bookili_require_role(PDO $pdo, array $allowedRoles): array
+function bookili_session_account(PDO $pdo): ?array
 {
     bookili_start_session();
     $accountId = $_SESSION['account_id'] ?? null;
     if (!is_int($accountId) || $accountId < 1) {
-        bookili_json_response(401, ['error' => 'Veuillez vous connecter pour continuer.']);
+        return null;
     }
 
     $statement = $pdo->prepare(
-        'SELECT id, email, role, status FROM accounts WHERE id = :id LIMIT 1'
+        'SELECT id, email, role, status, session_version FROM accounts WHERE id = :id LIMIT 1'
     );
     $statement->execute(['id' => $accountId]);
     $account = $statement->fetch();
 
-    if (!$account || $account['status'] !== 'active') {
-        $_SESSION = [];
-        session_destroy();
-        bookili_json_response(401, ['error' => 'Cette session n’est plus valide. Reconnectez-vous.']);
+    if (!$account || $account['status'] !== 'active' || (int) $account['session_version'] !== ($_SESSION['session_version'] ?? 0)) {
+        unset($_SESSION['account_id'], $_SESSION['role'], $_SESSION['email'], $_SESSION['session_version']);
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        return null;
     }
+    return $account;
+}
 
+function bookili_require_role(PDO $pdo, array $allowedRoles): array
+{
+    $account = bookili_session_account($pdo);
+    if (!$account) {
+        bookili_json_response(401, ['error' => 'Veuillez vous connecter pour continuer.']);
+    }
     if (!in_array($account['role'], $allowedRoles, true)) {
         bookili_json_response(403, ['error' => 'Vous n’avez pas accès à cet espace.']);
     }

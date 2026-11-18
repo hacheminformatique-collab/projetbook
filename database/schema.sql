@@ -2,12 +2,23 @@ CREATE TABLE IF NOT EXISTS accounts (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   email VARCHAR(254) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  session_version INT UNSIGNED NOT NULL DEFAULT 0,
   role ENUM('client', 'professional', 'commercial', 'super_admin') NOT NULL,
   status ENUM('pending', 'active', 'suspended') NOT NULL DEFAULT 'active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY accounts_email_unique (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  account_id BIGINT UNSIGNED NOT NULL,
+  token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  session_version INT UNSIGNED NOT NULL,
+  expires_at DATETIME NOT NULL,
+  PRIMARY KEY (account_id),
+  UNIQUE KEY password_resets_token (token_hash),
+  CONSTRAINT password_resets_account_fk FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS registration_rate_limits (
@@ -207,7 +218,6 @@ CREATE TABLE IF NOT EXISTS notification_outbox (
   send_after DATETIME NOT NULL,
   status ENUM('queued', 'sending', 'retry', 'sent', 'failed', 'cancelled') NOT NULL DEFAULT 'queued',
   attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
-  send_after DATETIME NOT NULL,
   locked_at DATETIME NULL,
   sent_at DATETIME NULL,
   last_error VARCHAR(255) NULL,
@@ -405,6 +415,7 @@ CREATE TABLE IF NOT EXISTS marketing_campaign_recipients (
   recipient VARCHAR(254) NOT NULL,
   status ENUM('queued', 'sending', 'retry', 'sent', 'failed', 'cancelled') NOT NULL DEFAULT 'queued',
   attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  send_after DATETIME NOT NULL,
   locked_at DATETIME NULL,
   sent_at DATETIME NULL,
   last_error VARCHAR(255) NULL,

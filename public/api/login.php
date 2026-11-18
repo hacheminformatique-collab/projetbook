@@ -17,7 +17,7 @@ try {
     $pdo = bookili_database();
     bookili_rate_limit($pdo, 'login', 10);
     $statement = $pdo->prepare(
-        'SELECT id, email, password_hash, role, status FROM accounts WHERE email = :email LIMIT 1'
+        'SELECT id, email, password_hash, role, status, session_version FROM accounts WHERE email = :email LIMIT 1'
     );
     $statement->execute(['email' => $email]);
     $account = $statement->fetch();
@@ -40,6 +40,7 @@ try {
     }
 
     $_SESSION['account_id'] = (int) $account['id'];
+    $_SESSION['session_version'] = (int) $account['session_version'];
     $_SESSION['role'] = $account['role'];
     $_SESSION['email'] = $account['email'];
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));

@@ -40,14 +40,16 @@ try {
 
     $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
     $statement = $pdo->prepare(
-        "UPDATE accounts SET password_hash = :new_hash
-         WHERE id = :id AND BINARY password_hash = BINARY :old_hash AND role = 'client' AND status = 'active'"
+        "UPDATE accounts SET password_hash = :new_hash, session_version = session_version + 1
+         WHERE id = :id AND BINARY password_hash = BINARY :old_hash AND session_version = :version
+           AND role = 'client' AND status = 'active'"
     );
-    $statement->execute(['new_hash' => $newHash, 'id' => $account['id'], 'old_hash' => $passwordHash]);
+    $statement->execute(['new_hash' => $newHash, 'id' => $account['id'], 'old_hash' => $passwordHash, 'version' => $account['session_version']]);
     if ($statement->rowCount() !== 1) {
         bookili_json_response(409, ['error' => 'Votre compte a été modifié. Reconnectez-vous et réessayez.']);
     }
 
+    $_SESSION['session_version'] = (int) $account['session_version'] + 1;
     bookili_json_response(200, ['message' => 'Votre mot de passe a été modifié.']);
 } catch (Throwable $error) {
     bookili_database_error($error);
