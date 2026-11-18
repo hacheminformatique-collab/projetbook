@@ -206,16 +206,37 @@ def main():
     staff_b = expect(professional.request("professional-staff.php", {
         "action": "save", "name": "Collaboratrice B", "isActive": True,
     }), 200)["staff"][1]
+    assert len(staff_a["hours"]) == 7 and len(staff_b["hours"]) == 7
     team_slots = expect(guest.request(available), 200)
     assert len(team_slots["staff"]) == 2 and team_slots["slots"] == []
+    weekday = datetime.date.fromisoformat(booking_day).isoweekday()
+    staff_a_hours = [{
+        **hour, "opens_at": hour["opens_at"][:5], "closes_at": hour["closes_at"][:5],
+    } for hour in staff_a["hours"]]
+    target_hours = next(hour for hour in staff_a_hours if hour["weekday"] == weekday)
+    target_hours.update(opens_at="14:00", closes_at="17:00")
+    updated_staff = expect(professional.request("professional-staff.php", {
+        "action": "save", "staffId": int(staff_a["id"]), "name": "Collaboratrice A",
+        "isActive": True, "hours": staff_a_hours,
+    }), 200)["staff"]
+    staff_a = next(member for member in updated_staff if int(member["id"]) == int(staff_a["id"]))
+    invalid_hours = [dict(hour) for hour in staff_a_hours]
+    invalid_hours[0]["closes_at"] = invalid_hours[0]["opens_at"]
+    expect(professional.request("professional-staff.php", {
+        "action": "save", "staffId": int(staff_a["id"]), "name": "Collaboratrice A",
+        "isActive": True, "hours": invalid_hours,
+    }), 422)
     staff_a_url = available + f"&staffId={staff_a['id']}"
     staff_b_url = available + f"&staffId={staff_b['id']}"
-    assert "13:00" in expect(guest.request(staff_a_url), 200)["slots"]
+    assert "13:00" not in expect(guest.request(staff_a_url), 200)["slots"]
+    assert "14:00" in expect(guest.request(staff_a_url), 200)["slots"]
     assert "13:00" in expect(guest.request(staff_b_url), 200)["slots"]
-    staff_booking = {**booking, "time": "13:00", "staffId": int(staff_a["id"])}
+    staff_booking = {**booking, "time": "14:00", "staffId": int(staff_a["id"])}
     staff_appointment_a = expect(first.request("appointments.php", staff_booking), 201)["appointmentId"]
-    staff_appointment_b = expect(second.request("appointments.php", {**staff_booking, "staffId": int(staff_b["id"])}), 201)["appointmentId"]
-    expect(second.request("appointments.php", {**staff_booking, "time": "13:15"}), 409)
+    staff_appointment_b = expect(second.request("appointments.php", {
+        **staff_booking, "time": "13:00", "staffId": int(staff_b["id"]),
+    }), 201)["appointmentId"]
+    expect(second.request("appointments.php", {**staff_booking, "time": "14:15"}), 409)
     agenda_a = expect(professional.request(f"appointments.php?date={booking_day}&staffId={staff_a['id']}"), 200)["appointments"]
     assert len(agenda_a) == 1 and agenda_a[0]["staff_name"] == "Collaboratrice A"
     expect(professional.request("professional-staff.php", {

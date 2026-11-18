@@ -163,6 +163,15 @@ CREATE TABLE IF NOT EXISTS staff_members (
   CONSTRAINT staff_members_salon_fk FOREIGN KEY (salon_id) REFERENCES salons (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS staff_hours (
+  staff_id BIGINT UNSIGNED NOT NULL,
+  weekday TINYINT UNSIGNED NOT NULL,
+  opens_at TIME NOT NULL,
+  closes_at TIME NOT NULL,
+  PRIMARY KEY (staff_id, weekday),
+  CONSTRAINT staff_hours_staff_fk FOREIGN KEY (staff_id) REFERENCES staff_members (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS appointments (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   salon_id BIGINT UNSIGNED NOT NULL,

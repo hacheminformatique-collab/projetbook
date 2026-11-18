@@ -128,7 +128,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/010_gift_cards.sql`,
 `database/migrations/011_admin_billing.sql`,
 `database/migrations/012_multi_staff.sql` et
-`database/migrations/013_marketing_campaigns.sql` dans phpMyAdmin,
+`database/migrations/013_marketing_campaigns.sql` et
+`database/migrations/014_staff_hours.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -239,11 +240,16 @@ journée et peut annuler les rendez-vous futurs ; l'onglet Clients ne montre
 que les clients ayant un rendez-vous non annulé dans son propre salon.
 
 **Périmètre de cette version :**
-- Un agenda unique par établissement, donc un seul rendez-vous à la fois ;
-  la gestion de plusieurs collaborateurs n'est pas encore implémentée.
-- Horaires hebdomadaires avec une plage continue par jour, sans passage à
-  minuit. Les créneaux commencent toutes les
+- Un agenda par établissement, avec plusieurs rendez-vous simultanés possibles
+  si les collaborateurs sont différents. Un rendez-vous historique sans
+  collaborateur assigné bloque temporairement tous les collaborateurs sur
+  son créneau.
+- Une plage continue par jour pour le salon et pour chaque collaborateur,
+  sans passage à minuit. Les horaires du collaborateur sont limités à
+  l'intersection avec ceux du salon. Les créneaux commencent toutes les
   15 minutes depuis l'ouverture et doivent contenir toute la prestation.
+- Les fermetures exceptionnelles du salon s'appliquent à toute l'équipe ;
+  les congés individuels datés ne sont pas encore gérés.
 - Les dates sont calculées explicitement dans le fuseau `Africa/Algiers`.
   Réservation et modification de créneau possibles jusqu'à 60 jours à l'avance.
 - La confirmation est immédiate à l'écran, sans validation manuelle
@@ -321,10 +327,6 @@ comptable réglementaire.
 Le test `tests/cash.py` utilise les mêmes variables que `tests/bookings.py` et
 nécessite sa propre base jetable et plusieurs workers PHP.
 
-Les cartes cadeaux, la gestion multi-collaborateurs, les abonnements,
-la gestion élargie des comptes par le super-admin et les campagnes marketing
-restent à développer.
-
 ## État du projet
 
 Le socle comprend la page d'accueil et sa FAQ, une recherche par catégorie et
@@ -336,7 +338,7 @@ de passe client, la configuration du salon, l'annuaire et le parcours de
 réservation avec notifications e-mail et rappels programmés, ainsi que la
 gestion des produits, des stocks et des mouvements.
 Il comprend également les cartes cadeaux, la répartition des rendez-vous par
-collaborateur, la suspension/réactivation auditée des comptes, la gestion
+collaborateur avec ses horaires hebdomadaires, la suspension/réactivation auditée des comptes, la gestion
 manuelle des forfaits et règlements, l’export comptable interne et les
 campagnes marketing avec consentement révocable.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
@@ -357,5 +359,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/010_gift_cards.sql`,
 `database/migrations/011_admin_billing.sql`,
 `database/migrations/012_multi_staff.sql` et
-`database/migrations/013_marketing_campaigns.sql`, dans cet ordre,
+`database/migrations/013_marketing_campaigns.sql` et
+`database/migrations/014_staff_hours.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

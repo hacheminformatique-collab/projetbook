@@ -123,6 +123,15 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
     $statement->execute(['id' => $salonId, 'weekday' => (int) $day->format('N')]);
     $hours = $statement->fetch();
     if (!$hours) return [];
+    if ($staffId > 0) {
+        $statement = $pdo->prepare('SELECT opens_at, closes_at FROM staff_hours WHERE staff_id = :staff_id AND weekday = :weekday');
+        $statement->execute(['staff_id' => $staffId, 'weekday' => (int) $day->format('N')]);
+        $staffHours = $statement->fetch();
+        if (!$staffHours) return [];
+        $hours['opens_at'] = max($hours['opens_at'], $staffHours['opens_at']);
+        $hours['closes_at'] = min($hours['closes_at'], $staffHours['closes_at']);
+        if ($hours['opens_at'] >= $hours['closes_at']) return [];
+    }
 
     $statement = $pdo->prepare(
         "SELECT starts_at, ends_at FROM appointments
