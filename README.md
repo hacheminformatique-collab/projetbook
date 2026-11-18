@@ -47,6 +47,13 @@ Pour tester aussi le refus d'accès d'un super-admin aux API client, définir
 `BOOKILI_TEST_SETUP_TOKEN` avec la clé de configuration de cette installation
 de test ; le test crée alors son premier super-admin.
 
+Le test de gestion des images nécessite lui aussi une base jetable sans
+super-admin déjà créé :
+
+```bash
+BOOKILI_TEST_URL=http://localhost:8765 BOOKILI_TEST_SETUP_TOKEN=cle_de_test python3 tests/homepage-image.py
+```
+
 Le serveur Node.js n'est nécessaire que pour construire le site localement. Il
 n'est pas nécessaire sur cPanel : le dossier généré `dist/` contient le site
 statique et l'API PHP.
@@ -79,13 +86,16 @@ statique et l'API PHP.
    qu'une fois.
 
 Pour une base existante déjà installée, importer une fois
-`database/migrations/003_super_admin_setup.sql` dans phpMyAdmin avant d'ouvrir
-la gestion commerciale. Les nouvelles installations obtiennent cette table
-directement via `database/schema.sql`.
+`database/migrations/003_super_admin_setup.sql`, puis
+`database/migrations/004_homepage_image.sql` dans phpMyAdmin. Les nouvelles
+installations obtiennent ces tables directement via `database/schema.sql`.
 
 Le serveur doit avoir PHP 8.1+ avec PDO MySQL, MySQL/MariaDB et Apache avec
-`mod_rewrite` pour les pages de l'application. Aucun processus Node.js à
-maintenir sur le serveur.
+`mod_rewrite` pour les pages de l'application. L'extension PHP **GD**, avec
+prise en charge des formats JPEG, PNG et WebP, est nécessaire pour changer
+l'image d'accueil. L'extension **EXIF** est également nécessaire pour orienter
+correctement les photos JPEG. Aucun processus Node.js à maintenir sur le
+serveur.
 
 L'API sert un jeton CSRF de session, chiffre les mots de passe avec
 `password_hash`, utilise des requêtes SQL préparées, limite les tentatives de
@@ -100,17 +110,28 @@ actuel. Le changement de mot de passe est limité en nombre de tentatives et
 accepte entre 12 et 72 octets pour éviter la troncature bcrypt. Les autres
 sessions déjà ouvertes ne sont pas automatiquement déconnectées.
 
+Depuis `/super-admin`, le super-admin peut choisir une image de couverture
+JPEG, PNG ou WebP (2 Mo, 8 mégapixels et 6 000 pixels par côté maximum) ou la
+supprimer pour rétablir le fond gris. L'image est stockée en base et réencodée
+par GD ; les métadonnées sont supprimées. Les réglages PHP cPanel
+`upload_max_filesize` et `post_max_size` doivent permettre un envoi de 2 Mo
+avec l'enveloppe du formulaire ; la limite MySQL `max_allowed_packet` doit
+également dépasser 2 Mo.
+
 ## État du projet
 
 Le socle comprend la page d'accueil et sa FAQ, une recherche par catégorie et
 les 58 wilayas algériennes, des formulaires d'inscription client et
 professionnel, la connexion par mot de passe, le tableau de bord de validation
-des demandes professionnelles, la création initiale du super-admin et la
-gestion du téléphone et du mot de passe client.
+des demandes professionnelles, la création initiale du super-admin, la
+personnalisation de l'image d'accueil et la gestion du téléphone et du mot
+de passe client.
 L'annuaire réel et les rendez-vous restent à développer.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
-`professional_profiles`, `salons`, `services` et `platform_setup`. Pour une
+`professional_profiles`, `salons`, `services`, `platform_setup` et
+`homepage_image`. Pour une
 base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/002_registration_auth.sql`, puis
-`database/migrations/003_super_admin_setup.sql`, dans cet ordre.
+`database/migrations/003_super_admin_setup.sql` et
+`database/migrations/004_homepage_image.sql`, dans cet ordre.

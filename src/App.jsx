@@ -131,11 +131,13 @@ function SearchForm() {
 }
 
 function HomePage() {
+  const [hasImage, setHasImage] = useState(false);
   return (
     <>
       <Header />
       <main>
-        <section className="hero" id="accueil" aria-labelledby="hero-title">
+        <section className={`hero${hasImage ? " hero-with-image" : ""}`} id="accueil" aria-labelledby="hero-title">
+          <img className="hero-image" src="/api/homepage-image.php" alt="" aria-hidden="true" onLoad={() => setHasImage(true)} onError={() => setHasImage(false)} />
           <div className="hero-content">
             <h1 id="hero-title">Réservez en beauté</h1>
             <p className="hero-subtitle">Simple · Immédiat · 24h/24</p>
@@ -215,11 +217,11 @@ function ComingSoon({ audience, title, description }) {
   );
 }
 
-function AuthPage({ professional = false, commercial = false, onAuthenticated }) {
+function AuthPage({ professional = false, commercial = false, superAdmin = false, onAuthenticated }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [mode, setMode] = useState(
-    !commercial && searchParams.get("mode") === "inscription" ? "register" : "login",
+    !commercial && !superAdmin && searchParams.get("mode") === "inscription" ? "register" : "login",
   );
   const [csrfToken, setCsrfToken] = useState("");
   const [csrfError, setCsrfError] = useState("");
@@ -270,7 +272,9 @@ function AuthPage({ professional = false, commercial = false, onAuthenticated })
 
       if (mode === "login") {
         const isClient = result.account?.role === "client";
-        const allowedRoles = commercial
+        const allowedRoles = superAdmin
+          ? ["super_admin"]
+          : commercial
           ? ["commercial", "super_admin"]
           : [professional ? "professional" : "client"];
         if (!allowedRoles.includes(result.account?.role)) {
@@ -312,7 +316,9 @@ function AuthPage({ professional = false, commercial = false, onAuthenticated })
     }
   }
 
-  const title = commercial
+  const title = superAdmin
+    ? "Connexion super-admin"
+    : commercial
     ? "Connexion équipe BOOKILI"
     : professional
     ? mode === "login" ? "Connexion professionnelle" : "Créer votre espace professionnel"
@@ -322,9 +328,9 @@ function AuthPage({ professional = false, commercial = false, onAuthenticated })
     <main className="auth-page">
       <Link to="/" className="coming-logo">BOOKILI</Link>
       <section className="auth-card" aria-labelledby="auth-title">
-        <p className="eyebrow">{commercial ? "GESTION COMMERCIALE" : professional ? "ESPACE PROFESSIONNEL" : "ESPACE CLIENT"}</p>
+        <p className="eyebrow">{superAdmin ? "SUPER-ADMIN" : commercial ? "GESTION COMMERCIALE" : professional ? "ESPACE PROFESSIONNEL" : "ESPACE CLIENT"}</p>
         <h1 id="auth-title">{title}</h1>
-        {!commercial && (
+        {!commercial && !superAdmin && (
           <div className="auth-switch" aria-label="Choisir une action">
             <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setNotice(null); }}>
               Se connecter
@@ -398,6 +404,9 @@ function AuthPage({ professional = false, commercial = false, onAuthenticated })
         </form>
         {professional && mode === "register" && (
           <p className="auth-footnote">Votre espace sera activé après validation par l’équipe commerciale BOOKILI.</p>
+        )}
+        {superAdmin && (
+          <p className="auth-footnote">Première installation ? Créez votre compte depuis la <Link to="/gestion-commercial">gestion commerciale</Link>.</p>
         )}
       </section>
     </main>
@@ -650,6 +659,7 @@ function CommercialDashboard({ account, csrfToken, onLogout }) {
         <Link className="logo" to="/">BOOKILI</Link>
         <div className="commercial-user">
           <span>{account.email}</span>
+          {account.role === "super_admin" && <Link className="admin-nav-link" to="/super-admin">Super-admin</Link>}
           <button type="button" onClick={logout}>Se déconnecter</button>
         </div>
       </header>
@@ -718,6 +728,161 @@ function CommercialDashboard({ account, csrfToken, onLogout }) {
           </div>
         )}
       </section>
+    </main>
+  );
+}
+
+function SuperAdmin() {
+  const [access, setAccess] = useState({ status: "loading", account: null, csrfToken: "" });
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/session.php", { credentials: "same-origin" })
+      .then(async (response) => {
+        const session = await response.json();
+        if (!response.ok) throw new Error(session.error || "Session indisponible.");
+        if (active) {
+          setAccess(session.authenticated && session.account?.role === "super_admin"
+            ? { status: "authorized", account: session.account, csrfToken: session.csrfToken }
+            : { status: "login", account: null, csrfToken: "" });
+        }
+      })
+      .catch((cause) => {
+        if (active) {
+          setError(cause.message || "Impossible de joindre BOOKILI.");
+          setAccess({ status: "error", account: null, csrfToken: "" });
+        }
+      });
+    return () => { active = false; };
+  }, []);
+
+  if (access.status === "loading") {
+    return <main className="coming-page"><Link to="/" className="coming-logo">BOOKILI</Link><p>Chargement de l’espace super-admin…</p></main>;
+  }
+  if (access.status === "error") {
+    return <main className="coming-page"><Link to="/" className="coming-logo">BOOKILI</Link><p className="form-message form-error" role="alert">{error}</p></main>;
+  }
+  if (access.status === "login") {
+    return <AuthPage superAdmin onAuthenticated={(account, csrfToken) => setAccess({ status: "authorized", account, csrfToken })} />;
+  }
+  return <SuperAdminDashboard account={access.account} csrfToken={access.csrfToken} onLogout={() => setAccess({ status: "login", account: null, csrfToken: "" })} />;
+}
+
+function SuperAdminDashboard({ account, csrfToken, onLogout }) {
+  const [hasImage, setHasImage] = useState(false);
+  const [imageVersion, setImageVersion] = useState(Date.now());
+  const [loading, setLoading] = useState(true);
+  const [imageReady, setImageReady] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/admin-homepage-image.php", { credentials: "same-origin" })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Impossible de charger l’image.");
+        if (active) {
+          setHasImage(result.hasImage);
+          setImageReady(true);
+        }
+      })
+      .catch((cause) => {
+        if (active) setNotice({ kind: "error", text: cause.message || "Impossible de joindre BOOKILI." });
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function updateImage(formData, form) {
+    setSaving(true);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/admin-homepage-image.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: formData,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "La modification n’a pas abouti.");
+      setHasImage(result.hasImage);
+      setImageVersion(Date.now());
+      if (form) form.reset();
+      setNotice({ kind: "success", text: result.message });
+    } catch (cause) {
+      setNotice({ kind: "error", text: cause.message || "Impossible de joindre BOOKILI." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function upload(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    data.set("action", "upload");
+    updateImage(data, form);
+  }
+
+  function remove() {
+    if (!window.confirm("Supprimer l’image et rétablir le fond gris ?")) return;
+    const data = new FormData();
+    data.set("action", "remove");
+    updateImage(data);
+  }
+
+  async function logout() {
+    try {
+      const response = await fetch("/api/logout.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrfToken },
+      });
+      if (!response.ok) throw new Error("La déconnexion n’a pas abouti.");
+      onLogout();
+    } catch (cause) {
+      setNotice({ kind: "error", text: cause.message || "Impossible de joindre BOOKILI." });
+    }
+  }
+
+  return (
+    <main className="client-page">
+      <header className="commercial-header">
+        <Link className="logo" to="/">BOOKILI</Link>
+        <div className="commercial-user">
+          <span>{account.email}</span>
+          <Link className="admin-nav-link" to="/gestion-commercial">Gestion commerciale</Link>
+          <button type="button" onClick={logout}>Se déconnecter</button>
+        </div>
+      </header>
+      <div className="client-content">
+        <p className="eyebrow">SUPER-ADMIN</p>
+        <h1>Page d’accueil</h1>
+        <section className="client-card" aria-labelledby="homepage-image-title">
+          <h2 id="homepage-image-title">Image de couverture</h2>
+          <p>Choisissez l’image affichée en haut du site. Sans image, le fond reste gris.</p>
+          {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+          {loading ? <p>Chargement…</p> : imageReady && (
+            <>
+              <div className="admin-image-preview">
+                {hasImage ? <img src={`/api/homepage-image.php?v=${imageVersion}`} alt="Image actuelle de la page d’accueil" /> : <span>Fond gris par défaut</span>}
+              </div>
+              <form className="auth-form" onSubmit={upload}>
+                <label>Choisir une image
+                  <input type="file" name="image" accept="image/jpeg,image/png,image/webp" required />
+                  <span className="field-hint">JPEG, PNG ou WebP · 2 Mo maximum · 8 mégapixels maximum.</span>
+                </label>
+                <button className="auth-submit" type="submit" disabled={saving || !csrfToken}>
+                  {saving ? "Enregistrement…" : hasImage ? "Remplacer l’image" : "Ajouter l’image"}
+                </button>
+              </form>
+              {hasImage && <button className="admin-remove" type="button" onClick={remove} disabled={saving}>Supprimer l’image</button>}
+            </>
+          )}
+        </section>
+      </div>
     </main>
   );
 }
@@ -946,6 +1111,7 @@ export default function App() {
       <Route path="/professionnels" element={<AuthPage professional />} />
       <Route path="/compte" element={<AuthPage />} />
       <Route path="/gestion-commercial" element={<CommercialGate />} />
+      <Route path="/super-admin" element={<SuperAdmin />} />
       <Route path="/espace-client" element={<ClientAccount />} />
       <Route path="/espace-professionnel" element={<AccountHome professional />} />
       <Route path="*" element={<ComingSoon audience="PAGE INTROUVABLE" title="Cette page n’existe pas" description="Vérifiez l’adresse ou retournez à l’accueil de BOOKILI." />} />
