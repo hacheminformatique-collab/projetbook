@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Appointments } from "./Booking.jsx";
 import Inventory from "./Inventory.jsx";
-import { apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
+import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
 
 export default function ProfessionalSpace() {
@@ -60,7 +60,10 @@ export default function ProfessionalSpace() {
               ))}
             </nav>
             <p className="form-message">Version initiale : un seul agenda par établissement, avec un rendez-vous à la fois. {Number(configuration.salon.is_public) ? <Link className="inline-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link> : "Votre salon est masqué. Configurez vos prestations et horaires dans Admin avant de le publier."}</p>
-            {tab === "agenda" && <Appointments professional csrfToken={session.csrfToken} />}
+            {tab === "agenda" && <>
+              <Appointments professional csrfToken={session.csrfToken} />
+              <ClosureSettings csrfToken={session.csrfToken} />
+            </>}
             {tab === "caisse" && <Inventory csrfToken={session.csrfToken} />}
             {tab === "clients" && <ProfessionalClients />}
             {tab === "admin" && <>
@@ -71,6 +74,69 @@ export default function ProfessionalSpace() {
         )}
       </div>
     </main>
+  );
+}
+
+function ClosureSettings({ csrfToken }) {
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [date, setDate] = useState(algerianDate());
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setResult(null);
+    apiRequest(`professional-closures.php?page=${page}`, { signal: controller.signal })
+      .then(setResult)
+      .catch((cause) => { if (!controller.signal.aborted) setNotice({ kind: "error", text: cause.message }); });
+    return () => controller.abort();
+  }, [page, refresh]);
+
+  async function change(action, closureDate, closureReason = "") {
+    setSaving(true);
+    setNotice(null);
+    try {
+      const response = await apiRequest("professional-closures.php", {
+        csrfToken, body: { action, date: closureDate, reason: closureReason },
+      });
+      setNotice({ kind: "success", text: response.message });
+      setReason("");
+      setPage(1);
+      setRefresh((value) => value + 1);
+    } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
+    finally { setSaving(false); }
+  }
+  return (
+    <section className="client-card">
+      <h2>Fermetures exceptionnelles</h2>
+      <p>Fermez une journée entière aux nouvelles réservations, jusqu’à un an à l’avance. Les horaires habituels restent inchangés.</p>
+      <p className="field-hint">Une journée avec des rendez-vous confirmés ne peut pas être fermée. Gérez ces rendez-vous dans l’agenda avant d’ajouter la fermeture. Le motif reste privé.</p>
+      {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+      <form className="auth-form" onSubmit={(event) => { event.preventDefault(); change("add", date, reason); }}>
+        <fieldset className="form-fieldset" disabled={saving}>
+          <label>Date de fermeture<input required type="date" min={algerianDate()} max={algerianDate(365)} value={date} onChange={(event) => setDate(event.target.value)} /></label>
+          <label>Motif privé (facultatif)<input maxLength={180} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+          <button type="submit" className="auth-submit">{saving ? "Enregistrement…" : "Fermer cette journée"}</button>
+        </fieldset>
+      </form>
+      <h3>Fermetures à venir</h3>
+      {!result && !notice && <p>Chargement…</p>}
+      {result?.closures.length === 0 && <p>Aucune fermeture à venir.</p>}
+      <div className="service-list">
+        {result?.closures.map((closure) => <div className="service-row" key={closure.closure_date}>
+          <span><strong>{closure.closure_date.split("-").reverse().join("/")}</strong>{closure.reason && <><br />{closure.reason}</>}</span>
+          <button type="button" className="admin-nav-link" disabled={saving} onClick={() => {
+            if (window.confirm("Supprimer cette fermeture et rétablir les horaires habituels ?")) change("remove", closure.closure_date);
+          }}>Supprimer la fermeture</button>
+        </div>)}
+      </div>
+      {result && <nav className="pagination" aria-label="Pages des fermetures">
+        {page > 1 && <button className="admin-nav-link" type="button" onClick={() => setPage(page - 1)}>Précédent</button>}
+        {result.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
+      </nav>}
+    </section>
   );
 }
 

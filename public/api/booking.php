@@ -101,6 +101,10 @@ function bookili_service(PDO $pdo, int $salonId, int $serviceId): array
 
 function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable $day, int $excludeId = 0): array
 {
+    $statement = $pdo->prepare('SELECT 1 FROM salon_closures WHERE salon_id = :id AND closure_date = :day');
+    $statement->execute(['id' => $salonId, 'day' => $day->format('Y-m-d')]);
+    if ($statement->fetchColumn()) return [];
+
     $statement = $pdo->prepare('SELECT opens_at, closes_at FROM salon_hours WHERE salon_id = :id AND weekday = :weekday');
     $statement->execute(['id' => $salonId, 'weekday' => (int) $day->format('N')]);
     $hours = $statement->fetch();

@@ -117,7 +117,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/004_homepage_image.sql` et
 `database/migrations/005_booking.sql`,
 `database/migrations/006_appointment_notifications.sql` et
-`database/migrations/007_inventory.sql` dans phpMyAdmin,
+`database/migrations/007_inventory.sql` et
+`database/migrations/008_salon_closures.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 
@@ -195,8 +196,8 @@ que les clients ayant un rendez-vous non annulé dans son propre salon.
 **Périmètre de cette version :**
 - Un agenda unique par établissement, donc un seul rendez-vous à la fois ;
   la gestion de plusieurs collaborateurs n'est pas encore implémentée.
-- Horaires hebdomadaires avec une plage continue par jour, sans fermeture
-  exceptionnelle ni passage à minuit. Les créneaux commencent toutes les
+- Horaires hebdomadaires avec une plage continue par jour, sans passage à
+  minuit. Les créneaux commencent toutes les
   15 minutes depuis l'ouverture et doivent contenir toute la prestation.
 - Les dates sont calculées explicitement dans le fuseau `Africa/Algiers`.
   Réservation et modification de créneau possibles jusqu'à 60 jours à l'avance.
@@ -219,6 +220,12 @@ que les clients ayant un rendez-vous non annulé dans son propre salon.
   entre affichage et confirmation oblige à recharger la fiche.
 - Modifier des horaires ou masquer un salon ne supprime pas ses rendez-vous
   déjà confirmés. Leur annulation reste possible même si le salon est masqué.
+- Dans **Agenda**, le professionnel peut fermer une journée entière jusqu'à
+  365 jours à l'avance, puis supprimer cette fermeture. Les nouvelles réservations
+  et modifications vers cette journée sont bloquées. Une fermeture est refusée
+  si des rendez-vous confirmés existent déjà ce jour : ils doivent d'abord être
+  gérés individuellement. Aucun rendez-vous n'est annulé automatiquement.
+  Le motif est privé ; les horaires hebdomadaires reprennent à la suppression.
 
 ## Produits et stocks professionnels
 
@@ -268,7 +275,7 @@ gestion des produits, des stocks et des mouvements.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
 `professional_profiles`, `salons`, `services`, `platform_setup`,
-`homepage_image`, `salon_hours`, `appointments`, `notification_outbox`,
+`homepage_image`, `salon_hours`, `salon_closures`, `appointments`, `notification_outbox`,
 `products` et `stock_movements`.
 Pour une
 base ayant déjà reçu la première version du schéma MySQL, appliquez
@@ -277,5 +284,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/004_homepage_image.sql`,
 `database/migrations/005_booking.sql`,
 `database/migrations/006_appointment_notifications.sql` et
-`database/migrations/007_inventory.sql`, dans cet ordre,
+`database/migrations/007_inventory.sql` et
+`database/migrations/008_salon_closures.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.
