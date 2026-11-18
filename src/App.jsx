@@ -1,4 +1,4 @@
-import { Link, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { algerianWilayas, beautyCategories, getWilayaName, isWilayaCode } from "./data/algerian-wilayas.js";
 
@@ -215,19 +215,241 @@ function ComingSoon({ audience, title, description }) {
   );
 }
 
+function AuthPage({ professional = false }) {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [mode, setMode] = useState(searchParams.get("mode") === "inscription" ? "register" : "login");
+  const [csrfToken, setCsrfToken] = useState("");
+  const [csrfError, setCsrfError] = useState("");
+  const [notice, setNotice] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/csrf.php", { credentials: "same-origin" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Impossible de préparer le formulaire.");
+        if (active) setCsrfToken(data.csrfToken);
+      })
+      .catch(() => {
+        if (active) setCsrfError("Le formulaire est temporairement indisponible. Vérifiez la configuration du serveur puis rechargez la page.");
+      });
+    return () => { active = false; };
+  }, []);
+
+  async function submit(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setNotice(null);
+    setIsSubmitting(true);
+
+    const formData = new FormData(form);
+    const payload = Object.fromEntries(formData.entries());
+    const endpoint = mode === "login"
+      ? "/api/login.php"
+      : professional ? "/api/register-professional.php" : "/api/register-client.php";
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setNotice({ kind: "error", text: result.error || "Le formulaire n’a pas pu être envoyé." });
+        return;
+      }
+
+      if (mode === "login") {
+        const isClient = result.account?.role === "client";
+        const expectedRole = professional ? "professional" : "client";
+        if (result.account?.role !== expectedRole) {
+          await fetch("/api/logout.php", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "X-CSRF-Token": result.csrfToken },
+          });
+          setCsrfToken("");
+          const csrfResponse = await fetch("/api/csrf.php", { credentials: "same-origin" });
+          const csrfResult = await csrfResponse.json();
+          if (csrfResponse.ok) setCsrfToken(csrfResult.csrfToken);
+          setNotice({ kind: "error", text: "Ce compte ne correspond pas à cet espace." });
+          return;
+        }
+        setCsrfToken(result.csrfToken);
+        navigate(isClient ? "/espace-client" : "/espace-professionnel");
+        return;
+      }
+
+      if (professional) {
+        setNotice({ kind: "success", text: result.message });
+        form.reset();
+      } else {
+        setMode("login");
+        setNotice({ kind: "success", text: `${result.message} Vous pouvez vous connecter.` });
+        form.reset();
+      }
+    } catch {
+      setNotice({ kind: "error", text: "Impossible de joindre BOOKILI. Vérifiez votre connexion et réessayez." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  const title = professional
+    ? mode === "login" ? "Connexion professionnelle" : "Créer votre espace professionnel"
+    : mode === "login" ? "Connexion à votre compte" : "Créer votre compte BOOKILI";
+
+  return (
+    <main className="auth-page">
+      <Link to="/" className="coming-logo">BOOKILI</Link>
+      <section className="auth-card" aria-labelledby="auth-title">
+        <p className="eyebrow">{professional ? "ESPACE PROFESSIONNEL" : "ESPACE CLIENT"}</p>
+        <h1 id="auth-title">{title}</h1>
+        <div className="auth-switch" aria-label="Choisir une action">
+          <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setNotice(null); }}>
+            Se connecter
+          </button>
+          <button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setNotice(null); }}>
+            {professional ? "Demander un accès" : "Créer un compte"}
+          </button>
+        </div>
+        {csrfError && <p className="form-message form-error" role="alert">{csrfError}</p>}
+        {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+
+        <form className="auth-form" onSubmit={submit}>
+          {mode === "register" && !professional && (
+            <div className="auth-grid">
+              <label>Prénom<input name="firstName" required autoComplete="given-name" maxLength={100} /></label>
+              <label>Nom<input name="lastName" required autoComplete="family-name" maxLength={100} /></label>
+            </div>
+          )}
+          {mode === "register" && professional && (
+            <>
+              <label>Nom du salon ou de l’établissement<input name="businessName" required autoComplete="organization" maxLength={180} /></label>
+              <label>Nom du responsable<input name="contactName" required autoComplete="name" maxLength={100} /></label>
+              <div className="auth-grid">
+                <label>Activité
+                  <select name="category" required defaultValue="">
+                    <option value="" disabled>Choisir une activité</option>
+                    <option value="coiffeur">Coiffure</option>
+                    <option value="barbier">Barbier</option>
+                    <option value="manucure">Manucure</option>
+                    <option value="institut">Institut de beauté</option>
+                    <option value="bien-etre">Bien-être</option>
+                    <option value="maquillage">Maquillage</option>
+                    <option value="spa">Spa</option>
+                    <option value="massage">Massage</option>
+                  </select>
+                </label>
+                <label>Wilaya
+                  <select name="wilaya" required defaultValue="">
+                    <option value="" disabled>Choisir une wilaya</option>
+                    {algerianWilayas.map(({ code, name }) => <option key={code} value={code}>{name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="auth-grid">
+                <label>Ville ou commune<input name="city" required autoComplete="address-level2" maxLength={120} /></label>
+                <label>Adresse<input name="address" required autoComplete="street-address" maxLength={255} /></label>
+              </div>
+            </>
+          )}
+          <label>Adresse e-mail
+            <input name="email" type="email" required autoComplete="email" maxLength={254} />
+          </label>
+          {mode === "register" && (
+            <label>Téléphone
+              <input name="phone" type="tel" required autoComplete="tel" inputMode="tel" maxLength={24} placeholder="+213..." />
+            </label>
+          )}
+          {mode === "register" && !professional && (
+            <label>Date de naissance
+              <input name="dateOfBirth" type="date" required autoComplete="bday" />
+            </label>
+          )}
+          <label>Mot de passe
+            <input name="password" type="password" required minLength={mode === "register" ? 12 : 1} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} />
+            {mode === "register" && <span className="field-hint">Au moins 12 caractères.</span>}
+          </label>
+          <button className="auth-submit" type="submit" disabled={!csrfToken || isSubmitting}>
+            {isSubmitting ? "Veuillez patienter…" : mode === "login" ? "Se connecter" : professional ? "Envoyer ma demande" : "Créer mon compte"}
+          </button>
+        </form>
+        {professional && mode === "register" && (
+          <p className="auth-footnote">Votre espace sera activé après validation par l’équipe commerciale BOOKILI.</p>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function AccountHome({ professional = false }) {
+  const navigate = useNavigate();
+  const [account, setAccount] = useState(null);
+  const [error, setError] = useState("");
+  const [csrfToken, setCsrfToken] = useState("");
+
+  useEffect(() => {
+    fetch("/api/session.php", { credentials: "same-origin" })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Session indisponible.");
+        const expectedRole = professional ? "professional" : "client";
+        if (!result.authenticated || result.account?.role !== expectedRole) {
+          navigate(professional ? "/professionnels" : "/compte", { replace: true });
+          return;
+        }
+        setAccount(result.account);
+        setCsrfToken(result.csrfToken);
+      })
+      .catch((cause) => setError(cause.message));
+  }, [navigate, professional]);
+
+  async function logout() {
+    try {
+      const response = await fetch("/api/logout.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrfToken },
+      });
+      if (response.ok) navigate(professional ? "/professionnels" : "/compte", { replace: true });
+      else setError("La déconnexion n’a pas abouti. Rechargez la page et réessayez.");
+    } catch {
+      setError("Impossible de joindre BOOKILI. Vérifiez votre connexion et réessayez.");
+    }
+  }
+
+  return (
+    <main className="coming-page">
+      <Link to="/" className="coming-logo">BOOKILI</Link>
+      <section className="coming-card">
+        <p className="eyebrow">{professional ? "ESPACE PROFESSIONNEL" : "ESPACE CLIENT"}</p>
+        <h1>{account ? professional ? "Votre espace professionnel" : "Votre compte BOOKILI" : "Chargement de votre espace…"}</h1>
+        {account && <p>Connecté avec {account.email}.</p>}
+        {error && <p className="form-message form-error" role="alert">{error}</p>}
+        {account && <p>{professional ? "La configuration de votre établissement et votre agenda seront disponibles dans une prochaine étape." : "La gestion de vos rendez-vous sera disponible dans une prochaine étape."}</p>}
+        {account && <button className="back-link auth-logout" type="button" onClick={logout}>Se déconnecter</button>}
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/recherche" element={<SearchResults />} />
-      <Route
-        path="/professionnels"
-        element={<ComingSoon audience="ESPACE PROFESSIONNEL" title="Votre espace arrive bientôt" description="La connexion et l’inscription des professionnels sont en cours de préparation. Les demandes seront soumises à validation par notre équipe commerciale." />}
-      />
-      <Route
-        path="/compte"
-        element={<ComingSoon audience="ESPACE CLIENT" title="Votre compte arrive bientôt" description="L’inscription, la connexion et la gestion de vos rendez-vous sont en cours de préparation." />}
-      />
+      <Route path="/professionnels" element={<AuthPage professional />} />
+      <Route path="/compte" element={<AuthPage />} />
+      <Route path="/espace-client" element={<AccountHome />} />
+      <Route path="/espace-professionnel" element={<AccountHome professional />} />
       <Route path="*" element={<ComingSoon audience="PAGE INTROUVABLE" title="Cette page n’existe pas" description="Vérifiez l’adresse ou retournez à l’accueil de BOOKILI." />} />
     </Routes>
   );

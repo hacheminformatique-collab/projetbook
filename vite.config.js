@@ -7,4 +7,12 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
   },
+  server: {
+    proxy: {
+      "/api": {
+        target: process.env.BOOKILI_API_TARGET || "http://127.0.0.1:8765",
+        changeOrigin: false,
+      },
+    },
+  },
 });

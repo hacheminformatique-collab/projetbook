@@ -3,8 +3,21 @@ declare(strict_types=1);
 
 function bookili_database(): PDO
 {
-    $configPath = __DIR__ . '/config.php';
-    if (!is_file($configPath)) {
+    $configuredPath = getenv('BOOKILI_CONFIG_PATH');
+    $configPaths = array_filter([
+        is_string($configuredPath) && $configuredPath !== '' ? $configuredPath : null,
+        dirname(__DIR__, 2) . '/bookili-config.php',
+        __DIR__ . '/config.php',
+    ]);
+    $configPath = null;
+    foreach ($configPaths as $path) {
+        if (is_file($path) && is_readable($path)) {
+            $configPath = $path;
+            break;
+        }
+    }
+
+    if ($configPath === null) {
         throw new RuntimeException('BOOKILI database configuration is missing.');
     }
 

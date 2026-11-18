@@ -10,6 +10,15 @@ CREATE TABLE IF NOT EXISTS accounts (
   UNIQUE KEY accounts_email_unique (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS registration_rate_limits (
+  action_name VARCHAR(32) NOT NULL,
+  ip_hash CHAR(64) NOT NULL,
+  hour_bucket BIGINT UNSIGNED NOT NULL,
+  attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (action_name, ip_hash, hour_bucket),
+  KEY registration_rate_limits_cleanup (hour_bucket)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 CREATE TABLE IF NOT EXISTS client_profiles (
   account_id BIGINT UNSIGNED NOT NULL,
   first_name VARCHAR(100) NOT NULL,
@@ -26,6 +35,7 @@ CREATE TABLE IF NOT EXISTS professional_applications (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   account_id BIGINT UNSIGNED NOT NULL,
   business_name VARCHAR(180) NOT NULL,
+  contact_name VARCHAR(100) NOT NULL,
   business_category ENUM(
     'coiffeur', 'barbier', 'manucure', 'institut',
     'bien-etre', 'maquillage', 'spa', 'massage'
