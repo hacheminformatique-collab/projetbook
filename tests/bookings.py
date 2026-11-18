@@ -8,6 +8,8 @@ import os
 import pathlib
 import secrets
 import threading
+import urllib.error
+import urllib.request
 
 spec = importlib.util.spec_from_file_location("account_tests", pathlib.Path(__file__).with_name("client-account.py"))
 account_tests = importlib.util.module_from_spec(spec)
@@ -21,6 +23,17 @@ def expect(response, status):
     actual, result = response
     assert actual == status, (actual, status, result)
     return result
+
+
+def expect_empty_response(client, path, status):
+    request = urllib.request.Request(account_tests.BASE + "/api/" + path)
+    try:
+        response = client.opener.open(request)
+    except urllib.error.HTTPError as error:
+        response = error
+    with response:
+        assert response.status == status
+        assert response.read() == b""
 
 
 def new_client(number):
@@ -96,21 +109,26 @@ def main():
     expect(guest.request("salons.php?wilaya=99"), 422)
 
     tomorrow = (datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=1))).date() + datetime.timedelta(days=1)).isoformat()
-    available = f"availability.php?salonId={salon_id}&serviceId={service_id}&date={tomorrow}"
+    booking_day = (datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=1))).date() + datetime.timedelta(days=30)).isoformat()
+    notification_before = expect(admin.request("admin-notifications.php"), 200)["counts"]
+    assert notification_before["queued"] == 0 and notification_before["sent"] == 0
+    available = f"availability.php?salonId={salon_id}&serviceId={service_id}&date={booking_day}"
     slots = expect(guest.request(available), 200)["slots"]
     assert slots[0] == "09:00" and slots[-1] == "16:30" and len(slots) == 31
-    expect(guest.request(available.replace(tomorrow, "2020-01-01")), 422)
-    expect(guest.request(available.replace(tomorrow, "2026-02-30")), 422)
-    expect(guest.request(available.replace(tomorrow, "%00")), 422)
-    far_date = (datetime.date.fromisoformat(tomorrow) + datetime.timedelta(days=60)).isoformat()
-    expect(guest.request(available.replace(tomorrow, far_date)), 422)
+    expect(guest.request(available.replace(booking_day, "2020-01-01")), 422)
+    expect(guest.request(available.replace(booking_day, "2026-02-30")), 422)
+    expect(guest.request(available.replace(booking_day, "%00")), 422)
+    far_date = (datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=1))).date() + datetime.timedelta(days=61)).isoformat()
+    expect(guest.request(available.replace(booking_day, far_date)), 422)
     booking = {
-        "action": "book", "salonId": salon_id, "serviceId": service_id, "date": tomorrow, "time": "09:00",
+        "action": "book", "salonId": salon_id, "serviceId": service_id, "date": booking_day, "time": "09:00",
         "expectedPrice": 1500, "expectedDuration": 30,
     }
     expect(first.request("appointments.php", booking, csrf=False), 403)
     expect(guest.request("appointments.php"), 401)
     appointment_id = expect(first.request("appointments.php", booking), 201)["appointmentId"]
+    notification_counts = expect(admin.request("admin-notifications.php"), 200)["counts"]
+    assert notification_counts["queued"] == 3 and notification_counts["sent"] == 0
     expect(second.request("appointments.php", {**booking, "time": "09:15"}), 409)
     assert "09:15" not in expect(guest.request(available), 200)["slots"]
     assert "09:30" in expect(guest.request(available), 200)["slots"]
@@ -119,7 +137,7 @@ def main():
     expect(second.request(available + f"&appointmentId={appointment_id}"), 404)
     assert "09:00" in expect(first.request(available + f"&appointmentId={appointment_id}"), 200)["slots"]
     assert not expect(other_pro.request(f"appointments.php?date={tomorrow}"), 200)["appointments"]
-    agenda = expect(professional.request(f"appointments.php?date={tomorrow}"), 200)["appointments"]
+    agenda = expect(professional.request(f"appointments.php?date={booking_day}"), 200)["appointments"]
     assert len(agenda) == 1 and agenda[0]["first_name"] == "Client 1"
     clients = expect(professional.request("professional-clients.php"), 200)["clients"]
     assert len(clients) == 1
@@ -131,6 +149,8 @@ def main():
     assert mine[0]["starts_at"].endswith("09:00:00")
     expect(first.request("appointments.php", {**move, "time": "09:30"}), 200)
     assert "09:00" in expect(guest.request(available), 200)["slots"]
+    notification_counts = expect(admin.request("admin-notifications.php"), 200)["counts"]
+    assert notification_counts["queued"] == 7 and notification_counts["cancelled"] == 2
     alternate = expect(professional.request("professional-services.php", {
         **service_payload, "name": "Autre prestation", "duration": 15, "price": 900,
     }), 200)["services"][-1]
@@ -164,6 +184,8 @@ def main():
     expect(first.request("appointments.php", {**booking, "time": "14:00"}), 404)
     expect(first.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id}), 200)
     expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": second_id}), 200)
+    notification_counts = expect(admin.request("admin-notifications.php"), 200)["counts"]
+    assert notification_counts["queued"] == 10 and notification_counts["cancelled"] == 10
     expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
     assert "09:00" in expect(guest.request(available), 200)["slots"]
     expect(professional.request("professional-services.php", {**service_payload, "id": service_id, "isActive": False}), 200)
@@ -172,6 +194,9 @@ def main():
     expect(professional.request("professional-services.php", {**service_payload, "id": service_id}), 200)
     assert expect(guest.request(f"salons.php?id={salon_id}"), 200)["services"]
     assert expect(first.request("appointments.php?filter=past"), 200)["appointments"] == []
+    expect(guest.request("admin-notifications.php"), 401)
+    expect(first.request("admin-notifications.php"), 403)
+    expect_empty_response(guest, "send-notifications.php", 404)
     print("Booking checks passed: publication, filters, ownership, slots, rescheduling, snapshots, cancellation and concurrency.")
 
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { algerianWilayas, beautyCategories, getWilayaName, isWilayaCode } from "./data/algerian-wilayas.js";
 import { Appointments, DirectoryResults, SalonPage } from "./Booking.jsx";
 import ProfessionalSpace from "./Professional.jsx";
+import { apiRequest } from "./api-client.js";
 
 const questions = [
   {
@@ -856,6 +857,7 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
       <div className="client-content">
         <p className="eyebrow">SUPER-ADMIN</p>
         <h1>Page d’accueil</h1>
+        <NotificationSettings csrfToken={csrfToken} />
         <section className="client-card" aria-labelledby="homepage-image-title">
           <h2 id="homepage-image-title">Image de couverture</h2>
           <p>Choisissez l’image affichée en haut du site. Sans image, le fond reste gris.</p>
@@ -880,6 +882,51 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
         </section>
       </div>
     </main>
+  );
+}
+
+function NotificationSettings({ csrfToken }) {
+  const [status, setStatus] = useState(null);
+  const [notice, setNotice] = useState("");
+  const [working, setWorking] = useState(false);
+  async function load() {
+    try {
+      setStatus(await apiRequest("admin-notifications.php"));
+      setNotice("");
+    } catch (cause) {
+      setNotice(cause.message);
+    }
+  }
+  useEffect(() => { load(); }, []);
+  async function retryFailed() {
+    setWorking(true);
+    try {
+      const result = await apiRequest("admin-notifications.php", { csrfToken, body: { action: "retry-failed" } });
+      setNotice(`${result.retried} e-mail(s) remis en attente.`);
+      await load();
+    } catch (cause) {
+      setNotice(cause.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+  return (
+    <section className="client-card" aria-labelledby="notification-settings-title">
+      <h2 id="notification-settings-title">E-mails de rendez-vous</h2>
+      {notice && <p className="form-message form-error" role="alert">{notice}</p>}
+      {!status ? <p>Chargement de la file d’envoi…</p> : (
+        <>
+          <dl className="client-details notification-stats">
+            <div><dt>En attente / reprise</dt><dd>{status.counts.queued + status.counts.retry}</dd></div>
+            <div><dt>En erreur définitive</dt><dd>{status.counts.failed}</dd></div>
+            <div><dt>Dernier envoi accepté</dt><dd>{status.lastSent || "Aucun"}</dd></div>
+            <div><dt>Prochain envoi prévu</dt><dd>{status.nextSend || "Aucun"}</dd></div>
+          </dl>
+          <p>Le cron cPanel doit exécuter <code>php /home/UTILISATEUR_CPANEL/public_html/api/send-notifications.php</code> régulièrement. Les rendez-vous créés, modifiés ou annulés produisent un e-mail ; les rappels sont programmés une semaine et un jour avant si la date le permet.</p>
+          {status.counts.failed > 0 && <button className="auth-submit" type="button" disabled={working} onClick={retryFailed}>{working ? "Remise en attente…" : "Réessayer les e-mails en erreur"}</button>}
+        </>
+      )}
+    </section>
   );
 }
 

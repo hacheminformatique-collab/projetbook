@@ -159,7 +159,7 @@ function BookingForm({ salonId, services, session, appointmentId }) {
     }
   }
   if (confirmed) {
-    return <><p className="form-message form-success" role="status">{notice.text} Aucun e-mail n’est encore envoyé.</p><Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link></>;
+    return <><p className="form-message form-success" role="status">{notice.text} Un e-mail de confirmation sera envoyé selon la fréquence du cron. Les rappels sont programmés à J−7 et J−1 lorsque la date le permet.</p><Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link></>;
   }
   return (
     <>
@@ -227,7 +227,7 @@ export function Appointments({ csrfToken, professional = false }) {
   return (
     <section className="client-card">
       <h2>{professional ? "Agenda" : "Mes rendez-vous"}</h2>
-      <p className="field-hint">Horaires d’Algérie (UTC+1). Les notifications par e-mail ne sont pas encore activées.</p>
+      <p className="field-hint">Horaires d’Algérie (UTC+1). Confirmation et rappels envoyés par e-mail par la tâche cron du site.</p>
       <div className="booking-toolbar">
         {professional ? <label>Journée <input aria-label="Journée de l’agenda" type="date" required value={date} onChange={(event) => { setDate(event.target.value); setPage(1); }} /></label> : (
           <label>Afficher <select aria-label="Filtre des rendez-vous" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }}>

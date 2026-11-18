@@ -102,8 +102,9 @@ statique et l'API PHP.
 Pour une base existante déjà installée, importer une fois
 `database/migrations/003_super_admin_setup.sql`, puis
 `database/migrations/004_homepage_image.sql` et
-`database/migrations/005_booking.sql` dans phpMyAdmin, uniquement pour les
-migrations non encore appliquées. Les nouvelles
+`database/migrations/005_booking.sql` et
+`database/migrations/006_appointment_notifications.sql` dans phpMyAdmin,
+uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 
 Le serveur doit avoir PHP 8.1+ avec PDO MySQL, MySQL/MariaDB et Apache avec
@@ -112,6 +113,27 @@ prise en charge des formats JPEG, PNG et WebP, est nécessaire pour changer
 l'image d'accueil. L'extension **EXIF** est également nécessaire pour orienter
 correctement les photos JPEG. Aucun processus Node.js à maintenir sur le
 serveur.
+
+Pour les e-mails, créez dans cPanel une adresse d'expédition sur votre domaine,
+puis renseignez `mail_from` et `mail_from_name` dans
+`bookili-config.php` (hors de `public_html`). Ajoutez ensuite une tâche cron
+cPanel, par exemple :
+
+```bash
+*/15 * * * * /usr/local/bin/php /home/UTILISATEUR_CPANEL/public_html/api/send-notifications.php
+```
+
+Le chemin PHP peut être `/usr/bin/php` selon l'hébergeur ; utilisez la version
+PHP 8.1+ avec PDO MySQL. Testez le chemin et la configuration en lançant
+manuellement la commande sans `*/15 * * * *`. `mail()` doit pouvoir transmettre
+à l'agent d'envoi local de l'hébergeur. Configurez SPF/DKIM et vérifiez la
+réception de test ; une transmission acceptée par cPanel ne garantit pas la
+livraison en boîte de réception. Tant que le cron n'est pas activé, les
+notifications restent en attente et les rappels peuvent arriver en retard.
+Pour tester le worker sans envoyer de vrais e-mails, `tests/fake-sendmail.sh`
+capture les messages dans le fichier défini par `BOOKILI_TEST_MAILBOX` et
+`BOOKILI_TEST_MAIL_FAIL=1` simule un refus temporaire. Utilisez exclusivement
+une base jetable et des comptes de test.
 
 L'API sert un jeton CSRF de session, chiffre les mots de passe avec
 `password_hash`, utilise des requêtes SQL préparées, limite les tentatives de
@@ -165,11 +187,18 @@ que les clients ayant un rendez-vous non annulé dans son propre salon.
 - Les dates sont calculées explicitement dans le fuseau `Africa/Algiers`.
   Réservation et modification de créneau possibles jusqu'à 60 jours à l'avance.
 - La confirmation est immédiate à l'écran, sans validation manuelle
-  supplémentaire du professionnel. **Aucun e-mail de confirmation ou rappel
-  n'est encore envoyé**, aucun paiement n'est effectué en ligne.
+  supplémentaire du professionnel. Une file transactionnelle programme
+  confirmation, modification, annulation et rappels à J−7 et J−1. Le cron
+  les traite toutes les 15 minutes avec reprises progressives, jusqu'à cinq
+  tentatives. Une modification invalide les rappels précédents et les
+  reprogramme ; un rappel dont l'heure est déjà passée n'est pas envoyé.
+  Configurez l'expéditeur et le cron ci-dessus : sans eux, les e-mails ne
+  partiront pas. Aucun paiement n'est effectué en ligne.
 - Les mutations d'agenda sont sérialisées par verrou InnoDB sur le salon et
   la disponibilité est revérifiée avant enregistrement pour éviter les
   doubles réservations. Une modification échouée conserve le rendez-vous initial.
+- La mise en file des courriels est dans la même transaction que le rendez-vous ;
+  si elle échoue, la réservation est annulée aussi.
 - Le prix et la durée sont figés pour une réservation existante. Une
   modification volontaire de la réservation adopte les caractéristiques
   affichées de la prestation choisie ; un changement de tarif ou de durée
@@ -178,7 +207,7 @@ que les clients ayant un rendez-vous non annulé dans son propre salon.
   déjà confirmés. Leur annulation reste possible même si le salon est masqué.
 
 La caisse, les stocks, les cartes cadeaux, la gestion multi-collaborateurs,
-les abonnements et les campagnes e-mail restent à développer.
+les abonnements et les campagnes marketing restent à développer.
 
 ## État du projet
 
@@ -187,13 +216,17 @@ les 58 wilayas algériennes, des formulaires d'inscription client et
 professionnel, la connexion par mot de passe, le tableau de bord de validation
 des demandes professionnelles, la création initiale du super-admin, la
 personnalisation de l'image d'accueil, la gestion du téléphone et du mot
-de passe client, la configuration du salon, l'annuaire et le parcours de réservation.
+de passe client, la configuration du salon, l'annuaire et le parcours de
+réservation avec notifications e-mail et rappels programmés.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
-`professional_profiles`, `salons`, `services`, `platform_setup` et
-`homepage_image`, `salon_hours` et `appointments`. Pour une
+`professional_profiles`, `salons`, `services`, `platform_setup`,
+`homepage_image`, `salon_hours`, `appointments` et `notification_outbox`.
+Pour une
 base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/002_registration_auth.sql`, puis
 `database/migrations/003_super_admin_setup.sql`,
-`database/migrations/004_homepage_image.sql` et
-`database/migrations/005_booking.sql`, dans cet ordre.
+`database/migrations/004_homepage_image.sql`,
+`database/migrations/005_booking.sql` et
+`database/migrations/006_appointment_notifications.sql`, dans cet ordre,
+uniquement si ces migrations ne sont pas déjà appliquées.

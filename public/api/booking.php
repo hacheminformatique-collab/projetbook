@@ -134,3 +134,63 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
     }
     return $slots;
 }
+
+function bookili_queue_email(PDO $pdo, array $appointment, string $kind, DateTimeImmutable $sendAt): void
+{
+    $formattedDate = (new DateTimeImmutable($appointment['starts_at'], new DateTimeZone('Africa/Algiers')))
+        ->format('d/m/Y à H:i');
+    $salonPhone = $appointment['salon_phone'] ?: 'Non renseigné';
+    $price = number_format((int) $appointment['price_dzd'], 0, ',', ' ') . ' DA';
+    $details = "Établissement : {$appointment['salon_name']}\nPrestation : {$appointment['service_name']}\nDate et heure : {$formattedDate}\nAdresse : {$appointment['address']}, {$appointment['city']}\nTéléphone : {$salonPhone}\nPrix à régler sur place : {$price} (aucun paiement en ligne).\n";
+    $content = match ($kind) {
+        'confirmation' => ["Votre rendez-vous BOOKILI est confirmé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous est confirmé.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
+        'rescheduled' => ["Votre rendez-vous BOOKILI a été modifié", "Bonjour {$appointment['first_name']},\n\nLa modification de votre rendez-vous est confirmée.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
+        'cancelled' => ["Votre rendez-vous BOOKILI a été annulé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous du {$formattedDate} chez {$appointment['salon_name']} a été annulé. Aucun paiement n’a été effectué.\n\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
+        'reminder_7d' => ["Rappel BOOKILI : rendez-vous dans une semaine", "Bonjour {$appointment['first_name']},\n\nPetit rappel : votre rendez-vous BOOKILI aura lieu dans une semaine.\n\n{$details}\nNous vous attendons bientôt !"],
+        'reminder_1d' => ["Rappel BOOKILI : rendez-vous demain", "Bonjour {$appointment['first_name']},\n\nPetit rappel : votre rendez-vous BOOKILI aura lieu demain.\n\n{$details}\nNous vous attendons bientôt !"],
+    };
+    $statement = $pdo->prepare(
+        'INSERT INTO notification_outbox
+          (appointment_id, appointment_version, kind, recipient, subject, message_body, send_after)
+         VALUES (:appointment_id, :version, :kind, :recipient, :subject, :message_body, :send_after)'
+    );
+    $statement->execute([
+        'appointment_id' => $appointment['id'],
+        'version' => $appointment['notification_version'],
+        'kind' => $kind,
+        'recipient' => $appointment['email'],
+        'subject' => $content[0],
+        'message_body' => $content[1],
+        'send_after' => $sendAt->format('Y-m-d H:i:s'),
+    ]);
+}
+
+function bookili_queue_appointment_emails(PDO $pdo, int $appointmentId, string $event): void
+{
+    $statement = $pdo->prepare(
+        'SELECT b.id, b.notification_version, b.status, b.starts_at, b.service_name, b.price_dzd,
+                a.email, c.first_name, s.name AS salon_name, s.city, s.address, s.phone_number AS salon_phone
+         FROM appointments b
+         INNER JOIN accounts a ON a.id = b.client_id
+         INNER JOIN client_profiles c ON c.account_id = b.client_id
+         INNER JOIN salons s ON s.id = b.salon_id
+         WHERE b.id = :id'
+    );
+    $statement->execute(['id' => $appointmentId]);
+    $appointment = $statement->fetch();
+    if (!$appointment || !filter_var($appointment['email'], FILTER_VALIDATE_EMAIL)) {
+        throw new RuntimeException('Appointment notification recipient is invalid.');
+    }
+
+    $now = bookili_now();
+    $eventTime = new DateTimeImmutable($appointment['starts_at'], new DateTimeZone('Africa/Algiers'));
+    bookili_queue_email($pdo, $appointment, $event, $now);
+    if ($event === 'cancelled') return;
+
+    foreach (['reminder_7d' => '-7 days', 'reminder_1d' => '-1 day'] as $kind => $interval) {
+        $sendAt = $eventTime->modify($interval);
+        if ($sendAt > $now) {
+            bookili_queue_email($pdo, $appointment, $kind, $sendAt);
+        }
+    }
+}

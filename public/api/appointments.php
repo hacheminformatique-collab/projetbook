@@ -92,7 +92,14 @@ try {
         }
     }
     if ($action === 'cancel') {
-        $pdo->prepare("UPDATE appointments SET status = 'cancelled' WHERE id = :id")->execute(['id' => $appointmentId]);
+        $pdo->prepare("UPDATE appointments SET status = 'cancelled', notification_version = notification_version + 1 WHERE id = :id")
+            ->execute(['id' => $appointmentId]);
+        $pdo->prepare(
+            "UPDATE notification_outbox SET status = 'cancelled'
+             WHERE appointment_id = :id AND kind IN ('reminder_7d', 'reminder_1d')
+             AND status IN ('queued', 'retry')"
+        )->execute(['id' => $appointmentId]);
+        bookili_queue_appointment_emails($pdo, $appointmentId, 'cancelled');
     } else {
         bookili_public_salon($pdo, $salonId);
         $service = bookili_service($pdo, $salonId, $serviceId);
@@ -118,11 +125,19 @@ try {
             $params += ['salon_id' => $salonId, 'client_id' => $account['id']];
         } else {
             $sql = 'UPDATE appointments SET service_id = :service_id, service_name = :service_name, price_dzd = :price,
-                    starts_at = :starts, ends_at = :ends WHERE id = :id';
+                    starts_at = :starts, ends_at = :ends, notification_version = notification_version + 1 WHERE id = :id';
             $params['id'] = $appointmentId;
         }
         $pdo->prepare($sql)->execute($params);
         if ($action === 'book') $appointmentId = (int) $pdo->lastInsertId();
+        else {
+            $pdo->prepare(
+                "UPDATE notification_outbox SET status = 'cancelled'
+                 WHERE appointment_id = :id AND kind IN ('reminder_7d', 'reminder_1d')
+                 AND status IN ('queued', 'retry')"
+            )->execute(['id' => $appointmentId]);
+        }
+        bookili_queue_appointment_emails($pdo, $appointmentId, $action === 'book' ? 'confirmation' : 'rescheduled');
     }
     $pdo->commit();
     bookili_json_response($action === 'book' ? 201 : 200, ['appointmentId' => $appointmentId, 'message' => $action === 'cancel' ? 'Rendez-vous annulé.' : 'Votre rendez-vous est confirmé.']);
