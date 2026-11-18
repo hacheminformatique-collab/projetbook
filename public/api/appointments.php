@@ -49,7 +49,7 @@ try {
     }
 
     $action = $data['action'] ?? '';
-    if (!in_array($action, ['book', 'reschedule', 'cancel'], true) || ($professional && $action !== 'cancel')) {
+    if (!in_array($action, ['book', 'reschedule', 'cancel'], true) || ($professional && $action === 'book')) {
         bookili_json_response(422, ['error' => 'Action non autorisée.']);
     }
     $appointmentId = $action !== 'book' ? bookili_id($data['appointmentId'] ?? null) : null;
@@ -109,7 +109,7 @@ try {
         )->execute(['id' => $appointmentId]);
         bookili_queue_appointment_emails($pdo, $appointmentId, 'cancelled');
     } else {
-        bookili_public_salon($pdo, $salonId);
+        if (!$professional) bookili_public_salon($pdo, $salonId);
         $service = bookili_service($pdo, $salonId, $serviceId);
         $staff = bookili_salon_staff($pdo, $salonId);
         if (count($staff) > 0 && $staffId === 0) {

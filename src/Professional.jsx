@@ -1,15 +1,24 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Appointments } from "./Booking.jsx";
+import ProfessionalAgenda from "./ProfessionalAgenda.jsx";
 import CashRegister from "./CashRegister.jsx";
 import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
+
+const workspaceTabs = [["agenda", "Agenda"], ["caisse", "Caisse"], ["clients", "Clients"], ["admin", "Admin"]];
+const workspaceViews = {
+  agenda: [["planning", "Planning"], ["closures", "Fermetures exceptionnelles"]],
+  caisse: [["cash", "Caisse et suivi des ventes"]],
+  clients: [["directory", "Fichier clients"]],
+  admin: [["services", "Prestations"], ["staff", "Collaborateurs"], ["salon", "Salon et horaires"]],
+};
 
 export default function ProfessionalSpace() {
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [configuration, setConfiguration] = useState(null);
   const [tab, setTab] = useState("agenda");
+  const [view, setView] = useState(workspaceViews.agenda[0][0]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -39,42 +48,52 @@ export default function ProfessionalSpace() {
     } catch (cause) { setError(cause.message); }
   }
   return (
-    <main className="client-page">
-      <header className="commercial-header">
-        <Link className="logo" to="/">BOOKILI</Link>
-        <div className="commercial-user">
-          {configuration && <span>{configuration.salon.name}</span>}
+    <div className="pro-workspace">
+      <header className="pro-topbar">
+        <Link className="pro-salon-name" to="/" aria-label={`${configuration?.salon.name || "BOOKILI"} — Accueil BOOKILI`}>
+          {configuration?.salon.name || "BOOKILI"}
+        </Link>
+        {configuration && <nav className="pro-tabs" aria-label="Espace professionnel">
+          {workspaceTabs.map(([value, name]) => (
+            <button key={value} type="button" aria-current={tab === value ? "page" : undefined} onClick={() => {
+              if (value !== tab) {
+                setTab(value);
+                setView(workspaceViews[value][0][0]);
+              }
+            }}>{name}</button>
+          ))}
+        </nav>}
+        <div className="pro-session">
           {session && <button type="button" onClick={logout}>Se déconnecter</button>}
         </div>
       </header>
-      <div className="professional-content">
-        <p className="eyebrow">ESPACE PROFESSIONNEL</p>
-        <h1>{configuration?.salon.name || "Votre établissement"}</h1>
-        {error && <p className="form-message form-error" role="alert">{error}</p>}
-        {!configuration && !error && <p>Chargement de votre espace…</p>}
-        {configuration && (
-          <>
-            <nav className="workspace-tabs" aria-label="Espace professionnel">
-              {[["agenda", "Agenda"], ["caisse", "Caisse"], ["clients", "Clients"], ["admin", "Admin"]].map(([value, name]) => (
-                <button key={value} type="button" aria-current={tab === value ? "page" : undefined} onClick={() => setTab(value)}>{name}</button>
-              ))}
-            </nav>
-            <p className="form-message">Les rendez-vous sont répartis entre les collaborateurs actifs, selon leurs disponibilités et les horaires du salon. {Number(configuration.salon.is_public) ? <Link className="inline-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link> : "Votre salon est masqué. Configurez vos prestations et horaires dans Admin avant de le publier."}</p>
-            {tab === "agenda" && <>
-              <Appointments professional csrfToken={session.csrfToken} />
-              <ClosureSettings csrfToken={session.csrfToken} />
-            </>}
-            {tab === "caisse" && <CashRegister csrfToken={session.csrfToken} />}
-            {tab === "clients" && <ProfessionalClients />}
-            {tab === "admin" && <>
-              <ServiceSettings csrfToken={session.csrfToken} />
-              <StaffSettings csrfToken={session.csrfToken} salonHours={configuration.hours} />
-              <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} />
-            </>}
-          </>
-        )}
+      <div className="pro-layout">
+        {configuration && <aside className="pro-sidebar">
+          <nav aria-label={`Rubriques ${workspaceTabs.find(([value]) => value === tab)[1]}`}>
+            {workspaceViews[tab].map(([value, label]) => (
+              <button key={value} type="button" aria-current={view === value ? "page" : undefined} onClick={() => setView(value)}>{label}</button>
+            ))}
+          </nav>
+          {Number(configuration.salon.is_public)
+            ? <Link className="pro-public-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link>
+            : <p className="pro-public-link">Salon non publié</p>}
+        </aside>}
+        <main className="pro-panel">
+          {error && <p className="form-message form-error" role="alert">{error}</p>}
+          {!configuration && !error && <p role="status">Chargement de votre espace…</p>}
+          {configuration && <>
+            <h1>{workspaceViews[tab].find(([value]) => value === view)[1]}</h1>
+            {view === "planning" && <ProfessionalAgenda csrfToken={session.csrfToken} />}
+            {view === "closures" && <ClosureSettings csrfToken={session.csrfToken} />}
+            {view === "cash" && <CashRegister csrfToken={session.csrfToken} />}
+            {view === "directory" && <ProfessionalClients />}
+            {view === "services" && <ServiceSettings csrfToken={session.csrfToken} />}
+            {view === "staff" && <StaffSettings csrfToken={session.csrfToken} salonHours={configuration.hours} />}
+            {view === "salon" && <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} />}
+          </>}
+        </main>
       </div>
-    </main>
+    </div>
   );
 }
 

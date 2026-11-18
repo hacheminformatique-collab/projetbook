@@ -11,15 +11,22 @@ $staffId = isset($_GET['staffId']) ? bookili_id($_GET['staffId']) : 0;
 
 try {
     $pdo = bookili_database();
-    bookili_public_salon($pdo, $salonId);
     if ($excludeId) {
-        $account = bookili_require_role($pdo, ['client']);
-        $statement = $pdo->prepare(
-            "SELECT id FROM appointments WHERE id = :id AND salon_id = :salon_id AND client_id = :client_id AND status = 'confirmed'"
-        );
-        $statement->execute(['id' => $excludeId, 'salon_id' => $salonId, 'client_id' => $account['id']]);
+        $account = bookili_require_role($pdo, ['client', 'professional']);
+        if ($account['role'] === 'professional') {
+            $salon = bookili_own_salon($pdo, (int) $account['id']);
+            if ((int) $salon['id'] !== $salonId) bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
+            $statement = $pdo->prepare("SELECT id FROM appointments WHERE id = :id AND salon_id = :salon_id AND status = 'confirmed'");
+            $statement->execute(['id' => $excludeId, 'salon_id' => $salonId]);
+        } else {
+            bookili_public_salon($pdo, $salonId);
+            $statement = $pdo->prepare(
+                "SELECT id FROM appointments WHERE id = :id AND salon_id = :salon_id AND client_id = :client_id AND status = 'confirmed'"
+            );
+            $statement->execute(['id' => $excludeId, 'salon_id' => $salonId, 'client_id' => $account['id']]);
+        }
         if (!$statement->fetch()) bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
-    }
+    } else bookili_public_salon($pdo, $salonId);
     $service = bookili_service($pdo, $salonId, $serviceId);
     $staff = bookili_salon_staff($pdo, $salonId);
     $slots = count($staff) > 0 && $staffId === 0

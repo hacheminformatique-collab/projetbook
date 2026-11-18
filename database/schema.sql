@@ -207,6 +207,15 @@ CREATE TABLE IF NOT EXISTS appointments (
   CONSTRAINT appointments_staff_fk FOREIGN KEY (staff_id) REFERENCES staff_members (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS appointment_private_notes (
+  appointment_id BIGINT UNSIGNED NOT NULL,
+  note TEXT NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (appointment_id),
+  CONSTRAINT appointment_private_notes_appointment_fk
+    FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS notification_outbox (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   appointment_id BIGINT UNSIGNED NOT NULL,

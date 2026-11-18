@@ -81,6 +81,9 @@ Le test `tests/cash.py` vérifie la caisse et les cartes cadeaux. Le test
 `tests/bookings.py` inclut aussi l’agenda multi-collaborateurs et le consentement
 aux campagnes marketing. Ils nécessitent chacun une base jetable neuve avec
 toutes les migrations à jour.
+Le test `tests/professional-agenda.py` vérifie les notes privées, les droits
+par salon et les modifications de rendez-vous ; il exige également une base
+jetable neuve et les mêmes variables.
 
 La clé de test doit correspondre à `setup_token` et contenir au moins
 64 caractères. Les tests qui créent le super-admin ne doivent pas partager
@@ -129,8 +132,9 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/011_admin_billing.sql`,
 `database/migrations/012_multi_staff.sql`,
 `database/migrations/013_marketing_campaigns.sql`,
-`database/migrations/014_staff_hours.sql`, puis
-`database/migrations/015_password_reset.sql` dans phpMyAdmin,
+`database/migrations/014_staff_hours.sql`,
+`database/migrations/015_password_reset.sql`, puis
+`database/migrations/016_appointment_notes.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -236,8 +240,12 @@ réservables.
 
 Un client connecté peut confirmer un créneau, retrouver ses rendez-vous à
 venir ou passés dans `/espace-client`, puis modifier la prestation et le
-créneau ou annuler avant le début. Le professionnel consulte l'agenda d'une
-journée et peut annuler les rendez-vous futurs ; l'onglet Clients ne montre
+créneau ou annuler avant le début. Le professionnel consulte la grille de la
+journée, ouvre les détails et les coordonnées du client, enregistre une note
+privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.
+La modification utilise les disponibilités et les prix actuels ; le déplacement
+par glisser-déposer et les notes permanentes sur la fiche client restent à
+développer. L'onglet Clients ne montre
 que les clients ayant un rendez-vous non annulé dans son propre salon.
 
 **Périmètre de cette version :**
@@ -340,6 +348,26 @@ exacte, sous-dossier compris.
 
 ## Feuille de route
 
+La structure de l’espace professionnel suit les références : nom du salon en
+haut à gauche, quatre onglets dans la barre supérieure et rubriques propres à
+chaque onglet dans le panneau latéral. Sur mobile, les rubriques passent sous
+les onglets. Les archives de référence ne sont pas incluses dans le dépôt.
+
+Premier lot livré : grille journalière complète, colonnes d’équipe, fiche
+rendez-vous, coordonnées client et notes privées par rendez-vous. Le changement
+de créneau, de prestation ou de collaborateur se fait depuis la fiche.
+La conformité visuelle intégrale aux ZIP n’est pas encore acquise : restent
+notamment le calendrier latéral, les interactions avancées de l’agenda,
+la refonte détaillée de Caisse, Clients et Admin, puis le parcours client.
+
+| Références | Éléments à reproduire dans BOOKILI |
+| --- | --- |
+| Accueil, captures 83–84 | Menu transparent sur la couverture puis clair au défilement, recherche à deux champs, FAQ en accordéon. Conserver le fond gris par défaut et la recherche en Algérie. |
+| Agenda, capture 2 | Calendrier et équipe à gauche, grille horaire centrale avec une colonne par collaborateur, blocs de rendez-vous positionnés dans le temps. |
+| Caisse, captures 3–32 et tableau de bord PDF | Encaissement, tickets et règlements, stocks et cartes cadeaux, vues comptables par période, indicateurs de visites et de ventes en DA. Les modes de paiement et les états fiscaux des exemples ne sont pas importés tels quels. |
+| Clients, captures 33–46 | Fichier client, listes et filtres, historique, vues de suivi et avis ; fiche accessible depuis le rendez-vous. |
+| Admin, captures 47–82 | Paramètres du salon, de l’équipe, des prestations et de la réservation en ligne, médias, notifications et tableaux de suivi. |
+
 1. Valider sur une base de test les migrations et les parcours de réservation,
    caisse, cartes cadeaux, abonnements, exports et campagnes avant mise en production.
 2. Reprendre intégralement les deux ZIP de référence, écran par écran :
@@ -395,6 +423,7 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/011_admin_billing.sql`,
 `database/migrations/012_multi_staff.sql`,
 `database/migrations/013_marketing_campaigns.sql`,
-`database/migrations/014_staff_hours.sql` et
-`database/migrations/015_password_reset.sql`, dans cet ordre,
+`database/migrations/014_staff_hours.sql`,
+`database/migrations/015_password_reset.sql` et
+`database/migrations/016_appointment_notes.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.
