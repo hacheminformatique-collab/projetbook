@@ -215,10 +215,12 @@ function ComingSoon({ audience, title, description }) {
   );
 }
 
-function AuthPage({ professional = false }) {
+function AuthPage({ professional = false, commercial = false, onAuthenticated }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [mode, setMode] = useState(searchParams.get("mode") === "inscription" ? "register" : "login");
+  const [mode, setMode] = useState(
+    !commercial && searchParams.get("mode") === "inscription" ? "register" : "login",
+  );
   const [csrfToken, setCsrfToken] = useState("");
   const [csrfError, setCsrfError] = useState("");
   const [notice, setNotice] = useState(null);
@@ -268,8 +270,10 @@ function AuthPage({ professional = false }) {
 
       if (mode === "login") {
         const isClient = result.account?.role === "client";
-        const expectedRole = professional ? "professional" : "client";
-        if (result.account?.role !== expectedRole) {
+        const allowedRoles = commercial
+          ? ["commercial", "super_admin"]
+          : [professional ? "professional" : "client"];
+        if (!allowedRoles.includes(result.account?.role)) {
           await fetch("/api/logout.php", {
             method: "POST",
             credentials: "same-origin",
@@ -283,7 +287,13 @@ function AuthPage({ professional = false }) {
           return;
         }
         setCsrfToken(result.csrfToken);
-        navigate(isClient ? "/espace-client" : "/espace-professionnel");
+        if (onAuthenticated) {
+          onAuthenticated(result.account, result.csrfToken);
+        } else if (commercial) {
+          navigate("/gestion-commercial");
+        } else {
+          navigate(isClient ? "/espace-client" : "/espace-professionnel");
+        }
         return;
       }
 
@@ -302,7 +312,9 @@ function AuthPage({ professional = false }) {
     }
   }
 
-  const title = professional
+  const title = commercial
+    ? "Connexion équipe BOOKILI"
+    : professional
     ? mode === "login" ? "Connexion professionnelle" : "Créer votre espace professionnel"
     : mode === "login" ? "Connexion à votre compte" : "Créer votre compte BOOKILI";
 
@@ -310,16 +322,18 @@ function AuthPage({ professional = false }) {
     <main className="auth-page">
       <Link to="/" className="coming-logo">BOOKILI</Link>
       <section className="auth-card" aria-labelledby="auth-title">
-        <p className="eyebrow">{professional ? "ESPACE PROFESSIONNEL" : "ESPACE CLIENT"}</p>
+        <p className="eyebrow">{commercial ? "GESTION COMMERCIALE" : professional ? "ESPACE PROFESSIONNEL" : "ESPACE CLIENT"}</p>
         <h1 id="auth-title">{title}</h1>
-        <div className="auth-switch" aria-label="Choisir une action">
-          <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setNotice(null); }}>
-            Se connecter
-          </button>
-          <button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setNotice(null); }}>
-            {professional ? "Demander un accès" : "Créer un compte"}
-          </button>
-        </div>
+        {!commercial && (
+          <div className="auth-switch" aria-label="Choisir une action">
+            <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setNotice(null); }}>
+              Se connecter
+            </button>
+            <button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setNotice(null); }}>
+              {professional ? "Demander un accès" : "Créer un compte"}
+            </button>
+          </div>
+        )}
         {csrfError && <p className="form-message form-error" role="alert">{csrfError}</p>}
         {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
 
@@ -390,6 +404,324 @@ function AuthPage({ professional = false }) {
   );
 }
 
+function AdminSetup({ onComplete }) {
+  const [csrfToken, setCsrfToken] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [notice, setNotice] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/csrf.php", { credentials: "same-origin" })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Le formulaire de configuration est indisponible.");
+        setCsrfToken(result.csrfToken);
+      })
+      .catch(() => setNotice({ kind: "error", text: "Impossible de préparer le formulaire sécurisé. Vérifiez la configuration serveur." }));
+  }, []);
+
+  async function submit(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setNotice(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/setup-admin.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(Object.fromEntries(new FormData(form).entries())),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setNotice({ kind: "error", text: result.error || "La configuration n’a pas abouti." });
+        return;
+      }
+
+      form.reset();
+      setNotice({ kind: "success", text: result.message });
+    } catch {
+      setNotice({ kind: "error", text: "Impossible de joindre BOOKILI. Réessayez." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <Link to="/" className="coming-logo">BOOKILI</Link>
+      <section className="auth-card" aria-labelledby="setup-title">
+        <p className="eyebrow">PREMIÈRE CONFIGURATION</p>
+        <h1 id="setup-title">Créer le super-admin</h1>
+        <p className="auth-description">
+          Cette étape ne peut être effectuée qu’une seule fois. Utilisez la clé
+          secrète configurée hors du dossier public de votre hébergement.
+        </p>
+        {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+        {notice?.kind === "success" ? (
+          <button className="auth-submit" type="button" onClick={onComplete}>Aller à la connexion</button>
+        ) : (
+        <form className="auth-form" onSubmit={submit}>
+          <label>Clé de configuration
+            <input name="setupToken" type="password" required minLength={64} maxLength={256} autoComplete="off" />
+          </label>
+          <label>Adresse e-mail administrateur
+            <input name="email" type="email" required maxLength={254} autoComplete="email" />
+          </label>
+          <label>Mot de passe administrateur
+            <input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" />
+            <span className="field-hint">Au moins 12 caractères.</span>
+          </label>
+          <button className="auth-submit" type="submit" disabled={!csrfToken || isSubmitting}>
+            {isSubmitting ? "Configuration…" : "Créer le super-admin"}
+          </button>
+        </form>
+        )}
+        <p className="auth-footnote">Après la création, retirez la clé du fichier de configuration cPanel.</p>
+      </section>
+    </main>
+  );
+}
+
+function CommercialGate() {
+  const [setupStatus, setSetupStatus] = useState("loading");
+  const [setupError, setSetupError] = useState("");
+  const [access, setAccess] = useState({ status: "loading", account: null, csrfToken: "" });
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetch("/api/setup-status.php", { credentials: "same-origin" }).then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Configuration du serveur indisponible.");
+        return result;
+      }),
+      fetch("/api/session.php", { credentials: "same-origin" }).then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Session indisponible.");
+        return result;
+      }),
+    ])
+      .then(([setup, session]) => {
+        if (!active) return;
+        setSetupStatus(setup.setupAvailable ? "available" : setup.setupRequired ? "not-configured" : "complete");
+        if (session.authenticated && ["commercial", "super_admin"].includes(session.account?.role)) {
+          setAccess({ status: "authorized", account: session.account, csrfToken: session.csrfToken });
+        } else {
+          setAccess({ status: "login", account: null, csrfToken: session.csrfToken || "" });
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSetupError(error.message);
+        setSetupStatus("error");
+        setAccess({ status: "login", account: null, csrfToken: "" });
+      });
+    return () => { active = false; };
+  }, []);
+
+  if (setupStatus === "loading" || access.status === "loading") {
+    return <main className="coming-page"><p className="coming-logo">BOOKILI</p><p className="auth-description">Chargement de la gestion commerciale…</p></main>;
+  }
+
+  if (setupStatus === "error") {
+    return (
+      <main className="coming-page">
+        <Link to="/" className="coming-logo">BOOKILI</Link>
+        <section className="coming-card">
+          <p className="eyebrow">GESTION COMMERCIALE</p>
+          <h1>Gestion commerciale indisponible</h1>
+          <p>{setupError}</p>
+          <p>Vérifiez la configuration MySQL et le schéma de la base dans cPanel.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (setupStatus === "not-configured") {
+    return (
+      <main className="coming-page">
+        <Link to="/" className="coming-logo">BOOKILI</Link>
+        <section className="coming-card">
+          <p className="eyebrow">GESTION COMMERCIALE</p>
+          <h1>Configuration initiale nécessaire</h1>
+          <p>Ajoutez une clé secrète dans le fichier de configuration du serveur avant de créer le premier super-admin. Consultez les instructions d’installation dans le README.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (setupStatus === "available") {
+    return <AdminSetup onComplete={() => setSetupStatus("complete")} />;
+  }
+
+  if (access.status === "authorized") {
+    return (
+      <CommercialDashboard
+        account={access.account}
+        csrfToken={access.csrfToken}
+        onLogout={() => setAccess({ status: "login", account: null, csrfToken: "" })}
+      />
+    );
+  }
+
+  return (
+    <AuthPage
+      commercial
+      onAuthenticated={(account, csrfToken) => setAccess({ status: "authorized", account, csrfToken })}
+    />
+  );
+}
+
+function CommercialDashboard({ account, csrfToken, onLogout }) {
+  const [filter, setFilter] = useState("pending");
+  const [applications, setApplications] = useState([]);
+  const [reviewNotes, setReviewNotes] = useState({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [workingId, setWorkingId] = useState(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  async function loadApplications() {
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/commercial-applications.php?status=${encodeURIComponent(filter)}`, {
+        credentials: "same-origin",
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Impossible de charger les demandes.");
+      setApplications(result.applications);
+    } catch (cause) {
+      setError(cause.message || "Impossible de joindre BOOKILI.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadApplications();
+  }, [filter]);
+
+  async function reviewApplication(applicationId, decision) {
+    setWorkingId(applicationId);
+    setNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/review-application.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ applicationId, decision, reviewNote: reviewNotes[applicationId] || "" }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "La demande n’a pas pu être mise à jour.");
+      setReviewNotes((notes) => {
+        const updated = { ...notes };
+        delete updated[applicationId];
+        return updated;
+      });
+      setNotice(decision === "approve" ? "Demande validée. Le compte professionnel est activé." : "Demande refusée. Le compte professionnel est suspendu.");
+      await loadApplications();
+    } catch (cause) {
+      setError(cause.message || "Impossible de joindre BOOKILI.");
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  async function logout() {
+    try {
+      const response = await fetch("/api/logout.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrfToken },
+      });
+      if (!response.ok) throw new Error("La déconnexion n’a pas abouti.");
+      onLogout();
+    } catch (cause) {
+      setError(cause.message || "Impossible de joindre BOOKILI.");
+    }
+  }
+
+  return (
+    <main className="commercial-page">
+      <header className="commercial-header">
+        <Link className="logo" to="/">BOOKILI</Link>
+        <div className="commercial-user">
+          <span>{account.email}</span>
+          <button type="button" onClick={logout}>Se déconnecter</button>
+        </div>
+      </header>
+      <section className="commercial-content">
+        <div className="commercial-title">
+          <div>
+            <p className="eyebrow">ESPACE ÉQUIPE</p>
+            <h1>Gestion commerciale</h1>
+            <p>Examinez et traitez les inscriptions des professionnels.</p>
+          </div>
+          <label className="application-filter">Afficher
+            <select value={filter} onChange={(event) => setFilter(event.target.value)}>
+              <option value="pending">À traiter</option>
+              <option value="submitted">Soumises</option>
+              <option value="in_review">En examen</option>
+              <option value="approved">Validées</option>
+              <option value="rejected">Refusées</option>
+            </select>
+          </label>
+        </div>
+        {error && <p className="form-message form-error" role="alert">{error}</p>}
+        {notice && <p className="form-message form-success" role="status">{notice}</p>}
+        {isLoading ? <p className="commercial-empty">Chargement des demandes…</p> : applications.length === 0 ? (
+          <p className="commercial-empty">Aucune demande dans cette catégorie.</p>
+        ) : (
+          <div className="application-list">
+            {applications.map((application) => (
+              <article className="application-card" key={application.id}>
+                <div className="application-heading">
+                  <div>
+                    <p className={`application-status status-${application.status}`}>{{
+                      submitted: "Soumise",
+                      in_review: "En examen",
+                      approved: "Validée",
+                      rejected: "Refusée",
+                    }[application.status]}</p>
+                    <h2>{application.business_name}</h2>
+                    <p>{application.contact_name} · {beautyCategories.find(({ value }) => value === application.business_category)?.label || application.business_category}</p>
+                  </div>
+                  <time>{application.submitted_at}</time>
+                </div>
+                <div className="application-details">
+                  <a href={`mailto:${application.email}`}>{application.email}</a>
+                  <a href={`tel:${application.phone_number}`}>{application.phone_number}</a>
+                  <span>{application.city}, {getWilayaName(application.wilaya_code) || application.wilaya_code}</span>
+                  <span>{application.address}</span>
+                </div>
+                {application.review_note && <p className="application-note">Note : {application.review_note}</p>}
+                {["submitted", "in_review"].includes(application.status) && (
+                  <div className="review-controls">
+                    <label>Note de suivi (facultative)
+                      <textarea value={reviewNotes[application.id] || ""} onChange={(event) => setReviewNotes((notes) => ({ ...notes, [application.id]: event.target.value }))} maxLength={1000} rows={2} />
+                    </label>
+                    <div className="review-buttons">
+                      <button type="button" className="review-reject" disabled={workingId !== null} onClick={() => reviewApplication(application.id, "reject")}>
+                        Refuser
+                      </button>
+                      <button type="button" className="review-approve" disabled={workingId !== null} onClick={() => reviewApplication(application.id, "approve")}>
+                        {workingId === application.id ? "Traitement…" : "Valider la demande"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
 function AccountHome({ professional = false }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState(null);
@@ -448,6 +780,7 @@ export default function App() {
       <Route path="/recherche" element={<SearchResults />} />
       <Route path="/professionnels" element={<AuthPage professional />} />
       <Route path="/compte" element={<AuthPage />} />
+      <Route path="/gestion-commercial" element={<CommercialGate />} />
       <Route path="/espace-client" element={<AccountHome />} />
       <Route path="/espace-professionnel" element={<AccountHome professional />} />
       <Route path="*" element={<ComingSoon audience="PAGE INTROUVABLE" title="Cette page n’existe pas" description="Vérifiez l’adresse ou retournez à l’accueil de BOOKILI." />} />

@@ -19,6 +19,14 @@ CREATE TABLE IF NOT EXISTS registration_rate_limits (
   KEY registration_rate_limits_cleanup (hour_bucket)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+CREATE TABLE IF NOT EXISTS platform_setup (
+  id TINYINT UNSIGNED NOT NULL,
+  super_admin_created BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+INSERT IGNORE INTO platform_setup (id, super_admin_created) VALUES (1, FALSE);
+
 CREATE TABLE IF NOT EXISTS client_profiles (
   account_id BIGINT UNSIGNED NOT NULL,
   first_name VARCHAR(100) NOT NULL,

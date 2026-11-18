@@ -62,6 +62,36 @@ function bookili_require_csrf(): void
     }
 }
 
+function bookili_require_role(PDO $pdo, array $allowedRoles): array
+{
+    bookili_start_session();
+    $accountId = $_SESSION['account_id'] ?? null;
+    if (!is_int($accountId) || $accountId < 1) {
+        bookili_json_response(401, ['error' => 'Veuillez vous connecter pour continuer.']);
+    }
+
+    $statement = $pdo->prepare(
+        'SELECT id, email, role, status FROM accounts WHERE id = :id LIMIT 1'
+    );
+    $statement->execute(['id' => $accountId]);
+    $account = $statement->fetch();
+
+    if (!$account || $account['status'] !== 'active') {
+        $_SESSION = [];
+        session_destroy();
+        bookili_json_response(401, ['error' => 'Cette session n’est plus valide. Reconnectez-vous.']);
+    }
+
+    if (!in_array($account['role'], $allowedRoles, true)) {
+        bookili_json_response(403, ['error' => 'Vous n’avez pas accès à cet espace.']);
+    }
+
+    $_SESSION['role'] = $account['role'];
+    $_SESSION['email'] = $account['email'];
+
+    return $account;
+}
+
 function bookili_read_json(): array
 {
     $contentType = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));

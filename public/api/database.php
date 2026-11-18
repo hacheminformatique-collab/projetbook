@@ -1,8 +1,13 @@
 <?php
 declare(strict_types=1);
 
-function bookili_database(): PDO
+function bookili_configuration(): array
 {
+    static $config = null;
+    if (is_array($config)) {
+        return $config;
+    }
+
     $configuredPath = getenv('BOOKILI_CONFIG_PATH');
     $configPaths = array_filter([
         is_string($configuredPath) && $configuredPath !== '' ? $configuredPath : null,
@@ -22,8 +27,18 @@ function bookili_database(): PDO
     }
 
     $config = require $configPath;
+    if (!is_array($config)) {
+        throw new RuntimeException('BOOKILI database configuration is invalid.');
+    }
+
+    return $config;
+}
+
+function bookili_database(): PDO
+{
+    $config = bookili_configuration();
     foreach (['db_host', 'db_name', 'db_user', 'db_password'] as $key) {
-        if (!is_array($config) || !isset($config[$key]) || $config[$key] === '') {
+        if (!isset($config[$key]) || $config[$key] === '') {
             throw new RuntimeException('BOOKILI database configuration is incomplete.');
         }
     }

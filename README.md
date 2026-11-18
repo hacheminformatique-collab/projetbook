@@ -50,14 +50,26 @@ statique et l'API PHP.
    neuve et importez ce schéma ; il n'est pas compatible avec PostgreSQL.
 3. Créer `/home/UTILISATEUR_CPANEL/bookili-config.php` à partir de
    `public/api/config.example.php`, puis renseigner l'hôte, le nom de base,
-   l'utilisateur et le mot de passe fournis par cPanel. Le fichier est ainsi
-   hors de `public_html`. En développement local, il reste possible d'utiliser
-   `public/api/config.php`, qui n'est jamais inclus dans le dépôt.
+   l'utilisateur et le mot de passe fournis par cPanel. Générez une clé de
+   configuration avec `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"` et
+   placez-la dans `setup_token`. Le fichier est ainsi hors de `public_html`.
+   En développement local, il reste possible d'utiliser `public/api/config.php`,
+   qui n'est jamais inclus dans le dépôt.
 4. Construire le projet avec `npm ci && npm run build`, puis téléverser **le
    contenu de `dist/`** dans `public_html/` avec le Gestionnaire de fichiers ou
    FTP.
 5. Vérifier `https://votre-domaine/api/health.php`. Une réponse
    `{"status":"ok"}` confirme que PHP et MySQL communiquent.
+6. Ouvrir `https://votre-domaine/gestion-commercial` pour créer le premier
+   compte super-admin avec la clé, son adresse e-mail et un mot de passe fort.
+   Retirer immédiatement `setup_token` du fichier de configuration après sa
+   création. La création initiale est verrouillée en base et ne peut réussir
+   qu'une fois.
+
+Pour une base existante déjà installée, importer une fois
+`database/migrations/003_super_admin_setup.sql` dans phpMyAdmin avant d'ouvrir
+la gestion commerciale. Les nouvelles installations obtiennent cette table
+directement via `database/schema.sql`.
 
 Le serveur doit avoir PHP 8.1+ avec PDO MySQL, MySQL/MariaDB et Apache avec
 `mod_rewrite` pour les pages de l'application. Aucun processus Node.js à
@@ -74,11 +86,12 @@ leur validation commerciale.
 
 Le socle comprend la page d'accueil et sa FAQ, une recherche par catégorie et
 les 58 wilayas algériennes, des formulaires d'inscription client et
-professionnel et la connexion par mot de passe. L'annuaire réel, la validation
-commerciale dans un tableau de bord et les rendez-vous restent à développer.
+professionnel, la connexion par mot de passe, le tableau de bord de validation
+des demandes professionnelles et la création initiale du super-admin.
+L'annuaire réel et les rendez-vous restent à développer.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
-`professional_profiles`, `salons` et `services`. Si vous aviez déjà installé
-la première version du schéma MySQL, appliquez une fois
-`database/migrations/002_registration_auth.sql` dans phpMyAdmin pour ajouter
-la limitation de tentatives et le nom du responsable.
+`professional_profiles`, `salons`, `services` et `platform_setup`. Pour une
+base ayant déjà reçu la première version du schéma MySQL, appliquez
+`database/migrations/002_registration_auth.sql`, puis
+`database/migrations/003_super_admin_setup.sql`, dans cet ordre.
