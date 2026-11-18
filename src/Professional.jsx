@@ -1,0 +1,230 @@
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Appointments } from "./Booking.jsx";
+import { apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
+import { algerianWilayas } from "./data/algerian-wilayas.js";
+
+export default function ProfessionalSpace() {
+  const navigate = useNavigate();
+  const [session, setSession] = useState(null);
+  const [configuration, setConfiguration] = useState(null);
+  const [tab, setTab] = useState("agenda");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const user = await apiRequest("session.php", { signal: controller.signal });
+        if (!user.authenticated || user.account?.role !== "professional") {
+          navigate("/professionnels", { replace: true });
+          return;
+        }
+        const result = await apiRequest("professional-salon.php", { signal: controller.signal });
+        setSession(user);
+        setConfiguration(result);
+      } catch (cause) {
+        if (!controller.signal.aborted) setError(cause.message);
+      }
+    }
+    load();
+    return () => controller.abort();
+  }, [navigate]);
+
+  async function logout() {
+    try {
+      await apiRequest("logout.php", { csrfToken: session.csrfToken, body: {} });
+      navigate("/professionnels", { replace: true });
+    } catch (cause) { setError(cause.message); }
+  }
+  return (
+    <main className="client-page">
+      <header className="commercial-header">
+        <Link className="logo" to="/">BOOKILI</Link>
+        <div className="commercial-user">
+          {configuration && <span>{configuration.salon.name}</span>}
+          {session && <button type="button" onClick={logout}>Se déconnecter</button>}
+        </div>
+      </header>
+      <div className="professional-content">
+        <p className="eyebrow">ESPACE PROFESSIONNEL</p>
+        <h1>{configuration?.salon.name || "Votre établissement"}</h1>
+        {error && <p className="form-message form-error" role="alert">{error}</p>}
+        {!configuration && !error && <p>Chargement de votre espace…</p>}
+        {configuration && (
+          <>
+            <nav className="workspace-tabs" aria-label="Espace professionnel">
+              {[["agenda", "Agenda"], ["caisse", "Caisse"], ["clients", "Clients"], ["admin", "Admin"]].map(([value, name]) => (
+                <button key={value} type="button" aria-current={tab === value ? "page" : undefined} onClick={() => setTab(value)}>{name}</button>
+              ))}
+            </nav>
+            <p className="form-message">Version initiale : un seul agenda par établissement, avec un rendez-vous à la fois. {Number(configuration.salon.is_public) ? <Link className="inline-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link> : "Votre salon est masqué. Configurez vos prestations et horaires dans Admin avant de le publier."}</p>
+            {tab === "agenda" && <Appointments professional csrfToken={session.csrfToken} />}
+            {tab === "caisse" && <section className="client-card"><h2>Caisse</h2><p>L’encaissement, les stocks et les exports comptables seront ajoutés dans un prochain lot. Aucun règlement n’est traité pour le moment.</p></section>}
+            {tab === "clients" && <ProfessionalClients />}
+            {tab === "admin" && <>
+              <ServiceSettings csrfToken={session.csrfToken} />
+              <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} />
+            </>}
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
+function SalonSettings({ configuration, csrfToken, onSaved }) {
+  const [hours, setHours] = useState(() => weekDays.map((_, index) => {
+    const row = configuration.hours.find((hour) => Number(hour.weekday) === index + 1);
+    return { weekday: index + 1, enabled: !!row, opens_at: row?.opens_at.slice(0, 5) || "09:00", closes_at: row?.closes_at.slice(0, 5) || "18:00" };
+  }));
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const salon = configuration.salon;
+  const changeHour = (index, changes) => setHours((current) => current.map((hour, i) => i === index ? { ...hour, ...changes } : hour));
+  async function submit(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = Object.fromEntries(new FormData(form).entries());
+    setSaving(true);
+    setNotice(null);
+    try {
+      const result = await apiRequest("professional-salon.php", {
+        csrfToken,
+        body: { ...data, isPublic: data.isPublic === "on", hours: hours.filter((hour) => hour.enabled).map(({ weekday, opens_at, closes_at }) => ({ weekday, opens_at, closes_at })) },
+      });
+      onSaved(result);
+      setNotice({ kind: "success", text: "Votre salon et ses horaires ont été enregistrés." });
+    } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
+    finally { setSaving(false); }
+  }
+  return (
+    <section className="client-card">
+      <h2>Mon salon et mes horaires</h2>
+      <p className="field-hint">Une plage d’ouverture par jour, sans passage à minuit. Les rendez-vous déjà confirmés sont conservés si vous changez vos horaires.</p>
+      {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+      <form className="auth-form" onSubmit={submit}>
+        <fieldset disabled={saving} className="form-fieldset">
+          <label>Nom du salon<input name="name" required maxLength={180} defaultValue={salon.name} /></label>
+          <div className="auth-grid">
+            <label>Wilaya<select name="wilaya" required defaultValue={salon.wilaya_code}>{algerianWilayas.map((wilaya) => <option key={wilaya.code} value={wilaya.code}>{wilaya.name}</option>)}</select></label>
+            <label>Ville ou commune<input name="city" required maxLength={120} defaultValue={salon.city} /></label>
+          </div>
+          <label>Adresse<input name="address" required maxLength={255} defaultValue={salon.address} /></label>
+          <label>Téléphone<input name="phone" type="tel" required maxLength={24} defaultValue={salon.phone_number || ""} /></label>
+          <div className="hours-list">
+            {hours.map((hour, index) => (
+              <div className="hours-row" key={hour.weekday}>
+                <label className="checkbox-label"><input type="checkbox" checked={hour.enabled} onChange={(event) => changeHour(index, { enabled: event.target.checked })} />{weekDays[index]}</label>
+                <label>Ouverture<input aria-label={`Ouverture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.opens_at} onChange={(event) => changeHour(index, { opens_at: event.target.value })} /></label>
+                <label>Fermeture<input aria-label={`Fermeture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.closes_at} onChange={(event) => changeHour(index, { closes_at: event.target.value })} /></label>
+              </div>
+            ))}
+          </div>
+          <label className="checkbox-label"><input type="checkbox" name="isPublic" defaultChecked={Number(salon.is_public) === 1} />Publier mon salon et ouvrir la réservation en ligne</label>
+          <button type="submit" className="auth-submit">{saving ? "Enregistrement…" : "Enregistrer le salon"}</button>
+        </fieldset>
+      </form>
+    </section>
+  );
+}
+
+const emptyService = { name: "", category: "coiffeur", duration: 30, price: 0, isActive: true };
+
+function ServiceSettings({ csrfToken }) {
+  const [services, setServices] = useState(null);
+  const [editing, setEditing] = useState(emptyService);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    apiRequest("professional-services.php", { signal: controller.signal })
+      .then((result) => setServices(result.services))
+      .catch((cause) => { if (!controller.signal.aborted) setNotice({ kind: "error", text: cause.message }); });
+    return () => controller.abort();
+  }, []);
+  function edit(service) {
+    setEditing({ id: service.id, name: service.name, category: service.category, duration: Number(service.duration_minutes), price: Number(service.price_dzd), isActive: Number(service.is_active) === 1 });
+    setNotice(null);
+  }
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setNotice(null);
+    try {
+      const result = await apiRequest("professional-services.php", { csrfToken, body: editing });
+      setServices(result.services);
+      setEditing(emptyService);
+      setNotice({ kind: "success", text: "La prestation a été enregistrée. Les rendez-vous existants conservent leur prix et leur durée." });
+    } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
+    finally { setSaving(false); }
+  }
+  return (
+    <section className="client-card">
+      <h2>Mes prestations</h2>
+      {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+      {services === null && !notice && <p>Chargement…</p>}
+      {services?.length === 0 && <p>Ajoutez votre première prestation.</p>}
+      <div className="service-list">
+        {services?.map((service) => (
+          <div className="service-row" key={service.id}>
+            <span><strong>{service.name}</strong><br />{service.duration_minutes} min · {priceLabel(service.price_dzd)} · {Number(service.is_active) ? "Active" : "Masquée"}</span>
+            <button type="button" className="admin-nav-link" disabled={saving} onClick={() => edit(service)}>Modifier</button>
+          </div>
+        ))}
+      </div>
+      {services !== null && <form className="auth-form" onSubmit={submit}>
+        <h3>{editing.id ? "Modifier la prestation" : "Ajouter une prestation"}</h3>
+        <fieldset disabled={saving} className="form-fieldset">
+          <label>Nom<input required maxLength={180} value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
+          <label>Catégorie<select value={editing.category} onChange={(event) => setEditing({ ...editing, category: event.target.value })}>{serviceCategories.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>
+          <div className="auth-grid">
+            <label>Durée (minutes)<input required type="number" min={15} max={480} step={15} value={editing.duration} onChange={(event) => setEditing({ ...editing, duration: event.target.value === "" ? "" : Number(event.target.value) })} /></label>
+            <label>Prix (DA)<input required type="number" min={0} max={10000000} step={1} value={editing.price} onChange={(event) => setEditing({ ...editing, price: event.target.value === "" ? "" : Number(event.target.value) })} /></label>
+          </div>
+          <label className="checkbox-label"><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} />Prestation disponible en ligne</label>
+          <div className="review-buttons">
+            <button className="auth-submit" type="submit">{saving ? "Enregistrement…" : "Enregistrer la prestation"}</button>
+            {editing.id && <button className="admin-nav-link" type="button" onClick={() => setEditing(emptyService)}>Annuler l’édition</button>}
+          </div>
+        </fieldset>
+      </form>}
+    </section>
+  );
+}
+
+function ProfessionalClients() {
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    setResult(null);
+    setError("");
+    apiRequest(`professional-clients.php?page=${page}`, { signal: controller.signal })
+      .then(setResult)
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
+    return () => controller.abort();
+  }, [page]);
+  return (
+    <section className="client-card">
+      <h2>Mes clients</h2>
+      <p className="field-hint">Clients ayant au moins un rendez-vous non annulé dans votre établissement.</p>
+      {error && <p className="form-message form-error" role="alert">{error}</p>}
+      {!result && !error && <p>Chargement…</p>}
+      {result?.clients.length === 0 && <p>Aucun client pour le moment.</p>}
+      <div className="service-list">
+        {result?.clients.map((client, index) => (
+          <article className="service-row" key={index}>
+            <span><strong>{client.first_name} {client.last_name}</strong><br />{client.appointment_count} rendez-vous non annulé(s)</span>
+            <a className="inline-link" href={`tel:${client.phone_number}`}>{client.phone_number}</a>
+          </article>
+        ))}
+      </div>
+      {result && <nav className="pagination" aria-label="Pages des clients">
+        {page > 1 && <button className="admin-nav-link" type="button" onClick={() => setPage(page - 1)}>Précédent</button>}
+        {result.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
+      </nav>}
+    </section>
+  );
+}

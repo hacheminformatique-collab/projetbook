@@ -1,6 +1,8 @@
 import { Link, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { algerianWilayas, beautyCategories, getWilayaName, isWilayaCode } from "./data/algerian-wilayas.js";
+import { Appointments, DirectoryResults, SalonPage } from "./Booking.jsx";
+import ProfessionalSpace from "./Professional.jsx";
 
 const questions = [
   {
@@ -9,19 +11,19 @@ const questions = [
   },
   {
     question: "Comment prendre rendez-vous sur BOOKILI ?",
-    answer: "Vous pouvez dès maintenant rechercher une prestation ou un salon par wilaya. L’annuaire des professionnels et la réservation en ligne sont en cours de préparation.",
+    answer: "Recherchez un salon ou une prestation par ville ou wilaya, choisissez un créneau disponible et connectez-vous à votre compte client pour confirmer votre rendez-vous.",
   },
   {
     question: "Est-ce que je dois payer en ligne sur BOOKILI ?",
-    answer: "Les modalités de paiement seront précisées lors de l’ouverture du service.",
+    answer: "La réservation est gratuite pour les particuliers. Le paiement de la prestation s’effectue sur place auprès du professionnel.",
   },
   {
     question: "Comment gérer mes rendez-vous sur BOOKILI ?",
-    answer: "Un espace personnel est prévu pour consulter et gérer vos rendez-vous. Il est actuellement en préparation.",
+    answer: "Votre espace client permet de consulter les rendez-vous passés et à venir, d’annuler un rendez-vous à venir ou de modifier son créneau et sa prestation selon les disponibilités.",
   },
   {
     question: "Comment faire apparaître mon salon ou institut sur BOOKILI ?",
-    answer: "L’inscription des professionnels est en préparation. Les demandes seront soumises à validation par notre équipe.",
+    answer: "Inscrivez-vous depuis l’espace professionnel. Après validation commerciale, renseignez vos prestations et horaires, puis publiez votre établissement.",
   },
 ];
 
@@ -186,16 +188,8 @@ function SearchResults() {
             {query ? <>Recherche : <strong>« {query} »</strong></> : "Toutes les prestations"}
             {wilayaName ? <> · {wilayaName}</> : " · Toutes les wilayas"}
           </p>
-          <div className="empty-results">
-            <span className="empty-results-icon" aria-hidden="true">✦</span>
-            <h2>L’annuaire ouvre bientôt</h2>
-            <p>
-              Nous préparons l’arrivée des professionnels sur BOOKILI. Aucun
-              établissement n’est encore référencé, mais votre recherche est
-              bien limitée aux wilayas d’Algérie.
-            </p>
-            <Link className="back-link" to="/">Modifier ma recherche</Link>
-          </div>
+          <DirectoryResults search={search} />
+          <Link className="back-link" to="/">Modifier ma recherche</Link>
         </section>
       </main>
       <Footer />
@@ -296,7 +290,9 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
         } else if (commercial) {
           navigate("/gestion-commercial");
         } else {
-          navigate(isClient ? "/espace-client" : "/espace-professionnel");
+          const returnTo = searchParams.get("retour") || "";
+          const safeReturn = /^\/salons\/[1-9][0-9]*(?:\?appointmentId=[1-9][0-9]*)?$/.test(returnTo);
+          navigate(isClient ? safeReturn ? returnTo : "/espace-client" : "/espace-professionnel");
         }
         return;
       }
@@ -1005,6 +1001,7 @@ function ClientAccount() {
         {loading && <p>Chargement de votre compte…</p>}
         {profile && (
           <>
+            <Appointments csrfToken={csrfToken} />
             <section className="client-card" aria-labelledby="client-profile-title">
               <h2 id="client-profile-title">Mes informations</h2>
               <dl className="client-details">
@@ -1041,64 +1038,9 @@ function ClientAccount() {
                 </button>
               </form>
             </section>
-            <section className="client-card">
-              <h2>Mes rendez-vous</h2>
-              <p>La consultation et la gestion de vos rendez-vous seront disponibles prochainement.</p>
-            </section>
           </>
         )}
       </div>
-    </main>
-  );
-}
-
-function AccountHome({ professional = false }) {
-  const navigate = useNavigate();
-  const [account, setAccount] = useState(null);
-  const [error, setError] = useState("");
-  const [csrfToken, setCsrfToken] = useState("");
-
-  useEffect(() => {
-    fetch("/api/session.php", { credentials: "same-origin" })
-      .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || "Session indisponible.");
-        const expectedRole = professional ? "professional" : "client";
-        if (!result.authenticated || result.account?.role !== expectedRole) {
-          navigate(professional ? "/professionnels" : "/compte", { replace: true });
-          return;
-        }
-        setAccount(result.account);
-        setCsrfToken(result.csrfToken);
-      })
-      .catch((cause) => setError(cause.message));
-  }, [navigate, professional]);
-
-  async function logout() {
-    try {
-      const response = await fetch("/api/logout.php", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "X-CSRF-Token": csrfToken },
-      });
-      if (response.ok) navigate(professional ? "/professionnels" : "/compte", { replace: true });
-      else setError("La déconnexion n’a pas abouti. Rechargez la page et réessayez.");
-    } catch {
-      setError("Impossible de joindre BOOKILI. Vérifiez votre connexion et réessayez.");
-    }
-  }
-
-  return (
-    <main className="coming-page">
-      <Link to="/" className="coming-logo">BOOKILI</Link>
-      <section className="coming-card">
-        <p className="eyebrow">{professional ? "ESPACE PROFESSIONNEL" : "ESPACE CLIENT"}</p>
-        <h1>{account ? professional ? "Votre espace professionnel" : "Votre compte BOOKILI" : "Chargement de votre espace…"}</h1>
-        {account && <p>Connecté avec {account.email}.</p>}
-        {error && <p className="form-message form-error" role="alert">{error}</p>}
-        {account && <p>{professional ? "La configuration de votre établissement et votre agenda seront disponibles dans une prochaine étape." : "La gestion de vos rendez-vous sera disponible dans une prochaine étape."}</p>}
-        {account && <button className="back-link auth-logout" type="button" onClick={logout}>Se déconnecter</button>}
-      </section>
     </main>
   );
 }
@@ -1108,12 +1050,13 @@ export default function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/recherche" element={<SearchResults />} />
+      <Route path="/salons/:salonId" element={<SalonPage />} />
       <Route path="/professionnels" element={<AuthPage professional />} />
       <Route path="/compte" element={<AuthPage />} />
       <Route path="/gestion-commercial" element={<CommercialGate />} />
       <Route path="/super-admin" element={<SuperAdmin />} />
       <Route path="/espace-client" element={<ClientAccount />} />
-      <Route path="/espace-professionnel" element={<AccountHome professional />} />
+      <Route path="/espace-professionnel" element={<ProfessionalSpace />} />
       <Route path="*" element={<ComingSoon audience="PAGE INTROUVABLE" title="Cette page n’existe pas" description="Vérifiez l’adresse ou retournez à l’accueil de BOOKILI." />} />
     </Routes>
   );

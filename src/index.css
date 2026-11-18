@@ -164,7 +164,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .commercial-page { min-height: 100svh; background: #f7f7f7; }
 .commercial-header { min-height: 78px; padding: 12px max(24px, calc((100% - 1180px) / 2)); display: flex; align-items: center; justify-content: space-between; gap: 20px; background: #fff; border-bottom: 1px solid #e6e8eb; }
 .commercial-header .logo { font-size: 30px; }
-.commercial-user { display: flex; align-items: center; gap: 20px; color: #59616b; font-size: 14px; }
+.commercial-user { display: flex; align-items: center; gap: 20px; min-width: 0; color: #59616b; font-size: 14px; }
+.commercial-user span { min-width: 0; overflow-wrap: anywhere; }
 .commercial-user button { padding: 10px 14px; border: 1px solid #d5d9de; border-radius: 8px; background: #fff; color: #24292f; cursor: pointer; }
 .admin-nav-link { padding: 10px 14px; border: 1px solid #d5d9de; border-radius: 8px; background: #fff; color: #24292f; }
 .commercial-content { width: min(100% - 48px, 1180px); margin: 0 auto; padding: 56px 0 90px; }
@@ -213,6 +214,35 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .admin-remove { margin-top: 18px; padding: 10px 14px; border: 1px solid #d9b4b1; border-radius: 8px; background: #fff; color: #8a211b; cursor: pointer; }
 .admin-remove:disabled { opacity: .6; cursor: wait; }
 
+.professional-content { width: min(100% - 48px, 1100px); margin: auto; padding: 44px 0 80px; }
+.professional-content > .eyebrow { text-align: left; }
+.professional-content > h1 { font-size: clamp(30px, 4vw, 42px); font-weight: 500; overflow-wrap: anywhere; }
+.workspace-tabs { display: flex; gap: 6px; border-bottom: 1px solid #d5d9de; margin-bottom: 24px; }
+.workspace-tabs button { flex: 1; padding: 16px 8px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #59616b; cursor: pointer; }
+.workspace-tabs button[aria-current] { color: #5146aa; border-bottom-color: #5146aa; font-weight: 700; }
+.salon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.salon-grid .client-card { min-width: 0; overflow-wrap: anywhere; }
+.salon-grid .eyebrow { text-align: left; }
+.booking-content { max-width: 850px; }
+.booking-toolbar, .pagination { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-top: 20px; }
+.booking-toolbar label { display: grid; gap: 6px; font-size: 14px; color: #59616b; }
+.booking-toolbar input, .booking-toolbar select { min-height: 42px; padding: 8px 12px; border: 1px solid #cbd2d8; border-radius: 8px; background: #fff; color: #24292f; max-width: 100%; }
+.pagination { justify-content: center; }
+.appointment-list { display: grid; gap: 16px; margin-top: 20px; }
+.appointment-card { padding: 18px; border: 1px solid #e6e8eb; border-radius: 10px; overflow-wrap: anywhere; }
+.appointment-card h3 { margin: 12px 0 8px; }
+.appointment-card p { color: #535b63; line-height: 1.65; }
+.inline-link { color: #5146aa; text-decoration: underline; }
+.form-fieldset { display: grid; gap: 18px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.auth-form .checkbox-label { display: flex; align-items: center; gap: 10px; line-height: 1.5; }
+.auth-form .checkbox-label input { width: 18px; min-height: 18px; flex-shrink: 0; }
+.hours-list { display: grid; gap: 12px; }
+.hours-row { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; gap: 14px; padding: 12px 0; border-bottom: 1px solid #e6e8eb; }
+.service-list { display: grid; gap: 12px; margin-top: 20px; }
+.service-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid #e6e8eb; line-height: 1.7; overflow-wrap: anywhere; }
+button.admin-nav-link { font: inherit; cursor: pointer; }
+button:disabled { cursor: wait; opacity: .6; }
+
 @media (max-width: 1250px) {
   .header-inner { gap: 22px; }
   .category-nav { gap: 14px; font-size: 13px; }
@@ -253,6 +283,12 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   .client-card { padding: 22px 18px; }
   .client-details div { grid-template-columns: 1fr; gap: 4px; }
   .client-card .auth-submit { justify-self: stretch; }
+  .professional-content { width: calc(100% - 32px); padding-top: 28px; }
+  .salon-grid { grid-template-columns: 1fr; gap: 0; }
+  .hours-row { grid-template-columns: 1fr 1fr; }
+  .hours-row > .checkbox-label { grid-column: 1 / -1; }
+  .hours-row input { min-width: 0; }
+  .service-row { align-items: flex-start; flex-direction: column; }
 }
 @media (max-width: 440px) {
   .auth-grid { grid-template-columns: 1fr; }

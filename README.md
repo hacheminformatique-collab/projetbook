@@ -54,6 +54,20 @@ super-admin déjà créé :
 BOOKILI_TEST_URL=http://localhost:8765 BOOKILI_TEST_SETUP_TOKEN=cle_de_test python3 tests/homepage-image.py
 ```
 
+Le test `tests/bookings.py` couvre l'inscription et la validation pro, la
+publication, la recherche, les disponibilités, les droits d'accès, les
+modifications, les annulations et deux réservations concurrentes. Utiliser
+une **nouvelle base jetable**, une clé de configuration valide et plusieurs
+workers PHP pour exercer la concurrence réelle :
+
+```bash
+PHP_CLI_SERVER_WORKERS=4 npm run dev:api
+BOOKILI_TEST_URL=http://localhost:8765 BOOKILI_TEST_SETUP_TOKEN=cle_de_test python3 tests/bookings.py
+```
+
+Le premier processus reste dans un terminal pendant que le test s'exécute
+dans un autre. Ne jamais utiliser ces tests de création de données en production.
+
 Le serveur Node.js n'est nécessaire que pour construire le site localement. Il
 n'est pas nécessaire sur cPanel : le dossier généré `dist/` contient le site
 statique et l'API PHP.
@@ -87,7 +101,9 @@ statique et l'API PHP.
 
 Pour une base existante déjà installée, importer une fois
 `database/migrations/003_super_admin_setup.sql`, puis
-`database/migrations/004_homepage_image.sql` dans phpMyAdmin. Les nouvelles
+`database/migrations/004_homepage_image.sql` et
+`database/migrations/005_booking.sql` dans phpMyAdmin, uniquement pour les
+migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 
 Le serveur doit avoir PHP 8.1+ avec PDO MySQL, MySQL/MariaDB et Apache avec
@@ -118,20 +134,66 @@ par GD ; les métadonnées sont supprimées. Les réglages PHP cPanel
 avec l'enveloppe du formulaire ; la limite MySQL `max_allowed_packet` doit
 également dépasser 2 Mo.
 
+## Salon, annuaire et réservations
+
+Après validation commerciale, le professionnel accède à
+`/espace-professionnel` avec quatre onglets : **Agenda**, **Caisse**,
+**Clients** et **Admin**. Dans Admin, il ajoute ses prestations (catégorie,
+durée et tarif en DA), renseigne ses horaires et publie le salon. Un salon
+reste masqué par défaut ; sa publication exige au moins une prestation
+active et un jour d'ouverture. Une prestation peut être modifiée ou masquée
+sans supprimer l'historique.
+
+L'annuaire `/recherche` filtre les salons publiés par nom de salon,
+prestation, ville, wilaya et catégorie, avec pagination. La fiche
+`/salons/ID` présente les prestations, l'adresse, le téléphone et les
+disponibilités. Les comptes suspendus et les salons masqués ne sont pas
+réservables.
+
+Un client connecté peut confirmer un créneau, retrouver ses rendez-vous à
+venir ou passés dans `/espace-client`, puis modifier la prestation et le
+créneau ou annuler avant le début. Le professionnel consulte l'agenda d'une
+journée et peut annuler les rendez-vous futurs ; l'onglet Clients ne montre
+que les clients ayant un rendez-vous non annulé dans son propre salon.
+
+**Périmètre de cette version :**
+- Un agenda unique par établissement, donc un seul rendez-vous à la fois ;
+  la gestion de plusieurs collaborateurs n'est pas encore implémentée.
+- Horaires hebdomadaires avec une plage continue par jour, sans fermeture
+  exceptionnelle ni passage à minuit. Les créneaux commencent toutes les
+  15 minutes depuis l'ouverture et doivent contenir toute la prestation.
+- Les dates sont calculées explicitement dans le fuseau `Africa/Algiers`.
+  Réservation et modification de créneau possibles jusqu'à 60 jours à l'avance.
+- La confirmation est immédiate à l'écran, sans validation manuelle
+  supplémentaire du professionnel. **Aucun e-mail de confirmation ou rappel
+  n'est encore envoyé**, aucun paiement n'est effectué en ligne.
+- Les mutations d'agenda sont sérialisées par verrou InnoDB sur le salon et
+  la disponibilité est revérifiée avant enregistrement pour éviter les
+  doubles réservations. Une modification échouée conserve le rendez-vous initial.
+- Le prix et la durée sont figés pour une réservation existante. Une
+  modification volontaire de la réservation adopte les caractéristiques
+  affichées de la prestation choisie ; un changement de tarif ou de durée
+  entre affichage et confirmation oblige à recharger la fiche.
+- Modifier des horaires ou masquer un salon ne supprime pas ses rendez-vous
+  déjà confirmés. Leur annulation reste possible même si le salon est masqué.
+
+La caisse, les stocks, les cartes cadeaux, la gestion multi-collaborateurs,
+les abonnements et les campagnes e-mail restent à développer.
+
 ## État du projet
 
 Le socle comprend la page d'accueil et sa FAQ, une recherche par catégorie et
 les 58 wilayas algériennes, des formulaires d'inscription client et
 professionnel, la connexion par mot de passe, le tableau de bord de validation
 des demandes professionnelles, la création initiale du super-admin, la
-personnalisation de l'image d'accueil et la gestion du téléphone et du mot
-de passe client.
-L'annuaire réel et les rendez-vous restent à développer.
+personnalisation de l'image d'accueil, la gestion du téléphone et du mot
+de passe client, la configuration du salon, l'annuaire et le parcours de réservation.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
 `professional_profiles`, `salons`, `services`, `platform_setup` et
-`homepage_image`. Pour une
+`homepage_image`, `salon_hours` et `appointments`. Pour une
 base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/002_registration_auth.sql`, puis
-`database/migrations/003_super_admin_setup.sql` et
-`database/migrations/004_homepage_image.sql`, dans cet ordre.
+`database/migrations/003_super_admin_setup.sql`,
+`database/migrations/004_homepage_image.sql` et
+`database/migrations/005_booking.sql`, dans cet ordre.

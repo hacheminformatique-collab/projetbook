@@ -1,0 +1,132 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/booking.php';
+
+$method = bookili_booking_method();
+$data = $method === 'POST' ? bookili_read_json() : [];
+
+try {
+    $pdo = bookili_database();
+    $account = bookili_require_role($pdo, ['client', 'professional']);
+    $professional = $account['role'] === 'professional';
+    $now = bookili_now()->format('Y-m-d H:i:s');
+
+    if ($method === 'GET') {
+        $params = [];
+        $sql = "SELECT b.id, b.salon_id, b.service_id, b.service_name, b.price_dzd, b.starts_at, b.ends_at, b.status,
+                       s.name AS salon_name, s.city, s.address, s.phone_number AS salon_phone";
+        if ($professional) $sql .= ', c.first_name, c.last_name, c.phone_number AS client_phone';
+        $sql .= ' FROM appointments b INNER JOIN salons s ON s.id = b.salon_id';
+        if ($professional) {
+            $salon = bookili_own_salon($pdo, (int) $account['id']);
+            $sql .= ' INNER JOIN client_profiles c ON c.account_id = b.client_id WHERE b.salon_id = :salon_id';
+            $params['salon_id'] = $salon['id'];
+            $date = $_GET['date'] ?? bookili_now()->format('Y-m-d');
+            $day = bookili_calendar_date($date);
+            $sql .= ' AND b.starts_at >= :day_start AND b.starts_at < :day_end';
+            $params += ['day_start' => $day->format('Y-m-d 00:00:00'), 'day_end' => $day->modify('+1 day')->format('Y-m-d 00:00:00')];
+        } else {
+            $filter = $_GET['filter'] ?? 'upcoming';
+            if (!in_array($filter, ['upcoming', 'past'], true)) bookili_json_response(422, ['error' => 'Filtre invalide.']);
+            $sql .= ' WHERE b.client_id = :client_id AND b.starts_at ' . ($filter === 'past' ? '<' : '>=') . ' :now';
+            $params += ['client_id' => $account['id'], 'now' => $now];
+        }
+        $sql .= ' ORDER BY b.starts_at ' . (!$professional && $filter === 'past' ? 'DESC' : 'ASC') . ', b.id';
+        $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;
+        if ($page > 10000) bookili_json_response(422, ['error' => 'Page invalide.']);
+        $sql .= ' LIMIT 51 OFFSET ' . (($page - 1) * 50);
+        $statement = $pdo->prepare($sql);
+        $statement->execute($params);
+        $appointments = $statement->fetchAll();
+        bookili_json_response(200, ['appointments' => array_slice($appointments, 0, 50), 'hasMore' => count($appointments) > 50]);
+    }
+
+    $action = $data['action'] ?? '';
+    if (!in_array($action, ['book', 'reschedule', 'cancel'], true) || ($professional && $action !== 'cancel')) {
+        bookili_json_response(422, ['error' => 'Action non autorisée.']);
+    }
+    $appointmentId = $action !== 'book' ? bookili_id($data['appointmentId'] ?? null) : null;
+    if ($action === 'book') {
+        $salonId = bookili_id($data['salonId'] ?? null);
+    } else {
+        $statement = $pdo->prepare('SELECT salon_id FROM appointments WHERE id = :id');
+        $statement->execute(['id' => $appointmentId]);
+        $salonId = $statement->fetchColumn();
+        if ($salonId === false) bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
+        $salonId = (int) $salonId;
+    }
+    if ($action !== 'cancel') {
+        $serviceId = bookili_id($data['serviceId'] ?? null);
+        $day = bookili_booking_date($data['date'] ?? null);
+        $time = $data['time'] ?? null;
+        if (!is_string($time) || !preg_match('/^([01][0-9]|2[0-3]):[0-5][0-9]$/D', $time)
+            || !is_int($data['expectedPrice'] ?? null) || !is_int($data['expectedDuration'] ?? null)) {
+            bookili_json_response(422, ['error' => 'Vérifiez l’horaire et la prestation sélectionnée.']);
+        }
+    }
+    bookili_rate_limit($pdo, 'appointments', 120);
+    $pdo->beginTransaction();
+    // All booking, cancellation and schedule edits lock this salon first.
+    $statement = $pdo->prepare('SELECT id FROM salons WHERE id = :id FOR UPDATE');
+    $statement->execute(['id' => $salonId]);
+    if (!$statement->fetch()) throw new RuntimeException('Appointment salon is missing.');
+
+    if ($action !== 'book') {
+        $statement = $pdo->prepare('SELECT * FROM appointments WHERE id = :id FOR UPDATE');
+        $statement->execute(['id' => $appointmentId]);
+        $appointment = $statement->fetch();
+        if (!$appointment) {
+            $pdo->rollBack();
+            bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
+        }
+        $owns = $professional
+            ? (int) bookili_own_salon($pdo, (int) $account['id'])['id'] === $salonId
+            : (int) $appointment['client_id'] === (int) $account['id'];
+        if (!$owns) {
+            $pdo->rollBack();
+            bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
+        }
+        if ($appointment['status'] !== 'confirmed' || $appointment['starts_at'] <= bookili_now()->format('Y-m-d H:i:s')) {
+            $pdo->rollBack();
+            bookili_json_response(409, ['error' => 'Ce rendez-vous ne peut plus être modifié.']);
+        }
+    }
+    if ($action === 'cancel') {
+        $pdo->prepare("UPDATE appointments SET status = 'cancelled' WHERE id = :id")->execute(['id' => $appointmentId]);
+    } else {
+        bookili_public_salon($pdo, $salonId);
+        $service = bookili_service($pdo, $salonId, $serviceId);
+        if ((int) $service['price_dzd'] !== $data['expectedPrice']
+            || (int) $service['duration_minutes'] !== $data['expectedDuration']) {
+            $pdo->rollBack();
+            bookili_json_response(409, ['error' => 'Le tarif ou la durée a changé. Rechargez la page pour consulter la prestation avant de confirmer.']);
+        }
+        $slots = bookili_slots($pdo, $salonId, $service, $day, $appointmentId ?? 0);
+        if (!in_array($time, $slots, true)) {
+            $pdo->rollBack();
+            bookili_json_response(409, ['error' => 'Ce créneau n’est plus disponible. Choisissez un autre horaire.']);
+        }
+        $starts = new DateTimeImmutable($day->format('Y-m-d') . ' ' . $time, new DateTimeZone('Africa/Algiers'));
+        $ends = $starts->modify('+' . (int) $service['duration_minutes'] . ' minutes');
+        $params = [
+            'service_id' => $serviceId, 'service_name' => $service['name'], 'price' => $service['price_dzd'],
+            'starts' => $starts->format('Y-m-d H:i:s'), 'ends' => $ends->format('Y-m-d H:i:s'),
+        ];
+        if ($action === 'book') {
+            $sql = 'INSERT INTO appointments (salon_id, client_id, service_id, service_name, price_dzd, starts_at, ends_at)
+                    VALUES (:salon_id, :client_id, :service_id, :service_name, :price, :starts, :ends)';
+            $params += ['salon_id' => $salonId, 'client_id' => $account['id']];
+        } else {
+            $sql = 'UPDATE appointments SET service_id = :service_id, service_name = :service_name, price_dzd = :price,
+                    starts_at = :starts, ends_at = :ends WHERE id = :id';
+            $params['id'] = $appointmentId;
+        }
+        $pdo->prepare($sql)->execute($params);
+        if ($action === 'book') $appointmentId = (int) $pdo->lastInsertId();
+    }
+    $pdo->commit();
+    bookili_json_response($action === 'book' ? 201 : 200, ['appointmentId' => $appointmentId, 'message' => $action === 'cancel' ? 'Rendez-vous annulé.' : 'Votre rendez-vous est confirmé.']);
+} catch (Throwable $error) {
+    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    bookili_database_error($error);
+}

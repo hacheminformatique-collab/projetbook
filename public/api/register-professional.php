@@ -22,7 +22,7 @@ if (!is_string($category) || !in_array($category, $allowedCategories, true)) {
     bookili_json_response(422, ['error' => 'Veuillez choisir une catégorie de professionnel valide.']);
 }
 
-if (!is_string($wilayaCode) || preg_match('/^(0[1-9]|[1-5][0-8])$/', $wilayaCode) !== 1) {
+if (!is_string($wilayaCode) || preg_match('/^(0[1-9]|[1-4][0-9]|5[0-8])$/D', $wilayaCode) !== 1) {
     bookili_json_response(422, ['error' => 'Veuillez choisir une wilaya en Algérie.']);
 }
 
