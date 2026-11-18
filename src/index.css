@@ -190,6 +190,19 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .review-reject { background: #fff0ef; color: #8a211b; }
 .review-approve { background: #1e1e1f; color: #fff; }
 
+.client-page { min-height: 100svh; background: #f7f7f7; }
+.client-content { width: min(100% - 48px, 720px); margin: auto; padding: 48px 0 80px; }
+.client-content > .eyebrow { text-align: left; }
+.client-content > h1 { margin: 12px 0 28px; font-size: clamp(30px, 4vw, 42px); font-weight: 500; letter-spacing: -.035em; }
+.client-card { margin-top: 20px; padding: 28px; border: 1px solid #e6e8eb; border-radius: 12px; background: #fff; }
+.client-card h2 { margin: 0; font-size: 22px; font-weight: 600; }
+.client-card > p:not(.form-message) { color: #59616b; line-height: 1.65; }
+.client-details { display: grid; gap: 14px; margin: 24px 0 0; }
+.client-details div { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr; gap: 12px; }
+.client-details dt { color: #64707c; font-size: 14px; }
+.client-details dd { margin: 0; overflow-wrap: anywhere; }
+.client-card .auth-submit { justify-self: start; }
+
 @media (max-width: 1250px) {
   .header-inner { gap: 22px; }
   .category-nav { gap: 14px; font-size: 13px; }
@@ -226,6 +239,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   .application-details { grid-template-columns: 1fr; }
   .review-controls { grid-template-columns: 1fr; }
   .review-buttons { display: grid; grid-template-columns: 1fr 1fr; }
+  .client-content { width: calc(100% - 32px); padding-top: 32px; }
+  .client-card { padding: 22px 18px; }
+  .client-details div { grid-template-columns: 1fr; gap: 4px; }
+  .client-card .auth-submit { justify-self: stretch; }
 }
 @media (max-width: 440px) {
   .auth-grid { grid-template-columns: 1fr; }

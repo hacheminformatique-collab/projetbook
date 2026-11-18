@@ -722,6 +722,171 @@ function CommercialDashboard({ account, csrfToken, onLogout }) {
   );
 }
 
+function ClientAccount() {
+  const navigate = useNavigate();
+  const [profile, setProfile] = useState(null);
+  const [phone, setPhone] = useState("");
+  const [csrfToken, setCsrfToken] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [phoneNotice, setPhoneNotice] = useState(null);
+  const [passwordNotice, setPasswordNotice] = useState(null);
+  const [savingPhone, setSavingPhone] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const sessionResponse = await fetch("/api/session.php", { credentials: "same-origin" });
+        const session = await sessionResponse.json();
+        if (!sessionResponse.ok) throw new Error(session.error || "Session indisponible.");
+        if (!session.authenticated || session.account?.role !== "client") {
+          navigate("/compte", { replace: true });
+          return;
+        }
+        const response = await fetch("/api/client-profile.php", { credentials: "same-origin" });
+        const result = await response.json();
+        if (response.status === 401) {
+          navigate("/compte", { replace: true });
+          return;
+        }
+        if (!response.ok) throw new Error(result.error || "Impossible de charger votre compte.");
+        if (active) {
+          setProfile({ ...result.profile, email: result.email });
+          setPhone(result.profile.phone_number);
+          setCsrfToken(session.csrfToken);
+        }
+      } catch (cause) {
+        if (active) setError(cause.message || "Impossible de joindre BOOKILI.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    return () => { active = false; };
+  }, [navigate]);
+
+  async function submitPhone(event) {
+    event.preventDefault();
+    setPhoneNotice(null);
+    setSavingPhone(true);
+    try {
+      const response = await fetch("/api/client-profile.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ phone }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Impossible de modifier votre téléphone.");
+      setProfile({ ...result.profile, email: result.email });
+      setPhone(result.profile.phone_number);
+      setPhoneNotice({ kind: "success", text: "Votre numéro de téléphone a été modifié." });
+    } catch (cause) {
+      setPhoneNotice({ kind: "error", text: cause.message || "Impossible de joindre BOOKILI." });
+    } finally {
+      setSavingPhone(false);
+    }
+  }
+
+  async function submitPassword(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setPasswordNotice(null);
+    setSavingPassword(true);
+    try {
+      const response = await fetch("/api/client-password.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(Object.fromEntries(new FormData(form).entries())),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Impossible de modifier votre mot de passe.");
+      form.reset();
+      setPasswordNotice({ kind: "success", text: result.message });
+    } catch (cause) {
+      setPasswordNotice({ kind: "error", text: cause.message || "Impossible de joindre BOOKILI." });
+    } finally {
+      setSavingPassword(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      const response = await fetch("/api/logout.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrfToken },
+      });
+      if (!response.ok) throw new Error("La déconnexion n’a pas abouti. Rechargez la page et réessayez.");
+      navigate("/compte", { replace: true });
+    } catch (cause) {
+      setError(cause.message || "Impossible de joindre BOOKILI.");
+    }
+  }
+
+  return (
+    <main className="client-page">
+      <header className="commercial-header">
+        <Link className="logo" to="/">BOOKILI</Link>
+        {profile && <div className="commercial-user"><button type="button" onClick={logout}>Se déconnecter</button></div>}
+      </header>
+      <div className="client-content">
+        <p className="eyebrow">ESPACE CLIENT</p>
+        <h1>Mon compte</h1>
+        {error && <p className="form-message form-error" role="alert">{error}</p>}
+        {loading && <p>Chargement de votre compte…</p>}
+        {profile && (
+          <>
+            <section className="client-card" aria-labelledby="client-profile-title">
+              <h2 id="client-profile-title">Mes informations</h2>
+              <dl className="client-details">
+                <div><dt>Nom et prénom</dt><dd>{profile.last_name} {profile.first_name}</dd></div>
+                <div><dt>Adresse e-mail</dt><dd>{profile.email}</dd></div>
+                <div><dt>Date de naissance</dt><dd>{profile.date_of_birth.split("-").reverse().join("/")}</dd></div>
+              </dl>
+              {phoneNotice && <p className={`form-message form-${phoneNotice.kind}`} role={phoneNotice.kind === "error" ? "alert" : "status"}>{phoneNotice.text}</p>}
+              <form className="auth-form" onSubmit={submitPhone}>
+                <label>Numéro de téléphone
+                  <input name="phone" type="tel" required autoComplete="tel" inputMode="tel" maxLength={24} value={phone} onChange={(event) => setPhone(event.target.value)} />
+                </label>
+                <button className="auth-submit" type="submit" disabled={!csrfToken || savingPhone}>
+                  {savingPhone ? "Enregistrement…" : "Enregistrer le numéro"}
+                </button>
+              </form>
+            </section>
+            <section className="client-card" aria-labelledby="client-password-title">
+              <h2 id="client-password-title">Modifier mon mot de passe</h2>
+              {passwordNotice && <p className={`form-message form-${passwordNotice.kind}`} role={passwordNotice.kind === "error" ? "alert" : "status"}>{passwordNotice.text}</p>}
+              <form className="auth-form" onSubmit={submitPassword}>
+                <label>Mot de passe actuel
+                  <input name="currentPassword" type="password" autoComplete="current-password" required maxLength={128} />
+                </label>
+                <label>Nouveau mot de passe
+                  <input name="newPassword" type="password" autoComplete="new-password" required minLength={12} maxLength={72} />
+                  <span className="field-hint">Au moins 12 caractères et 72 octets maximum.</span>
+                </label>
+                <label>Confirmer le nouveau mot de passe
+                  <input name="confirmPassword" type="password" autoComplete="new-password" required minLength={12} maxLength={72} />
+                </label>
+                <button className="auth-submit" type="submit" disabled={!csrfToken || savingPassword}>
+                  {savingPassword ? "Enregistrement…" : "Modifier le mot de passe"}
+                </button>
+              </form>
+            </section>
+            <section className="client-card">
+              <h2>Mes rendez-vous</h2>
+              <p>La consultation et la gestion de vos rendez-vous seront disponibles prochainement.</p>
+            </section>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
 function AccountHome({ professional = false }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState(null);
@@ -781,7 +946,7 @@ export default function App() {
       <Route path="/professionnels" element={<AuthPage professional />} />
       <Route path="/compte" element={<AuthPage />} />
       <Route path="/gestion-commercial" element={<CommercialGate />} />
-      <Route path="/espace-client" element={<AccountHome />} />
+      <Route path="/espace-client" element={<ClientAccount />} />
       <Route path="/espace-professionnel" element={<AccountHome professional />} />
       <Route path="*" element={<ComingSoon audience="PAGE INTROUVABLE" title="Cette page n’existe pas" description="Vérifiez l’adresse ou retournez à l’accueil de BOOKILI." />} />
     </Routes>

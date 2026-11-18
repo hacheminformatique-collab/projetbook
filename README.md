@@ -35,6 +35,18 @@ php -l public/api/health.php
 php -l public/api/database.php
 ```
 
+Le test d'intégration `tests/client-account.py` crée des comptes et modifie
+des mots de passe : l'exécuter uniquement sur une installation de test avec
+une base jetable, jamais en production. Avec l'API de test démarrée :
+
+```bash
+BOOKILI_TEST_URL=http://localhost:8765 python3 tests/client-account.py
+```
+
+Pour tester aussi le refus d'accès d'un super-admin aux API client, définir
+`BOOKILI_TEST_SETUP_TOKEN` avec la clé de configuration de cette installation
+de test ; le test crée alors son premier super-admin.
+
 Le serveur Node.js n'est nécessaire que pour construire le site localement. Il
 n'est pas nécessaire sur cPanel : le dossier généré `dist/` contient le site
 statique et l'API PHP.
@@ -78,16 +90,23 @@ maintenir sur le serveur.
 L'API sert un jeton CSRF de session, chiffre les mots de passe avec
 `password_hash`, utilise des requêtes SQL préparées, limite les tentatives de
 connexion et d'inscription et refuse les mots de passe de moins de 12
-caractères. Les espaces client et professionnel utilisent des sessions PHP
-distinctes par rôle. Les demandes professionnelles restent en attente jusqu'à
-leur validation commerciale.
+caractères. Les accès aux espaces client et professionnel sont contrôlés par
+rôle dans la session PHP. Les demandes professionnelles restent en attente
+jusqu'à leur validation commerciale.
+
+L'espace client permet de consulter son profil, modifier son numéro de
+téléphone et changer son mot de passe après vérification du mot de passe
+actuel. Le changement de mot de passe est limité en nombre de tentatives et
+accepte entre 12 et 72 octets pour éviter la troncature bcrypt. Les autres
+sessions déjà ouvertes ne sont pas automatiquement déconnectées.
 
 ## État du projet
 
 Le socle comprend la page d'accueil et sa FAQ, une recherche par catégorie et
 les 58 wilayas algériennes, des formulaires d'inscription client et
 professionnel, la connexion par mot de passe, le tableau de bord de validation
-des demandes professionnelles et la création initiale du super-admin.
+des demandes professionnelles, la création initiale du super-admin et la
+gestion du téléphone et du mot de passe client.
 L'annuaire réel et les rendez-vous restent à développer.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
