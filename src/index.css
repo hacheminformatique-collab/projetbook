@@ -240,6 +240,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .hours-row { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; gap: 14px; padding: 12px 0; border-bottom: 1px solid #e6e8eb; }
 .service-list { display: grid; gap: 12px; margin-top: 20px; }
 .service-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid #e6e8eb; line-height: 1.7; overflow-wrap: anywhere; }
+.stock-warning { color: #8a211b; font-weight: 700; }
 button.admin-nav-link { font: inherit; cursor: pointer; }
 button:disabled { cursor: wait; opacity: .6; }
 

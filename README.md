@@ -68,6 +68,19 @@ BOOKILI_TEST_URL=http://localhost:8765 BOOKILI_TEST_SETUP_TOKEN=cle_de_test pyth
 Le premier processus reste dans un terminal pendant que le test s'exécute
 dans un autre. Ne jamais utiliser ces tests de création de données en production.
 
+Le test `tests/inventory.py` utilise les mêmes variables et nécessite sa propre
+base jetable neuve avec plusieurs workers PHP. Il vérifie les droits par salon,
+les entrées/sorties, les stocks bas, l'archivage, l'historique, les exports CSV,
+la pagination et des mouvements concurrents ou répétés :
+
+```bash
+BOOKILI_TEST_URL=http://localhost:8765 BOOKILI_TEST_SETUP_TOKEN=cle_de_test python3 tests/inventory.py
+```
+
+La clé de test doit correspondre à `setup_token` et contenir au moins
+64 caractères. Les tests qui créent le super-admin ne doivent pas partager
+une même base déjà initialisée.
+
 Le serveur Node.js n'est nécessaire que pour construire le site localement. Il
 n'est pas nécessaire sur cPanel : le dossier généré `dist/` contient le site
 statique et l'API PHP.
@@ -102,8 +115,9 @@ statique et l'API PHP.
 Pour une base existante déjà installée, importer une fois
 `database/migrations/003_super_admin_setup.sql`, puis
 `database/migrations/004_homepage_image.sql` et
-`database/migrations/005_booking.sql` et
-`database/migrations/006_appointment_notifications.sql` dans phpMyAdmin,
+`database/migrations/005_booking.sql`,
+`database/migrations/006_appointment_notifications.sql` et
+`database/migrations/007_inventory.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 
@@ -206,7 +220,39 @@ que les clients ayant un rendez-vous non annulé dans son propre salon.
 - Modifier des horaires ou masquer un salon ne supprime pas ses rendez-vous
   déjà confirmés. Leur annulation reste possible même si le salon est masqué.
 
-La caisse, les stocks, les cartes cadeaux, la gestion multi-collaborateurs,
+## Produits et stocks professionnels
+
+L'onglet **Caisse** permet désormais de créer et modifier des produits
+(nom, référence facultative, prix unitaire en DA et seuil d'alerte), puis
+d'enregistrer des entrées ou sorties avec un motif obligatoire. Chaque produit
+commence à zéro : l'approvisionnement initial est une entrée de stock.
+Les quantités sont des unités entières, limitées à 1 000 000 par produit ;
+le prix est un entier compris entre 0 et 10 000 000 DA.
+
+Les mouvements sont historisés avec la date en heure d'Algérie, la variation
+et le stock après mouvement. Ils ne sont ni modifiables ni supprimables :
+une erreur se corrige par un mouvement inverse motivé. Les quantités et
+l'historique sont enregistrés dans une même transaction ; les verrous
+empêchent deux sorties concurrentes de rendre le stock négatif. Une même
+demande réessayée avec sa clé d'origine n'est comptée qu'une fois.
+
+Un produit dont la quantité est inférieure ou égale à son seuil est signalé
+en stock bas. La recherche porte sur le nom et la référence, avec un filtre
+stock bas et une option pour consulter les produits archivés. L'archivage
+conserve le stock et l'historique, mais interdit les nouveaux mouvements ;
+la réactivation est possible depuis le formulaire de modification.
+
+L'export CSV reprend **tous** les produits du salon correspondant aux filtres,
+et pas seulement la page affichée. Il utilise UTF-8 et le séparateur
+point-virgule ; les textes pouvant être interprétés comme des formules sont
+neutralisés. Les données d'un autre salon ne sont jamais exportées.
+
+Ce module est un suivi d'inventaire manuel, pas une caisse d'encaissement :
+les rendez-vous ne décrémentent pas les produits et les sorties ne créent
+aucune vente, facture ou écriture comptable. Les alertes sont affichées dans
+l'espace professionnel, sans notification e-mail de stock.
+
+L'encaissement, les exports comptables, les cartes cadeaux, la gestion multi-collaborateurs,
 les abonnements et les campagnes marketing restent à développer.
 
 ## État du projet
@@ -217,16 +263,19 @@ professionnel, la connexion par mot de passe, le tableau de bord de validation
 des demandes professionnelles, la création initiale du super-admin, la
 personnalisation de l'image d'accueil, la gestion du téléphone et du mot
 de passe client, la configuration du salon, l'annuaire et le parcours de
-réservation avec notifications e-mail et rappels programmés.
+réservation avec notifications e-mail et rappels programmés, ainsi que la
+gestion des produits, des stocks et des mouvements.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
 `professional_profiles`, `salons`, `services`, `platform_setup`,
-`homepage_image`, `salon_hours`, `appointments` et `notification_outbox`.
+`homepage_image`, `salon_hours`, `appointments`, `notification_outbox`,
+`products` et `stock_movements`.
 Pour une
 base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/002_registration_auth.sql`, puis
 `database/migrations/003_super_admin_setup.sql`,
 `database/migrations/004_homepage_image.sql`,
-`database/migrations/005_booking.sql` et
-`database/migrations/006_appointment_notifications.sql`, dans cet ordre,
+`database/migrations/005_booking.sql`,
+`database/migrations/006_appointment_notifications.sql` et
+`database/migrations/007_inventory.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

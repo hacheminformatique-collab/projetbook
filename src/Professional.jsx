@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Appointments } from "./Booking.jsx";
+import Inventory from "./Inventory.jsx";
 import { apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
 
@@ -60,7 +61,7 @@ export default function ProfessionalSpace() {
             </nav>
             <p className="form-message">Version initiale : un seul agenda par établissement, avec un rendez-vous à la fois. {Number(configuration.salon.is_public) ? <Link className="inline-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link> : "Votre salon est masqué. Configurez vos prestations et horaires dans Admin avant de le publier."}</p>
             {tab === "agenda" && <Appointments professional csrfToken={session.csrfToken} />}
-            {tab === "caisse" && <section className="client-card"><h2>Caisse</h2><p>L’encaissement, les stocks et les exports comptables seront ajoutés dans un prochain lot. Aucun règlement n’est traité pour le moment.</p></section>}
+            {tab === "caisse" && <Inventory csrfToken={session.csrfToken} />}
             {tab === "clients" && <ProfessionalClients />}
             {tab === "admin" && <>
               <ServiceSettings csrfToken={session.csrfToken} />
