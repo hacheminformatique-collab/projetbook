@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { algerianWilayas, beautyCategories, getWilayaName, isWilayaCode } from "./data/algerian-wilayas.js";
 import { Appointments, DirectoryResults, SalonPage } from "./Booking.jsx";
 import ProfessionalSpace from "./Professional.jsx";
-import { apiRequest } from "./api-client.js";
+import { apiRequest, apiUrl } from "./api-client.js";
 
 const questions = [
   {
@@ -140,7 +140,7 @@ function HomePage() {
       <Header />
       <main>
         <section className={`hero${hasImage ? " hero-with-image" : ""}`} id="accueil" aria-labelledby="hero-title">
-          <img className="hero-image" src="/api/homepage-image.php" alt="" aria-hidden="true" onLoad={() => setHasImage(true)} onError={() => setHasImage(false)} />
+          <img className="hero-image" src={apiUrl("homepage-image.php")} alt="" aria-hidden="true" onLoad={() => setHasImage(true)} onError={() => setHasImage(false)} />
           <div className="hero-content">
             <h1 id="hero-title">Réservez en beauté</h1>
             <p className="hero-subtitle">Simple · Immédiat · 24h/24</p>
@@ -225,7 +225,7 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
 
   useEffect(() => {
     let active = true;
-    fetch("/api/csrf.php", { credentials: "same-origin" })
+    fetch(apiUrl("csrf.php"), { credentials: "same-origin" })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Impossible de préparer le formulaire.");
@@ -246,8 +246,8 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
     const formData = new FormData(form);
     const payload = Object.fromEntries(formData.entries());
     const endpoint = mode === "login"
-      ? "/api/login.php"
-      : professional ? "/api/register-professional.php" : "/api/register-client.php";
+      ? apiUrl("login.php")
+      : apiUrl(professional ? "register-professional.php" : "register-client.php");
 
     try {
       const response = await fetch(endpoint, {
@@ -273,13 +273,13 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
           ? ["commercial", "super_admin"]
           : [professional ? "professional" : "client"];
         if (!allowedRoles.includes(result.account?.role)) {
-          await fetch("/api/logout.php", {
+          await fetch(apiUrl("logout.php"), {
             method: "POST",
             credentials: "same-origin",
             headers: { "X-CSRF-Token": result.csrfToken },
           });
           setCsrfToken("");
-          const csrfResponse = await fetch("/api/csrf.php", { credentials: "same-origin" });
+          const csrfResponse = await fetch(apiUrl("csrf.php"), { credentials: "same-origin" });
           const csrfResult = await csrfResponse.json();
           if (csrfResponse.ok) setCsrfToken(csrfResult.csrfToken);
           setNotice({ kind: "error", text: "Ce compte ne correspond pas à cet espace." });
@@ -416,7 +416,7 @@ function AdminSetup({ onComplete }) {
   const [notice, setNotice] = useState(null);
 
   useEffect(() => {
-    fetch("/api/csrf.php", { credentials: "same-origin" })
+    fetch(apiUrl("csrf.php"), { credentials: "same-origin" })
       .then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Le formulaire de configuration est indisponible.");
@@ -432,7 +432,7 @@ function AdminSetup({ onComplete }) {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch("/api/setup-admin.php", {
+      const response = await fetch(apiUrl("setup-admin.php"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
@@ -497,12 +497,12 @@ function CommercialGate() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      fetch("/api/setup-status.php", { credentials: "same-origin" }).then(async (response) => {
+      fetch(apiUrl("setup-status.php"), { credentials: "same-origin" }).then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Configuration du serveur indisponible.");
         return result;
       }),
-      fetch("/api/session.php", { credentials: "same-origin" }).then(async (response) => {
+      fetch(apiUrl("session.php"), { credentials: "same-origin" }).then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Session indisponible.");
         return result;
@@ -592,7 +592,7 @@ function CommercialDashboard({ account, csrfToken, onLogout }) {
     setIsLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/commercial-applications.php?status=${encodeURIComponent(filter)}`, {
+      const response = await fetch(apiUrl(`commercial-applications.php?status=${encodeURIComponent(filter)}`), {
         credentials: "same-origin",
       });
       const result = await response.json();
@@ -614,7 +614,7 @@ function CommercialDashboard({ account, csrfToken, onLogout }) {
     setNotice("");
     setError("");
     try {
-      const response = await fetch("/api/review-application.php", {
+      const response = await fetch(apiUrl("review-application.php"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
@@ -638,7 +638,7 @@ function CommercialDashboard({ account, csrfToken, onLogout }) {
 
   async function logout() {
     try {
-      const response = await fetch("/api/logout.php", {
+      const response = await fetch(apiUrl("logout.php"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "X-CSRF-Token": csrfToken },
@@ -735,7 +735,7 @@ function SuperAdmin() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/session.php", { credentials: "same-origin" })
+    fetch(apiUrl("session.php"), { credentials: "same-origin" })
       .then(async (response) => {
         const session = await response.json();
         if (!response.ok) throw new Error(session.error || "Session indisponible.");
@@ -776,7 +776,7 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/admin-homepage-image.php", { credentials: "same-origin" })
+    fetch(apiUrl("admin-homepage-image.php"), { credentials: "same-origin" })
       .then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Impossible de charger l’image.");
@@ -796,7 +796,7 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
     setSaving(true);
     setNotice(null);
     try {
-      const response = await fetch("/api/admin-homepage-image.php", {
+      const response = await fetch(apiUrl("admin-homepage-image.php"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "X-CSRF-Token": csrfToken },
@@ -832,7 +832,7 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
 
   async function logout() {
     try {
-      const response = await fetch("/api/logout.php", {
+      const response = await fetch(apiUrl("logout.php"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "X-CSRF-Token": csrfToken },
@@ -865,7 +865,7 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
           {loading ? <p>Chargement…</p> : imageReady && (
             <>
               <div className="admin-image-preview">
-                {hasImage ? <img src={`/api/homepage-image.php?v=${imageVersion}`} alt="Image actuelle de la page d’accueil" /> : <span>Fond gris par défaut</span>}
+                {hasImage ? <img src={apiUrl(`homepage-image.php?v=${imageVersion}`)} alt="Image actuelle de la page d’accueil" /> : <span>Fond gris par défaut</span>}
               </div>
               <form className="auth-form" onSubmit={upload}>
                 <label>Choisir une image
@@ -946,14 +946,14 @@ function ClientAccount() {
     let active = true;
     async function load() {
       try {
-        const sessionResponse = await fetch("/api/session.php", { credentials: "same-origin" });
+        const sessionResponse = await fetch(apiUrl("session.php"), { credentials: "same-origin" });
         const session = await sessionResponse.json();
         if (!sessionResponse.ok) throw new Error(session.error || "Session indisponible.");
         if (!session.authenticated || session.account?.role !== "client") {
           navigate("/compte", { replace: true });
           return;
         }
-        const response = await fetch("/api/client-profile.php", { credentials: "same-origin" });
+        const response = await fetch(apiUrl("client-profile.php"), { credentials: "same-origin" });
         const result = await response.json();
         if (response.status === 401) {
           navigate("/compte", { replace: true });
@@ -980,7 +980,7 @@ function ClientAccount() {
     setPhoneNotice(null);
     setSavingPhone(true);
     try {
-      const response = await fetch("/api/client-profile.php", {
+      const response = await fetch(apiUrl("client-profile.php"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
@@ -1004,7 +1004,7 @@ function ClientAccount() {
     setPasswordNotice(null);
     setSavingPassword(true);
     try {
-      const response = await fetch("/api/client-password.php", {
+      const response = await fetch(apiUrl("client-password.php"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
@@ -1023,7 +1023,7 @@ function ClientAccount() {
 
   async function logout() {
     try {
-      const response = await fetch("/api/logout.php", {
+      const response = await fetch(apiUrl("logout.php"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "X-CSRF-Token": csrfToken },

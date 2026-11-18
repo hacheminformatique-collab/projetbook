@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiRequest, appointmentDate, priceLabel } from "./api-client.js";
+import { apiRequest, apiUrl, appointmentDate, priceLabel } from "./api-client.js";
 
 const emptyProduct = { name: "", reference: "", price: 0, threshold: 0, isActive: true };
 const numericValue = (value) => value === "" ? "" : Number(value);
@@ -71,7 +71,7 @@ export default function Inventory({ csrfToken }) {
             <option value="0">Actifs</option><option value="1">Actifs et archivés</option>
           </select></label>
           <button type="button" className="admin-nav-link" onClick={() => setRefresh((value) => value + 1)}>Actualiser</button>
-          <a className="admin-nav-link" href={`/api/professional-products.php?${query}&format=csv`}>Exporter les stocks (CSV)</a>
+          <a className="admin-nav-link" href={apiUrl(`professional-products.php?${query}&format=csv`)}>Exporter les stocks (CSV)</a>
         </form>
         <p className="field-hint">L’export reprend tous les produits correspondant aux filtres, sur toutes les pages. Ce n’est pas un export comptable.</p>
         {error && <p className="form-message form-error" role="alert">{error}</p>}

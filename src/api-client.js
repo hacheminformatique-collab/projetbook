@@ -1,5 +1,7 @@
+export const apiUrl = (path) => `${import.meta.env.BASE_URL}api/${path}`;
+
 export async function apiRequest(path, { body, csrfToken, signal } = {}) {
-  const response = await fetch(`/api/${path}`, {
+  const response = await fetch(apiUrl(path), {
     credentials: "same-origin",
     signal,
     ...(body === undefined ? {} : {

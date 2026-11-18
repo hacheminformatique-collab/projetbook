@@ -1,0 +1,14 @@
+{
+  "id": "./",
+  "name": "BOOKILI",
+  "short_name": "BOOKILI",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#737373",
+  "icons": [
+    { "src": "bookili-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

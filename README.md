@@ -117,10 +117,30 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/004_homepage_image.sql` et
 `database/migrations/005_booking.sql`,
 `database/migrations/006_appointment_notifications.sql` et
-`database/migrations/007_inventory.sql` et
-`database/migrations/008_salon_closures.sql` dans phpMyAdmin,
+`database/migrations/007_inventory.sql`,
+`database/migrations/008_salon_closures.sql` et
+`database/migrations/009_cash_register.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
+
+Si l’URL publique contient un sous-dossier, construisez le site avec ce
+préfixe, par exemple `npm run build -- --base=/masalledereception/`. Copiez
+le contenu de `dist/` (y compris `.htaccess`) dans le sous-dossier correspondant.
+Si le domaine pointe directement vers ce dossier et que le préfixe n’apparaît
+pas dans l’URL, utilisez plutôt `npm run build`. Gardez `bookili-config.php`
+hors de `public_html`. Conservez, le cas échéant, le fichier `api/config.php`
+du serveur qui charge le fichier privé par son chemin absolu. Dans l’URL de
+contrôle `.../api/health.php` et dans le chemin du cron, incluez le sous-dossier
+si nécessaire.
+
+### Installation sur mobile
+
+Sur HTTPS, BOOKILI fournit un manifeste Web et une icône. Utilisez
+**Sur l’écran d’accueil** dans le menu Partager de Safari sur iOS ou
+**Installer / Ajouter à l’écran d’accueil** dans le menu de Chrome sur Android
+(le libellé dépend du navigateur). La connexion reste nécessaire pour consulter
+les données, réserver ou enregistrer une vente. Le service worker affiche une
+page hors ligne sans stocker les données de compte, de réservation ou de caisse.
 
 Le serveur doit avoir PHP 8.1+ avec PDO MySQL, MySQL/MariaDB et Apache avec
 `mod_rewrite` pour les pages de l'application. L'extension PHP **GD**, avec
@@ -229,7 +249,7 @@ que les clients ayant un rendez-vous non annulé dans son propre salon.
 
 ## Produits et stocks professionnels
 
-L'onglet **Caisse** permet désormais de créer et modifier des produits
+L'onglet **Caisse → Stocks** permet de créer et modifier des produits
 (nom, référence facultative, prix unitaire en DA et seuil d'alerte), puis
 d'enregistrer des entrées ou sorties avec un motif obligatoire. Chaque produit
 commence à zéro : l'approvisionnement initial est une entrée de stock.
@@ -254,13 +274,31 @@ et pas seulement la page affichée. Il utilise UTF-8 et le séparateur
 point-virgule ; les textes pouvant être interprétés comme des formules sont
 neutralisés. Les données d'un autre salon ne sont jamais exportées.
 
-Ce module est un suivi d'inventaire manuel, pas une caisse d'encaissement :
-les rendez-vous ne décrémentent pas les produits et les sorties ne créent
-aucune vente, facture ou écriture comptable. Les alertes sont affichées dans
-l'espace professionnel, sans notification e-mail de stock.
+Une sortie saisie dans **Stocks** n’enregistre pas de vente. Les alertes sont
+affichées dans l’espace professionnel, sans e-mail de stock.
 
-L'encaissement, les exports comptables, les cartes cadeaux, la gestion multi-collaborateurs,
-les abonnements et les campagnes marketing restent à développer.
+## Vente et journal de caisse
+
+Dans **Caisse → Vente**, ajoutez des produits et des prestations actifs au
+panier, puis indiquez le mode du règlement **déjà reçu**. Le serveur vérifie
+les prix et les quantités. L’enregistrement fige le nom et le prix de chaque
+ligne, et déduit les produits vendus dans la même transaction. Une réservation
+ne crée pas de vente et ne modifie pas les stocks.
+
+**Caisse → Journal** affiche les ventes et les annulations de la période,
+avec un total net et un export CSV. L’annulation intégrale d’une vente est
+motivée, remet les produits en stock, et ajoute une ligne négative datée
+sans effacer la vente initiale. À utiliser seulement si les produits ont
+été effectivement remis en stock. BOOKILI n’effectue ni paiement ni
+remboursement bancaire ; ce journal interne n’est ni une facture ni un export
+comptable réglementaire.
+
+Le test `tests/cash.py` utilise les mêmes variables que `tests/bookings.py` et
+nécessite sa propre base jetable et plusieurs workers PHP.
+
+Les cartes cadeaux, la gestion multi-collaborateurs, les abonnements,
+la gestion élargie des comptes par le super-admin et les campagnes marketing
+restent à développer.
 
 ## État du projet
 
@@ -276,7 +314,7 @@ Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
 `professional_profiles`, `salons`, `services`, `platform_setup`,
 `homepage_image`, `salon_hours`, `salon_closures`, `appointments`, `notification_outbox`,
-`products` et `stock_movements`.
+`products`, `stock_movements`, `cash_sales` et `cash_sale_lines`.
 Pour une
 base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/002_registration_auth.sql`, puis
@@ -284,6 +322,7 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/004_homepage_image.sql`,
 `database/migrations/005_booking.sql`,
 `database/migrations/006_appointment_notifications.sql` et
-`database/migrations/007_inventory.sql` et
-`database/migrations/008_salon_closures.sql`, dans cet ordre,
+`database/migrations/007_inventory.sql`,
+`database/migrations/008_salon_closures.sql` et
+`database/migrations/009_cash_register.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

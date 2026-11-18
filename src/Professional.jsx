@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Appointments } from "./Booking.jsx";
-import Inventory from "./Inventory.jsx";
+import CashRegister from "./CashRegister.jsx";
 import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
 
@@ -64,7 +64,7 @@ export default function ProfessionalSpace() {
               <Appointments professional csrfToken={session.csrfToken} />
               <ClosureSettings csrfToken={session.csrfToken} />
             </>}
-            {tab === "caisse" && <Inventory csrfToken={session.csrfToken} />}
+            {tab === "caisse" && <CashRegister csrfToken={session.csrfToken} />}
             {tab === "clients" && <ProfessionalClients />}
             {tab === "admin" && <>
               <ServiceSettings csrfToken={session.csrfToken} />

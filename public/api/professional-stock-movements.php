@@ -39,16 +39,7 @@ try {
             $pdo->rollBack();
             bookili_json_response(409, ['error' => 'Mouvement refusé : produit archivé, stock insuffisant ou limite de 1 000 000 unités dépassée. Actualisez le stock.']);
         }
-        $pdo->prepare('UPDATE products SET quantity = :quantity WHERE id = :id')
-            ->execute(['quantity' => $after, 'id' => $productId]);
-        $pdo->prepare(
-            'INSERT INTO stock_movements (product_id, actor_id, request_key, quantity_delta, quantity_after, reason, created_at)
-             VALUES (:product_id, :actor_id, :request_key, :delta, :after, :reason, :created_at)'
-        )->execute([
-            'product_id' => $productId, 'actor_id' => $account['id'], 'request_key' => $requestKey,
-            'delta' => $delta, 'after' => $after, 'reason' => $reason,
-            'created_at' => bookili_now()->format('Y-m-d H:i:s'),
-        ]);
+        bookili_write_stock_movement($pdo, $productId, (int) $account['id'], $requestKey, $delta, $after, $reason, bookili_now()->format('Y-m-d H:i:s'));
         $pdo->commit();
         bookili_json_response(200, ['message' => 'Mouvement de stock enregistré.', 'duplicate' => false]);
     }

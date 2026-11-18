@@ -30,3 +30,16 @@ function bookili_csv_text(string $value): string
 {
     return preg_match('/^[\s\x00-\x20]*[=+@-]|^[\t\r\n]/u', $value) ? "'" . $value : $value;
 }
+
+function bookili_write_stock_movement(PDO $pdo, int $productId, int $actorId, string $key, int $delta, int $after, string $reason, string $now): void
+{
+    $pdo->prepare('UPDATE products SET quantity = :quantity WHERE id = :id')
+        ->execute(['quantity' => $after, 'id' => $productId]);
+    $pdo->prepare(
+        'INSERT INTO stock_movements (product_id, actor_id, request_key, quantity_delta, quantity_after, reason, created_at)
+         VALUES (:product_id, :actor_id, :request_key, :delta, :after, :reason, :created_at)'
+    )->execute([
+        'product_id' => $productId, 'actor_id' => $actorId, 'request_key' => $key,
+        'delta' => $delta, 'after' => $after, 'reason' => $reason, 'created_at' => $now,
+    ]);
+}
