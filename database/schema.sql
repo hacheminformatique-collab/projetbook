@@ -47,6 +47,15 @@ CREATE TABLE IF NOT EXISTS client_profiles (
     FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS client_marketing_preferences (
+  account_id BIGINT UNSIGNED NOT NULL,
+  consent BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (account_id),
+  KEY client_marketing_consent (consent, account_id),
+  CONSTRAINT client_marketing_account_fk FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS professional_applications (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   account_id BIGINT UNSIGNED NOT NULL,
@@ -141,11 +150,25 @@ CREATE TABLE IF NOT EXISTS salon_closures (
   CONSTRAINT salon_closures_salon_fk FOREIGN KEY (salon_id) REFERENCES salons (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS staff_members (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  salon_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY staff_members_salon_name (salon_id, name),
+  KEY staff_members_active (salon_id, is_active, name),
+  CONSTRAINT staff_members_salon_fk FOREIGN KEY (salon_id) REFERENCES salons (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS appointments (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   salon_id BIGINT UNSIGNED NOT NULL,
   client_id BIGINT UNSIGNED NOT NULL,
   service_id BIGINT UNSIGNED NOT NULL,
+  staff_id BIGINT UNSIGNED NULL,
   service_name VARCHAR(180) NOT NULL,
   price_dzd BIGINT UNSIGNED NOT NULL,
   starts_at DATETIME NOT NULL,
@@ -156,10 +179,12 @@ CREATE TABLE IF NOT EXISTS appointments (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY appointments_salon_time (salon_id, status, starts_at, ends_at),
+  KEY appointments_staff_time (staff_id, status, starts_at, ends_at),
   KEY appointments_client_time (client_id, starts_at),
   CONSTRAINT appointments_salon_fk FOREIGN KEY (salon_id) REFERENCES salons (id) ON DELETE RESTRICT,
   CONSTRAINT appointments_client_fk FOREIGN KEY (client_id) REFERENCES accounts (id) ON DELETE RESTRICT,
-  CONSTRAINT appointments_service_fk FOREIGN KEY (service_id) REFERENCES services (id) ON DELETE RESTRICT
+  CONSTRAINT appointments_service_fk FOREIGN KEY (service_id) REFERENCES services (id) ON DELETE RESTRICT,
+  CONSTRAINT appointments_staff_fk FOREIGN KEY (staff_id) REFERENCES staff_members (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS notification_outbox (
@@ -173,6 +198,7 @@ CREATE TABLE IF NOT EXISTS notification_outbox (
   send_after DATETIME NOT NULL,
   status ENUM('queued', 'sending', 'retry', 'sent', 'failed', 'cancelled') NOT NULL DEFAULT 'queued',
   attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  send_after DATETIME NOT NULL,
   locked_at DATETIME NULL,
   sent_at DATETIME NULL,
   last_error VARCHAR(255) NULL,
@@ -220,8 +246,11 @@ CREATE TABLE IF NOT EXISTS cash_sales (
   actor_id BIGINT UNSIGNED NOT NULL,
   request_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  payment_method ENUM('cash', 'card', 'transfer', 'other') NOT NULL,
+  payment_method ENUM('cash', 'card', 'transfer', 'other', 'gift_card') NOT NULL,
   total_dzd BIGINT UNSIGNED NOT NULL,
+  collected_dzd BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  gift_card_applied_dzd BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  gift_card_id BIGINT UNSIGNED NULL,
   recorded_at DATETIME NOT NULL,
   voided_at DATETIME NULL,
   voided_by BIGINT UNSIGNED NULL,
@@ -237,11 +266,153 @@ CREATE TABLE IF NOT EXISTS cash_sales (
 
 CREATE TABLE IF NOT EXISTS cash_sale_lines (
   sale_id BIGINT UNSIGNED NOT NULL,
-  item_kind ENUM('product', 'service') NOT NULL,
+  item_kind ENUM('product', 'service', 'gift_card') NOT NULL,
   item_id BIGINT UNSIGNED NOT NULL,
   item_name VARCHAR(180) NOT NULL,
   quantity INT UNSIGNED NOT NULL,
   unit_price_dzd BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (sale_id, item_kind, item_id),
   CONSTRAINT cash_sale_lines_sale_fk FOREIGN KEY (sale_id) REFERENCES cash_sales (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS gift_cards (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  salon_id BIGINT UNSIGNED NOT NULL,
+  issued_sale_id BIGINT UNSIGNED NOT NULL,
+  code_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  initial_value_dzd BIGINT UNSIGNED NOT NULL,
+  balance_dzd BIGINT UNSIGNED NOT NULL,
+  expires_on DATE NOT NULL,
+  issued_at DATETIME NOT NULL,
+  status ENUM('active', 'voided', 'expired') NOT NULL DEFAULT 'active',
+  voided_at DATETIME NULL,
+  voided_by BIGINT UNSIGNED NULL,
+  void_reason VARCHAR(255) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY gift_cards_code_hash (code_hash),
+  KEY gift_cards_salon (salon_id, issued_at, id),
+  CONSTRAINT gift_cards_salon_fk FOREIGN KEY (salon_id) REFERENCES salons (id),
+  CONSTRAINT gift_cards_sale_fk FOREIGN KEY (issued_sale_id) REFERENCES cash_sales (id),
+  CONSTRAINT gift_cards_void_actor_fk FOREIGN KEY (voided_by) REFERENCES accounts (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE cash_sales
+  ADD CONSTRAINT cash_sales_gift_card_fk FOREIGN KEY (gift_card_id) REFERENCES gift_cards (id);
+
+CREATE TABLE IF NOT EXISTS gift_card_events (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  gift_card_id BIGINT UNSIGNED NOT NULL,
+  sale_id BIGINT UNSIGNED NOT NULL,
+  event_kind ENUM('issued', 'redeemed', 'restored') NOT NULL,
+  amount_dzd BIGINT UNSIGNED NOT NULL,
+  balance_after_dzd BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY gift_card_events_once (gift_card_id, sale_id, event_kind),
+  KEY gift_card_events_history (gift_card_id, id),
+  CONSTRAINT gift_card_events_card_fk FOREIGN KEY (gift_card_id) REFERENCES gift_cards (id),
+  CONSTRAINT gift_card_events_sale_fk FOREIGN KEY (sale_id) REFERENCES cash_sales (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS subscription_plans (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  monthly_price_dzd BIGINT UNSIGNED NOT NULL,
+  annual_price_dzd BIGINT UNSIGNED NOT NULL,
+  trial_days SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  PRIMARY KEY (id),
+  UNIQUE KEY subscription_plans_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS professional_subscriptions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  professional_profile_id BIGINT UNSIGNED NOT NULL,
+  plan_id BIGINT UNSIGNED NOT NULL,
+  billing_cycle ENUM('monthly', 'annual') NOT NULL,
+  price_dzd BIGINT UNSIGNED NOT NULL,
+  status ENUM('trial', 'active', 'past_due', 'cancelled') NOT NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY professional_subscriptions_profile (professional_profile_id),
+  KEY professional_subscriptions_renewal (status, period_end),
+  CONSTRAINT subscriptions_profile_fk FOREIGN KEY (professional_profile_id) REFERENCES professional_profiles (id),
+  CONSTRAINT subscriptions_plan_fk FOREIGN KEY (plan_id) REFERENCES subscription_plans (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS subscription_payments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  subscription_id BIGINT UNSIGNED NOT NULL,
+  recorded_by BIGINT UNSIGNED NOT NULL,
+  amount_dzd BIGINT UNSIGNED NOT NULL,
+  payment_method ENUM('cash', 'transfer', 'card', 'other') NOT NULL,
+  reference VARCHAR(120) NOT NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  paid_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY subscription_payments_reference (subscription_id, reference),
+  UNIQUE KEY subscription_payments_period (subscription_id, period_start, period_end),
+  KEY subscription_payments_paid (paid_at, id),
+  CONSTRAINT subscription_payments_subscription_fk FOREIGN KEY (subscription_id) REFERENCES professional_subscriptions (id),
+  CONSTRAINT subscription_payments_admin_fk FOREIGN KEY (recorded_by) REFERENCES accounts (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS admin_account_events (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  account_id BIGINT UNSIGNED NOT NULL,
+  admin_id BIGINT UNSIGNED NOT NULL,
+  old_status ENUM('pending', 'active', 'suspended') NOT NULL,
+  new_status ENUM('pending', 'active', 'suspended') NOT NULL,
+  reason VARCHAR(255) NOT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY admin_account_events_history (account_id, id),
+  CONSTRAINT admin_account_events_account_fk FOREIGN KEY (account_id) REFERENCES accounts (id),
+  CONSTRAINT admin_account_events_admin_fk FOREIGN KEY (admin_id) REFERENCES accounts (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS marketing_campaigns (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  created_by BIGINT UNSIGNED NOT NULL,
+  subject VARCHAR(200) NOT NULL,
+  message_body TEXT NOT NULL,
+  status ENUM('queued', 'sending', 'completed', 'cancelled') NOT NULL DEFAULT 'queued',
+  created_at DATETIME NOT NULL,
+  completed_at DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY marketing_campaigns_status (status, created_at),
+  CONSTRAINT marketing_campaigns_admin_fk FOREIGN KEY (created_by) REFERENCES accounts (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS marketing_campaign_recipients (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campaign_id BIGINT UNSIGNED NOT NULL,
+  account_id BIGINT UNSIGNED NOT NULL,
+  recipient VARCHAR(254) NOT NULL,
+  status ENUM('queued', 'sending', 'retry', 'sent', 'failed', 'cancelled') NOT NULL DEFAULT 'queued',
+  attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  locked_at DATETIME NULL,
+  sent_at DATETIME NULL,
+  last_error VARCHAR(255) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY marketing_campaign_account (campaign_id, account_id),
+  KEY marketing_recipient_queue (status, send_after, id),
+  CONSTRAINT marketing_recipient_campaign_fk FOREIGN KEY (campaign_id) REFERENCES marketing_campaigns (id),
+  CONSTRAINT marketing_recipient_account_fk FOREIGN KEY (account_id) REFERENCES accounts (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS marketing_unsubscribe_tokens (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  recipient_id BIGINT UNSIGNED NOT NULL,
+  token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY marketing_unsubscribe_hash (token_hash),
+  KEY marketing_unsubscribe_recipient (recipient_id),
+  CONSTRAINT marketing_unsubscribe_recipient_fk FOREIGN KEY (recipient_id) REFERENCES marketing_campaign_recipients (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -99,8 +99,22 @@ function bookili_service(PDO $pdo, int $salonId, int $serviceId): array
     return $service;
 }
 
-function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable $day, int $excludeId = 0): array
+function bookili_salon_staff(PDO $pdo, int $salonId): array
 {
+    $statement = $pdo->prepare(
+        'SELECT id, name FROM staff_members WHERE salon_id = :salon_id AND is_active = 1 ORDER BY name, id'
+    );
+    $statement->execute(['salon_id' => $salonId]);
+    return $statement->fetchAll();
+}
+
+function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable $day, int $excludeId = 0, int $staffId = 0): array
+{
+    if ($staffId > 0) {
+        $statement = $pdo->prepare('SELECT 1 FROM staff_members WHERE id = :id AND salon_id = :salon_id AND is_active = 1');
+        $statement->execute(['id' => $staffId, 'salon_id' => $salonId]);
+        if (!$statement->fetchColumn()) bookili_json_response(422, ['error' => 'Ce collaborateur n’est plus disponible.']);
+    }
     $statement = $pdo->prepare('SELECT 1 FROM salon_closures WHERE salon_id = :id AND closure_date = :day');
     $statement->execute(['id' => $salonId, 'day' => $day->format('Y-m-d')]);
     if ($statement->fetchColumn()) return [];
@@ -112,14 +126,17 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
 
     $statement = $pdo->prepare(
         "SELECT starts_at, ends_at FROM appointments
-         WHERE salon_id = :id AND status = 'confirmed' AND id <> :excluded
+         WHERE salon_id = :id AND status = 'confirmed' AND id <> :excluded"
+         . ($staffId > 0 ? ' AND (staff_id = :staff_id OR staff_id IS NULL)' : '') . "
          AND starts_at < :day_end AND ends_at > :day_start"
     );
-    $statement->execute([
+    $params = [
         'id' => $salonId, 'excluded' => $excludeId,
         'day_start' => $day->format('Y-m-d 00:00:00'),
         'day_end' => $day->modify('+1 day')->format('Y-m-d 00:00:00'),
-    ]);
+    ];
+    if ($staffId > 0) $params['staff_id'] = $staffId;
+    $statement->execute($params);
     $busy = $statement->fetchAll();
     $start = new DateTimeImmutable($day->format('Y-m-d') . ' ' . $hours['opens_at'], new DateTimeZone('Africa/Algiers'));
     $close = new DateTimeImmutable($day->format('Y-m-d') . ' ' . $hours['closes_at'], new DateTimeZone('Africa/Algiers'));

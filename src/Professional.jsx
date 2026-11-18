@@ -59,7 +59,7 @@ export default function ProfessionalSpace() {
                 <button key={value} type="button" aria-current={tab === value ? "page" : undefined} onClick={() => setTab(value)}>{name}</button>
               ))}
             </nav>
-            <p className="form-message">Version initiale : un seul agenda par établissement, avec un rendez-vous à la fois. {Number(configuration.salon.is_public) ? <Link className="inline-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link> : "Votre salon est masqué. Configurez vos prestations et horaires dans Admin avant de le publier."}</p>
+            <p className="form-message">Les rendez-vous sont répartis entre les collaborateurs actifs, selon les horaires d’ouverture du salon. {Number(configuration.salon.is_public) ? <Link className="inline-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link> : "Votre salon est masqué. Configurez vos prestations et horaires dans Admin avant de le publier."}</p>
             {tab === "agenda" && <>
               <Appointments professional csrfToken={session.csrfToken} />
               <ClosureSettings csrfToken={session.csrfToken} />
@@ -68,6 +68,7 @@ export default function ProfessionalSpace() {
             {tab === "clients" && <ProfessionalClients />}
             {tab === "admin" && <>
               <ServiceSettings csrfToken={session.csrfToken} />
+              <StaffSettings csrfToken={session.csrfToken} />
               <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} />
             </>}
           </>
@@ -75,6 +76,55 @@ export default function ProfessionalSpace() {
       </div>
     </main>
   );
+}
+
+function StaffSettings({ csrfToken }) {
+  const [staff, setStaff] = useState(null);
+  const [editing, setEditing] = useState({ name: "", isActive: true });
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    apiRequest("professional-staff.php", { signal: controller.signal })
+      .then((result) => setStaff(result.staff))
+      .catch((cause) => { if (!controller.signal.aborted) setNotice({ kind: "error", text: cause.message }); });
+    return () => controller.abort();
+  }, []);
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setNotice(null);
+    try {
+      const result = await apiRequest("professional-staff.php", { csrfToken, body: { action: "save", ...editing } });
+      setStaff(result.staff);
+      setEditing({ name: "", isActive: true });
+      setNotice({ kind: "success", text: result.message });
+    } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
+    finally { setSaving(false); }
+  }
+  return <section className="client-card">
+    <h2>Collaborateurs</h2>
+    <p>Les disponibilités de toute l’équipe suivent les horaires du salon. Les rendez-vous déjà pris restent visibles si un collaborateur est désactivé.</p>
+    {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+    {staff === null && <p>Chargement…</p>}
+    <div className="service-list">{staff?.map((member) => <div className="service-row" key={member.id}>
+      <span><strong>{member.name}</strong><br />{Number(member.is_active) ? "Actif et réservable" : "Inactif"}</span>
+      <button type="button" className="admin-nav-link" disabled={saving} onClick={() => {
+        setEditing({ staffId: Number(member.id), name: member.name, isActive: Number(member.is_active) === 1 });
+      }}>Modifier</button>
+    </div>)}</div>
+    {staff !== null && <form className="auth-form" onSubmit={submit}>
+      <h3>{editing.staffId ? "Modifier le collaborateur" : "Ajouter un collaborateur"}</h3>
+      <fieldset className="form-fieldset" disabled={saving}>
+        <label>Nom affiché<input required maxLength={120} value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
+        <label className="checkbox-label"><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} />Collaborateur actif et réservable</label>
+        <div className="review-buttons">
+          <button type="submit" className="auth-submit">{saving ? "Enregistrement…" : "Enregistrer"}</button>
+          {editing.staffId && <button type="button" className="admin-nav-link" onClick={() => setEditing({ name: "", isActive: true })}>Annuler</button>}
+        </div>
+      </fieldset>
+    </form>}
+  </section>;
 }
 
 function ClosureSettings({ csrfToken }) {

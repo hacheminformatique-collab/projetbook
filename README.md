@@ -77,6 +77,11 @@ la pagination et des mouvements concurrents ou répétés :
 BOOKILI_TEST_URL=http://localhost:8765 BOOKILI_TEST_SETUP_TOKEN=cle_de_test python3 tests/inventory.py
 ```
 
+Le test `tests/cash.py` vérifie la caisse et les cartes cadeaux. Le test
+`tests/bookings.py` inclut aussi l’agenda multi-collaborateurs et le consentement
+aux campagnes marketing. Ils nécessitent chacun une base jetable neuve avec
+toutes les migrations à jour.
+
 La clé de test doit correspondre à `setup_token` et contenir au moins
 64 caractères. Les tests qui créent le super-admin ne doivent pas partager
 une même base déjà initialisée.
@@ -119,9 +124,14 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/006_appointment_notifications.sql` et
 `database/migrations/007_inventory.sql`,
 `database/migrations/008_salon_closures.sql` et
-`database/migrations/009_cash_register.sql` dans phpMyAdmin,
+`database/migrations/009_cash_register.sql`,
+`database/migrations/010_gift_cards.sql`,
+`database/migrations/011_admin_billing.sql`,
+`database/migrations/012_multi_staff.sql` et
+`database/migrations/013_marketing_campaigns.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
+Les migrations doivent être appliquées dans l’ordre et une seule fois.
 
 Si l’URL publique contient un sous-dossier, construisez le site avec ce
 préfixe, par exemple `npm run build -- --base=/masalledereception/`. Copiez
@@ -151,12 +161,27 @@ serveur.
 
 Pour les e-mails, créez dans cPanel une adresse d'expédition sur votre domaine,
 puis renseignez `mail_from` et `mail_from_name` dans
-`bookili-config.php` (hors de `public_html`). Ajoutez ensuite une tâche cron
-cPanel, par exemple :
+`bookili-config.php` (hors de `public_html`). Pour les campagnes, ajoutez aussi
+`public_url` avec l’URL HTTPS publique exacte de BOOKILI, sous-dossier compris
+(par exemple `https://exemple.dz/masalledereception`). Les campagnes ne ciblent
+que les clients actifs ayant explicitement coché leur consentement ; celui-ci
+peut être retiré depuis le compte ou via le lien de désinscription de chaque
+courriel. Les campagnes sont du texte brut, limitées à 5 000 destinataires et
+envoyées par lots de 25.
+
+Ajoutez des tâches cron cPanel, par exemple :
 
 ```bash
 */15 * * * * /usr/local/bin/php /home/UTILISATEUR_CPANEL/public_html/api/send-notifications.php
+*/15 * * * * /usr/local/bin/php /home/UTILISATEUR_CPANEL/public_html/api/send-campaigns.php
 ```
+
+Les cartes cadeaux sont utilisables uniquement dans le salon émetteur ; le code
+complet n’est montré qu’une seule fois à l’émission. Les abonnements BOOKILI
+sont suivis avec des règlements saisis manuellement : aucun paiement ou
+prélèvement bancaire n’est effectué. L’export super-admin est un relevé interne
+des ventes, annulations et règlements, pas une facture réglementaire ni une
+déclaration fiscale.
 
 Le chemin PHP peut être `/usr/bin/php` selon l'hébergeur ; utilisez la version
 PHP 8.1+ avec PDO MySQL. Testez le chemin et la configuration en lançant
@@ -310,6 +335,10 @@ personnalisation de l'image d'accueil, la gestion du téléphone et du mot
 de passe client, la configuration du salon, l'annuaire et le parcours de
 réservation avec notifications e-mail et rappels programmés, ainsi que la
 gestion des produits, des stocks et des mouvements.
+Il comprend également les cartes cadeaux, la répartition des rendez-vous par
+collaborateur, la suspension/réactivation auditée des comptes, la gestion
+manuelle des forfaits et règlements, l’export comptable interne et les
+campagnes marketing avec consentement révocable.
 Le schéma MySQL crée les tables `accounts`, `client_profiles`,
 `registration_rate_limits`, `professional_applications`,
 `professional_profiles`, `salons`, `services`, `platform_setup`,
@@ -324,5 +353,9 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/006_appointment_notifications.sql` et
 `database/migrations/007_inventory.sql`,
 `database/migrations/008_salon_closures.sql` et
-`database/migrations/009_cash_register.sql`, dans cet ordre,
+`database/migrations/009_cash_register.sql`,
+`database/migrations/010_gift_cards.sql`,
+`database/migrations/011_admin_billing.sql`,
+`database/migrations/012_multi_staff.sql` et
+`database/migrations/013_marketing_campaigns.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

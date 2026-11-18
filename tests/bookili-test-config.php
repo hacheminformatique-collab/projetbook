@@ -9,4 +9,5 @@ return [
     'setup_token' => getenv('BOOKILI_TEST_SETUP_TOKEN') ?: '',
     'mail_from' => 'notifications@example.test',
     'mail_from_name' => 'BOOKILI',
+    'public_url' => 'https://example.test',
 ];

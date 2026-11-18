@@ -36,13 +36,14 @@ def expect_empty_response(client, path, status):
         assert response.read() == b""
 
 
-def new_client(number):
+def new_client(number, marketing_consent=False):
     client = Client()
     client.token()
     email = f"client-{SUFFIX}-{number}@example.test"
     expect(client.request("register-client.php", {
         "firstName": f"Client {number}", "lastName": "Test", "email": email,
         "phone": "0550123456", "dateOfBirth": "1990-01-01", "password": PASSWORD,
+        "marketingConsent": marketing_consent,
     }), 201)
     assert client.login(email, PASSWORD) == 200
     return client
@@ -62,6 +63,7 @@ def new_professional(admin, number):
     application = next(row for row in applications if row["email"] == email)
     expect(admin.request("review-application.php", {"applicationId": application["id"], "decision": "approve"}), 200)
     assert professional.login(email, PASSWORD) == 200
+    professional.email = email
     configuration = expect(professional.request("professional-salon.php"), 200)
     return professional, configuration["salon"]
 
@@ -82,7 +84,7 @@ def main():
         "setupToken": os.environ["BOOKILI_TEST_SETUP_TOKEN"], "email": email, "password": PASSWORD,
     }), 201)
     assert admin.login(email, PASSWORD) == 200
-    first, second = new_client(1), new_client(2)
+    first, second = new_client(1, marketing_consent=True), new_client(2)
     professional, salon = new_professional(admin, 1)
     other_pro, other_salon = new_professional(admin, 2)
     salon_id = int(salon["id"])
@@ -197,7 +199,89 @@ def main():
     expect(guest.request("admin-notifications.php"), 401)
     expect(first.request("admin-notifications.php"), 403)
     expect_empty_response(guest, "send-notifications.php", 404)
-    print("Booking checks passed: publication, filters, ownership, slots, rescheduling, snapshots, cancellation and concurrency.")
+
+    staff_a = expect(professional.request("professional-staff.php", {
+        "action": "save", "name": "Collaboratrice A", "isActive": True,
+    }), 200)["staff"][0]
+    staff_b = expect(professional.request("professional-staff.php", {
+        "action": "save", "name": "Collaboratrice B", "isActive": True,
+    }), 200)["staff"][1]
+    team_slots = expect(guest.request(available), 200)
+    assert len(team_slots["staff"]) == 2 and team_slots["slots"] == []
+    staff_a_url = available + f"&staffId={staff_a['id']}"
+    staff_b_url = available + f"&staffId={staff_b['id']}"
+    assert "13:00" in expect(guest.request(staff_a_url), 200)["slots"]
+    assert "13:00" in expect(guest.request(staff_b_url), 200)["slots"]
+    staff_booking = {**booking, "time": "13:00", "staffId": int(staff_a["id"])}
+    staff_appointment_a = expect(first.request("appointments.php", staff_booking), 201)["appointmentId"]
+    staff_appointment_b = expect(second.request("appointments.php", {**staff_booking, "staffId": int(staff_b["id"])}), 201)["appointmentId"]
+    expect(second.request("appointments.php", {**staff_booking, "time": "13:15"}), 409)
+    agenda_a = expect(professional.request(f"appointments.php?date={booking_day}&staffId={staff_a['id']}"), 200)["appointments"]
+    assert len(agenda_a) == 1 and agenda_a[0]["staff_name"] == "Collaboratrice A"
+    expect(professional.request("professional-staff.php", {
+        "action": "save", "staffId": int(staff_a["id"]), "name": "Collaboratrice A", "isActive": False,
+    }), 200)
+    expect(guest.request(staff_a_url), 422)
+    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": staff_appointment_a}), 200)
+    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": staff_appointment_b}), 200)
+
+    campaigns = expect(admin.request("admin-campaigns.php"), 200)
+    assert campaigns["consentingClients"] == 1
+    campaign = expect(admin.request("admin-campaigns.php", {
+        "action": "create", "subject": f"Test {SUFFIX}", "body": "Message de test",
+    }), 201)
+    assert campaign["recipients"] == 1
+    expect(first.request("admin-campaigns.php"), 403)
+    expect(second.request("admin-campaigns.php"), 403)
+    profile = expect(first.request("client-profile.php"), 200)["profile"]
+    assert int(profile["marketing_consent"]) == 1
+    profile = expect(second.request("client-profile.php"), 200)["profile"]
+    assert int(profile["marketing_consent"]) == 0
+    expect(first.request("client-profile.php", {"marketingConsent": False}), 200)
+    campaigns = expect(admin.request("admin-campaigns.php"), 200)
+    assert campaigns["consentingClients"] == 0
+    expect(admin.request("admin-campaigns.php", {"action": "cancel", "campaignId": campaign["campaignId"]}), 200)
+
+    expect(admin.request("admin-billing.php", {
+        "action": "save-plan", "name": f"Essai {SUFFIX}", "monthlyPrice": 12000,
+        "annualPrice": 120000, "trialDays": 0, "isActive": True,
+    }), 200)
+    billing = expect(admin.request("admin-billing.php"), 200)
+    selected_plan = next(item for item in billing["plans"] if item["name"] == f"Essai {SUFFIX}")
+    other_account = next(person for person in billing["professionals"] if person["email"] == other_pro.email)
+    expect(admin.request("admin-billing.php", {
+        "action": "assign", "accountId": int(other_account["id"]), "planId": int(selected_plan["id"]), "cycle": "monthly",
+    }), 200)
+    assert expect(admin.request("admin-billing.php", {
+        "action": "assign", "accountId": int(other_account["id"]), "planId": int(selected_plan["id"]), "cycle": "monthly",
+    }), 409)
+    billing = expect(admin.request("admin-billing.php"), 200)
+    subscription = next(item for item in billing["subscriptions"] if item["email"] == other_pro.email)
+    today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=1))).date()
+    period_start = today.replace(day=1)
+    if period_start.month == 12:
+        next_month = period_start.replace(year=period_start.year + 1, month=1)
+    else:
+        next_month = period_start.replace(month=period_start.month + 1)
+    period_end = next_month - datetime.timedelta(days=1)
+    payment = {
+        "action": "record-payment", "subscriptionId": int(subscription["id"]), "amountDzd": 12000,
+        "paymentMethod": "transfer", "reference": f"REF-{SUFFIX}",
+        "periodStart": period_start.isoformat(), "periodEnd": period_end.isoformat(),
+    }
+    expect(admin.request("admin-billing.php", payment), 201)
+    expect(admin.request("admin-billing.php", payment), 409)
+    accounts = expect(admin.request(f"admin-accounts.php?q={other_pro.email}"), 200)["accounts"]
+    target_account = next(item for item in accounts if item["email"] == other_pro.email)
+    expect(admin.request("admin-accounts.php", {
+        "action": "suspend", "accountId": int(target_account["id"]), "reason": "Test d’intégration",
+    }), 200)
+    assert other_pro.request("professional-salon.php")[0] == 401
+    expect(admin.request("admin-accounts.php", {
+        "action": "restore", "accountId": int(target_account["id"]), "reason": "Fin du test",
+    }), 200)
+    assert other_pro.login(other_account["email"], PASSWORD) == 200
+    print("Integration checks passed: reservations, staff scheduling, consent, campaigns, billing and account administration.")
 
 
 if __name__ == "__main__":

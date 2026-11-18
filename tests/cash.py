@@ -69,7 +69,7 @@ def main():
     with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=csv") as response:
         rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
     assert len(rows) == 3 and {row[4] for row in rows[1:]} == {"2900", "-2900"}
-    assert next(row for row in rows[1:] if row[2] == "Annulation")[5] == "'=Produit rendu"
+    assert next(row for row in rows[1:] if row[2] == "Annulation")[7] == "'=Produit rendu"
 
     expect(professional.request(PRODUCTS, product_payload(id=product)), 200)
     second_session = Client()
@@ -85,6 +85,35 @@ def main():
         results = list(pool.map(buy, (professional, second_session)))
     assert sorted(status for status, _ in results) == [201, 409], results
     assert history(professional, product)["product"]["quantity"] == 1
+
+    gifts = "professional-gift-cards.php"
+    expect(guest.request(gifts), 401)
+    expect(customer.request(gifts), 403)
+    expect(professional.request(gifts, {"action": "issue", "valueDzd": 2000, "paymentMethod": "cash", "requestKey": str(uuid.uuid4())}, csrf=False), 403)
+    for bad_value in (499, 10000001, 1.5, "2000", True):
+        expect(professional.request(gifts, {"action": "issue", "valueDzd": bad_value, "paymentMethod": "cash", "requestKey": str(uuid.uuid4())}), 422)
+    gift_request = {"action": "issue", "valueDzd": 2000, "paymentMethod": "cash", "requestKey": str(uuid.uuid4())}
+    issued = expect(professional.request(gifts, gift_request), 201)
+    assert len(issued["code"]) == 32 and issued["valueDzd"] == 2000
+    replay = expect(professional.request(gifts, gift_request), 200)
+    assert replay["duplicate"] and replay["code"] is None and replay["saleId"] == issued["saleId"]
+    card_list = expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"]
+    assert len(card_list) == 1 and "code" not in card_list[0]
+    voucher_sale = {
+        "action": "record", "requestKey": str(uuid.uuid4()), "paymentMethod": "cash",
+        "giftCardCode": f"{issued['code'][:8]} {issued['code'][8:]}",
+        "lines": [service_line],
+    }
+    expect(other.request(ENDPOINT, voucher_sale), 409)
+    redeemed = expect(professional.request(ENDPOINT, voucher_sale), 201)
+    assert redeemed["totalDzd"] == 500 and redeemed["giftCardAppliedDzd"] == 500
+    assert redeemed["collectedDzd"] == 0 and redeemed["giftCardRemainingDzd"] == 1500
+    remaining = expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"]
+    assert remaining == 1500
+    expect(professional.request(ENDPOINT, voucher_sale), 200)
+    refund = {"action": "void", "saleId": redeemed["saleId"], "reason": "Correction carte cadeau"}
+    expect(professional.request(ENDPOINT, refund), 200)
+    assert expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"] == 2000
     print("Cash checks passed: ownership, price snapshots, journal, CSV, void, replay and concurrent stock.")
 
 

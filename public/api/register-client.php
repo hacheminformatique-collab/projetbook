@@ -13,6 +13,10 @@ $email = bookili_normalize_email($data);
 $phone = bookili_required_text($data, 'phone', 72);
 $dateOfBirth = bookili_required_text($data, 'dateOfBirth', 10);
 $password = bookili_valid_password($data);
+$marketingConsent = $data['marketingConsent'] ?? false;
+if (!is_bool($marketingConsent)) {
+    bookili_json_response(422, ['error' => 'Le choix de recevoir les communications BOOKILI est invalide.']);
+}
 
 if (!bookili_valid_phone($phone)) {
     bookili_json_response(422, ['error' => 'Veuillez saisir un numéro de téléphone valide.']);
@@ -48,6 +52,13 @@ try {
         'last_name' => $lastName,
         'date_of_birth' => $dateOfBirth,
         'phone_number' => $phone,
+    ]);
+    $pdo->prepare(
+        'INSERT INTO client_marketing_preferences (account_id, consent, updated_at)
+         VALUES (:account_id, :consent, :updated_at)'
+    )->execute([
+        'account_id' => $accountId, 'consent' => (int) $marketingConsent,
+        'updated_at' => (new DateTimeImmutable('now', new DateTimeZone('Africa/Algiers')))->format('Y-m-d H:i:s'),
     ]);
 
     $pdo->commit();

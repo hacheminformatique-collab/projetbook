@@ -5,16 +5,16 @@ import Inventory from "./Inventory.jsx";
 const endpoint = "professional-cash.php";
 const methods = { cash: "Espèces", card: "Carte", transfer: "Virement", other: "Autre" };
 
-function useCashData(query, revision = 0) {
+function useCashData(query, revision = 0, api = endpoint) {
   const [response, setResponse] = useState(null);
   useEffect(() => {
     if (!query) return undefined;
     const controller = new AbortController();
-    apiRequest(`${endpoint}?${query}`, { signal: controller.signal })
+    apiRequest(`${api}?${query}`, { signal: controller.signal })
       .then((data) => { if (!controller.signal.aborted) setResponse({ query, revision, data }); })
       .catch((cause) => { if (!controller.signal.aborted) setResponse({ query, revision, error: cause.message }); });
     return () => controller.abort();
-  }, [query, revision]);
+  }, [api, query, revision]);
   return response?.query === query && response.revision === revision ? response : {};
 }
 
@@ -31,17 +31,18 @@ export default function CashRegister({ csrfToken }) {
   const refresh = () => setRevision((value) => value + 1);
   return <>
     <nav className="workspace-tabs" aria-label="Caisse professionnelle">
-      {[["sale", "Vente"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
+      {[["sale", "Vente"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
         <button key={value} type="button" disabled={busy && view !== value} aria-current={view === value ? "page" : undefined} onClick={() => setView(value)}>{name}</button>
       )}
     </nav>
     <div hidden={view !== "sale"}>
-      <SaleForm csrfToken={csrfToken} revision={revision} onBusy={setBusy} onRecorded={(id) => {
-        setSaleId(id);
+      <SaleForm csrfToken={csrfToken} revision={revision} onBusy={setBusy} onRecorded={(result) => {
+        setSaleId(result.saleId);
         refresh();
         setView("journal");
       }} />
     </div>
+    {view === "gift-cards" && <GiftCards csrfToken={csrfToken} onBusy={setBusy} onRecorded={refresh} />}
     {view === "journal" && <Journal csrfToken={csrfToken} saleId={saleId} onSelect={setSaleId} revision={revision} onChanged={refresh} onBusy={setBusy} />}
     {view === "inventory" && <Inventory csrfToken={csrfToken} />}
   </>;
@@ -52,6 +53,7 @@ function SaleForm({ csrfToken, revision, onBusy, onRecorded }) {
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
   const [paymentMethod, setPayment] = useState("cash");
+  const [giftCardCode, setGiftCardCode] = useState("");
   const [notice, setNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -71,12 +73,17 @@ function SaleForm({ csrfToken, revision, onBusy, onRecorded }) {
     onBusy(true);
     setNotice(null);
     try {
-      const body = pending || { action: "record", requestKey: crypto.randomUUID(), paymentMethod, lines: cart.map(({ name: _name, ...line }) => line) };
+      const body = pending || {
+        action: "record", requestKey: crypto.randomUUID(), paymentMethod,
+        ...(giftCardCode.trim() ? { giftCardCode: giftCardCode.trim().replaceAll(" ", "").toUpperCase() } : {}),
+        lines: cart.map(({ name: _name, ...line }) => line),
+      };
       setPending(body);
       const result = await apiRequest(endpoint, { csrfToken, body });
       setCart([]);
       setPending(null);
-      onRecorded(result.saleId);
+      onRecorded(result);
+      setGiftCardCode("");
     } catch (cause) {
       if (cause.status >= 400 && cause.status < 500) setPending(null);
       setNotice({ kind: "error", text: cause.message });
@@ -120,15 +127,92 @@ function SaleForm({ csrfToken, revision, onBusy, onRecorded }) {
           }} /></label>
           <button className="admin-nav-link" type="button" onClick={() => setCart((items) => items.filter((_, position) => position !== index))}>Retirer</button>
         </div>)}
-        <label>Mode de règlement<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)}>
-          {Object.entries(methods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        <label>Mode de règlement du complément<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)}>
+          {Object.entries(methods).filter(([key]) => key !== "gift_card").map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select></label>
+        <label>Code carte cadeau (facultatif)<input autoComplete="off" maxLength={35} value={giftCardCode} onChange={(event) => setGiftCardCode(event.target.value.toUpperCase())} placeholder="32 caractères" /></label>
       </fieldset>
       <p><strong>Total : {priceLabel(cart.reduce((sum, line) => sum + line.quantity * line.expectedPrice, 0))}</strong></p>
+      <p className="field-hint">Si le solde de la carte ne couvre pas toute la vente, le reste est enregistré selon le mode de règlement choisi.</p>
       {pending && !saving && <p className="field-hint">La réponse est incertaine. Réessayez la même demande pour éviter un doublon. Vérifiez le journal avant de recréer la vente.</p>}
       <button className="auth-submit" type="submit" disabled={saving}>{saving ? "Enregistrement…" : pending ? "Réessayer la même vente" : "Confirmer le règlement reçu"}</button>
     </form>}
   </section>;
+}
+
+function GiftCards({ csrfToken, onBusy, onRecorded }) {
+  const [valueDzd, setValue] = useState(2000);
+  const [paymentMethod, setPayment] = useState("cash");
+  const [request, setRequest] = useState(null);
+  const [issued, setIssued] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const [page, setPage] = useState(1);
+  const response = useCashData(new URLSearchParams({ page }).toString(), refresh, "professional-gift-cards.php");
+
+  async function submit(event) {
+    event.preventDefault();
+    const body = request || { action: "issue", valueDzd, paymentMethod, requestKey: crypto.randomUUID() };
+    setRequest(body);
+    setSaving(true);
+    onBusy(true);
+    setNotice(null);
+    try {
+      const result = await apiRequest("professional-gift-cards.php", { csrfToken, body });
+      setRequest(null);
+      setRefresh((current) => current + 1);
+      if (!result.code) {
+        setNotice({ kind: "error", text: "Cette émission a déjà été traitée, mais le code est affiché une seule fois. Vérifiez la liste des cartes ; si vous n’avez pas récupéré le code, la carte ne peut pas être remise au bénéficiaire." });
+      } else {
+        setIssued(result);
+        onRecorded();
+      }
+    } catch (cause) {
+      if (cause.status >= 400 && cause.status < 500) setRequest(null);
+      setNotice({ kind: "error", text: cause.message });
+    } finally { setSaving(false); onBusy(false); }
+  }
+  return <>
+    <section className="client-card">
+      <h2>Vendre une carte cadeau</h2>
+      <p>Valable dans ce salon pendant 12 mois. Encaissez le montant complet avant de remettre le code au bénéficiaire. Le code est affiché une seule fois et n’est pas récupérable.</p>
+      {notice && <Feedback notice={notice} />}
+      <form className="auth-form" onSubmit={submit}>
+        <fieldset className="form-fieldset" disabled={saving || !!request}>
+          <label>Montant de la carte (DA)<input type="number" min={500} max={10000000} step={1} required value={valueDzd} onChange={(event) => setValue(event.target.value === "" ? "" : Number(event.target.value))} /></label>
+          <label>Mode de règlement reçu<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)}>
+            {Object.entries(methods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select></label>
+        </fieldset>
+        <button className="auth-submit" type="submit" disabled={saving || !valueDzd}>{saving ? "Émission…" : request ? "Réessayer la même émission" : "Encaisser et émettre la carte"}</button>
+        {request && <p className="field-hint">Ne démarrez pas une nouvelle émission. Réessayez cette demande puis vérifiez la liste.</p>}
+      </form>
+      {issued && <div className="form-message form-success">
+        <p>Carte n° {issued.cardId} · {priceLabel(issued.valueDzd)} · Valable jusqu’au {issued.expiresOn.split("-").reverse().join("/")}. Gardez ce code : il ne pourra pas être affiché à nouveau.</p>
+        <label>Code à transmettre au bénéficiaire<input readOnly value={issued.code} onFocus={(event) => event.target.select()} /></label>
+        <button className="admin-nav-link" type="button" onClick={async () => {
+          try { await navigator.clipboard.writeText(issued.code); setNotice({ kind: "success", text: "Code copié. Remettez-le au bénéficiaire." }); }
+          catch { setNotice({ kind: "error", text: "Copie impossible. Sélectionnez et copiez le code affiché." }); }
+        }}>Copier le code</button>
+      </div>}
+    </section>
+    <section className="client-card">
+      <h2>Cartes émises par ce salon</h2>
+      {response.error && <Feedback notice={{ kind: "error", text: response.error }} />}
+      {!response.data && !response.error && <p role="status">Chargement…</p>}
+      {response.data?.cards.length === 0 && <p>Aucune carte émise.</p>}
+      <div className="service-list">{response.data?.cards.map((card) => <article className="service-row" key={card.id}>
+        <span><strong>Carte n° {card.id}</strong> · {priceLabel(card.balance_dzd)} / {priceLabel(card.initial_value_dzd)}<br />
+          Valable jusqu’au {card.expires_on.split("-").reverse().join("/")} · {card.status === "active" ? Number(card.balance_dzd) ? "Active" : "Solde épuisé" : card.status === "voided" ? "Annulée" : "Expirée"}
+        </span>
+      </article>)}</div>
+      <nav className="pagination" aria-label="Pages des cartes cadeaux">
+        {page > 1 && <button className="admin-nav-link" type="button" onClick={() => setPage(page - 1)}>Précédent</button>}
+        {response.data?.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
+      </nav>
+    </section>
+  </>;
 }
 
 function Journal({ csrfToken, saleId, onSelect, revision, onChanged, onBusy }) {
@@ -189,7 +273,7 @@ function SaleDetail({ saleId, revision, csrfToken, onChanged, onBusy }) {
     {error && <Feedback notice={{ kind: "error", text: error }} />}
     {!sale && !error && <p role="status">Chargement de la vente…</p>}
     {sale && <>
-      <p>{appointmentDate(sale.recorded_at)} · {methods[sale.payment_method]} · <strong>{priceLabel(sale.total_dzd)}</strong></p>
+      <p>{appointmentDate(sale.recorded_at)} · {methods[sale.payment_method]} · Vente : <strong>{priceLabel(sale.total_dzd)}</strong> · Encaissé : {priceLabel(sale.collected_dzd)}{Number(sale.gift_card_applied_dzd) > 0 && ` · Carte cadeau : ${priceLabel(sale.gift_card_applied_dzd)}`}</p>
       <ul>{sale.lines.map((line) => <li key={`${line.item_kind}:${line.item_id}`}>{line.quantity} × {line.item_name} à {priceLabel(line.unit_price_dzd)}</li>)}</ul>
       {sale.voided_at ? <p>Annulée le {appointmentDate(sale.voided_at)} : {sale.void_reason}</p> :
         <form className="auth-form" onSubmit={cancel}>

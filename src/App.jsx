@@ -4,6 +4,7 @@ import { algerianWilayas, beautyCategories, getWilayaName, isWilayaCode } from "
 import { Appointments, DirectoryResults, SalonPage } from "./Booking.jsx";
 import ProfessionalSpace from "./Professional.jsx";
 import { apiRequest, apiUrl } from "./api-client.js";
+import { AdminAccounts, AdminBilling, AdminCampaigns } from "./AdminOperations.jsx";
 
 const questions = [
   {
@@ -245,6 +246,7 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
 
     const formData = new FormData(form);
     const payload = Object.fromEntries(formData.entries());
+    if (mode === "register" && !professional) payload.marketingConsent = formData.get("marketingConsent") === "on";
     const endpoint = mode === "login"
       ? apiUrl("login.php")
       : apiUrl(professional ? "register-professional.php" : "register-client.php");
@@ -389,6 +391,12 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
           {mode === "register" && !professional && (
             <label>Date de naissance
               <input name="dateOfBirth" type="date" required autoComplete="bday" />
+            </label>
+          )}
+          {mode === "register" && !professional && (
+            <label className="checkbox-label">
+              <input name="marketingConsent" type="checkbox" />
+              J’accepte de recevoir par e-mail les actualités et offres BOOKILI. Je pourrai retirer mon accord depuis mon compte.
             </label>
           )}
           <label>Mot de passe
@@ -767,6 +775,7 @@ function SuperAdmin() {
 }
 
 function SuperAdminDashboard({ account, csrfToken, onLogout }) {
+  const [section, setSection] = useState("home");
   const [hasImage, setHasImage] = useState(false);
   const [imageVersion, setImageVersion] = useState(Date.now());
   const [loading, setLoading] = useState(true);
@@ -856,6 +865,13 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
       </header>
       <div className="client-content">
         <p className="eyebrow">SUPER-ADMIN</p>
+        <nav className="admin-section-nav" aria-label="Sections super-admin">
+          <button type="button" className={section === "home" ? "selected" : ""} onClick={() => setSection("home")}>Accueil</button>
+          <button type="button" className={section === "accounts" ? "selected" : ""} onClick={() => setSection("accounts")}>Comptes</button>
+          <button type="button" className={section === "billing" ? "selected" : ""} onClick={() => setSection("billing")}>Forfaits et comptabilité</button>
+          <button type="button" className={section === "campaigns" ? "selected" : ""} onClick={() => setSection("campaigns")}>Campagnes</button>
+        </nav>
+        {section === "accounts" ? <><h1>Gestion des comptes</h1><AdminAccounts csrfToken={csrfToken} /></> : section === "billing" ? <><h1>Forfaits et comptabilité</h1><AdminBilling csrfToken={csrfToken} /></> : section === "campaigns" ? <><h1>Campagnes marketing</h1><AdminCampaigns csrfToken={csrfToken} /></> : <>
         <h1>Page d’accueil</h1>
         <NotificationSettings csrfToken={csrfToken} />
         <section className="client-card" aria-labelledby="homepage-image-title">
@@ -880,6 +896,7 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
             </>
           )}
         </section>
+        </>}
       </div>
     </main>
   );
@@ -934,13 +951,16 @@ function ClientAccount() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [phone, setPhone] = useState("");
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [csrfToken, setCsrfToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [phoneNotice, setPhoneNotice] = useState(null);
   const [passwordNotice, setPasswordNotice] = useState(null);
+  const [marketingNotice, setMarketingNotice] = useState(null);
   const [savingPhone, setSavingPhone] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [savingMarketing, setSavingMarketing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -963,6 +983,7 @@ function ClientAccount() {
         if (active) {
           setProfile({ ...result.profile, email: result.email });
           setPhone(result.profile.phone_number);
+          setMarketingConsent(Number(result.profile.marketing_consent) === 1);
           setCsrfToken(session.csrfToken);
         }
       } catch (cause) {
@@ -990,12 +1011,34 @@ function ClientAccount() {
       if (!response.ok) throw new Error(result.error || "Impossible de modifier votre téléphone.");
       setProfile({ ...result.profile, email: result.email });
       setPhone(result.profile.phone_number);
+      setMarketingConsent(Number(result.profile.marketing_consent) === 1);
       setPhoneNotice({ kind: "success", text: "Votre numéro de téléphone a été modifié." });
     } catch (cause) {
       setPhoneNotice({ kind: "error", text: cause.message || "Impossible de joindre BOOKILI." });
     } finally {
       setSavingPhone(false);
     }
+  }
+
+  async function submitMarketing(event) {
+    event.preventDefault();
+    setMarketingNotice(null);
+    setSavingMarketing(true);
+    try {
+      const response = await fetch(apiUrl("client-profile.php"), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ marketingConsent }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Impossible d’enregistrer votre choix.");
+      setProfile({ ...result.profile, email: result.email });
+      setMarketingConsent(Number(result.profile.marketing_consent) === 1);
+      setMarketingNotice({ kind: "success", text: marketingConsent ? "Votre accord est enregistré." : "Votre désinscription est enregistrée." });
+    } catch (cause) {
+      setMarketingNotice({ kind: "error", text: cause.message || "Impossible de joindre BOOKILI." });
+    } finally { setSavingMarketing(false); }
   }
 
   async function submitPassword(event) {
@@ -1064,6 +1107,15 @@ function ClientAccount() {
                 <button className="auth-submit" type="submit" disabled={!csrfToken || savingPhone}>
                   {savingPhone ? "Enregistrement…" : "Enregistrer le numéro"}
                 </button>
+              </form>
+            </section>
+            <section className="client-card" aria-labelledby="client-marketing-title">
+              <h2 id="client-marketing-title">Communications BOOKILI</h2>
+              <p>Les campagnes ne sont envoyées qu’aux clients ayant accepté de les recevoir. Vous pouvez retirer votre accord à tout moment.</p>
+              {marketingNotice && <p className={`form-message form-${marketingNotice.kind}`} role={marketingNotice.kind === "error" ? "alert" : "status"}>{marketingNotice.text}</p>}
+              <form className="auth-form" onSubmit={submitMarketing}>
+                <label className="checkbox-label"><input type="checkbox" checked={marketingConsent} onChange={(event) => setMarketingConsent(event.target.checked)} />J’accepte de recevoir les actualités et offres BOOKILI par e-mail.</label>
+                <button className="auth-submit" type="submit" disabled={!csrfToken || savingMarketing}>{savingMarketing ? "Enregistrement…" : "Enregistrer mon choix"}</button>
               </form>
             </section>
             <section className="client-card" aria-labelledby="client-password-title">

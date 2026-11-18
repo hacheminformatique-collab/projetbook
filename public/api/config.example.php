@@ -9,4 +9,5 @@ return [
     'setup_token' => 'replace-with-a-random-64-character-hex-token',
     'mail_from' => 'notifications@votre-domaine.dz',
     'mail_from_name' => 'BOOKILI',
+    'public_url' => 'https://www.votre-domaine.dz',
 ];

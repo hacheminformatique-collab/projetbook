@@ -108,6 +108,8 @@ export function SalonPage() {
 
 function BookingForm({ salonId, services, session, appointmentId }) {
   const [serviceId, setServiceId] = useState("");
+  const [staffId, setStaffId] = useState("");
+  const [staffMembers, setStaffMembers] = useState([]);
   const [date, setDate] = useState(algerianDate());
   const [time, setTime] = useState("");
   const [slots, setSlots] = useState([]);
@@ -125,16 +127,27 @@ function BookingForm({ salonId, services, session, appointmentId }) {
     setTime("");
     setSlots([]);
     setSlotError("");
-    if (!serviceId || !date) { setLoading(false); return; }
+    if (!serviceId || !date) {
+      setLoading(false);
+      setStaffMembers([]);
+      setStaffId("");
+      return;
+    }
     setLoading(true);
     const query = new URLSearchParams({ salonId, serviceId, date });
+    if (staffId) query.set("staffId", staffId);
     if (appointmentId) query.set("appointmentId", appointmentId);
     apiRequest(`availability.php?${query}`, { signal: controller.signal })
-      .then((result) => setSlots(result.slots))
+      .then((result) => {
+        const activeStaff = result.staff || [];
+        setStaffMembers(activeStaff);
+        if (staffId && !activeStaff.some((member) => String(member.id) === staffId)) setStaffId("");
+        setSlots(result.slots);
+      })
       .catch((cause) => { if (!controller.signal.aborted) setSlotError(cause.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [salonId, serviceId, date, appointmentId, refresh]);
+  }, [salonId, serviceId, date, staffId, appointmentId, refresh]);
 
   async function submit(event) {
     event.preventDefault();
@@ -146,6 +159,7 @@ function BookingForm({ salonId, services, session, appointmentId }) {
         body: {
           action: appointmentId ? "reschedule" : "book", salonId, serviceId, date, time,
           expectedPrice: Number(selected.price_dzd), expectedDuration: Number(selected.duration_minutes),
+          ...(staffId ? { staffId: Number(staffId) } : {}),
           ...(appointmentId ? { appointmentId } : {}),
         },
       });
@@ -175,6 +189,13 @@ function BookingForm({ salonId, services, session, appointmentId }) {
         <label>Date
           <input required type="date" min={algerianDate()} max={algerianDate(60)} value={date} onChange={(event) => setDate(event.target.value)} disabled={saving} />
         </label>
+        {staffMembers.length > 0 && <label>Collaborateur
+          <select required value={staffId} onChange={(event) => setStaffId(event.target.value)} disabled={saving}>
+            <option value="">Choisir un collaborateur</option>
+            {staffMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+          </select>
+        </label>}
+        {!staffId && staffMembers.length > 0 && <p className="field-hint">Les créneaux seront affichés après le choix du collaborateur.</p>}
         {loading && <p role="status">Recherche des créneaux…</p>}
         {slotError && <p className="form-message form-error" role="alert">{slotError}</p>}
         {!loading && serviceId && !slotError && slots.length === 0 && <p>Aucun créneau disponible ce jour. Choisissez une autre date.</p>}
@@ -197,20 +218,32 @@ export function Appointments({ csrfToken, professional = false }) {
   const [filter, setFilter] = useState("upcoming");
   const [date, setDate] = useState(algerianDate());
   const [page, setPage] = useState(1);
+  const [staffId, setStaffId] = useState("");
+  const [staffMembers, setStaffMembers] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [working, setWorking] = useState(false);
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
+    if (!professional) return undefined;
+    const controller = new AbortController();
+    apiRequest("professional-staff.php", { signal: controller.signal })
+      .then((response) => setStaffMembers(response.staff))
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
+    return () => controller.abort();
+  }, [professional]);
+  useEffect(() => {
     const controller = new AbortController();
     setResult(null);
     setError("");
-    apiRequest(`appointments.php?${new URLSearchParams(professional ? { date, page } : { filter, page })}`, { signal: controller.signal })
+    const query = new URLSearchParams(professional ? { date, page } : { filter, page });
+    if (professional && staffId) query.set("staffId", staffId);
+    apiRequest(`appointments.php?${query}`, { signal: controller.signal })
       .then(setResult)
       .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
     return () => controller.abort();
-  }, [professional, date, filter, page, refresh]);
+  }, [professional, date, filter, page, staffId, refresh]);
 
   async function cancel(id) {
     if (!window.confirm("Confirmer l’annulation de ce rendez-vous ?")) return;
@@ -229,7 +262,11 @@ export function Appointments({ csrfToken, professional = false }) {
       <h2>{professional ? "Agenda" : "Mes rendez-vous"}</h2>
       <p className="field-hint">Horaires d’Algérie (UTC+1). Confirmation et rappels envoyés par e-mail par la tâche cron du site.</p>
       <div className="booking-toolbar">
-        {professional ? <label>Journée <input aria-label="Journée de l’agenda" type="date" required value={date} onChange={(event) => { setDate(event.target.value); setPage(1); }} /></label> : (
+        {professional ? <><label>Journée <input aria-label="Journée de l’agenda" type="date" required value={date} onChange={(event) => { setDate(event.target.value); setPage(1); }} /></label>
+          {staffMembers.length > 0 && <label>Collaborateur<select aria-label="Filtrer par collaborateur" value={staffId} onChange={(event) => { setStaffId(event.target.value); setPage(1); }}>
+            <option value="">Toute l’équipe</option>{staffMembers.map((member) => <option key={member.id} value={member.id}>{member.name}{Number(member.is_active) ? "" : " (inactif)"}</option>)}
+          </select></label>}
+        </> : (
           <label>Afficher <select aria-label="Filtre des rendez-vous" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }}>
             <option value="upcoming">À venir</option><option value="past">Passés</option>
           </select></label>
@@ -247,7 +284,7 @@ export function Appointments({ csrfToken, professional = false }) {
             <article className="appointment-card" key={appointment.id}>
               <p className={`application-status ${appointment.status === "cancelled" ? "status-rejected" : "status-approved"}`}>{appointment.status === "cancelled" ? "Annulé" : "Confirmé"}</p>
               <h3>{appointment.service_name}</h3>
-              <p>{appointmentDate(appointment.starts_at)} · {priceLabel(appointment.price_dzd)}</p>
+              <p>{appointmentDate(appointment.starts_at)} · {priceLabel(appointment.price_dzd)}{appointment.staff_name && <> · {appointment.staff_name}</>}</p>
               {professional ? <p>{appointment.first_name} {appointment.last_name} · <a className="inline-link" href={`tel:${appointment.client_phone}`}>{appointment.client_phone}</a></p> : (
                 <p>{appointment.salon_name} · {appointment.address}, {appointment.city}<br /><a className="inline-link" href={`tel:${appointment.salon_phone}`}>{appointment.salon_phone}</a></p>
               )}

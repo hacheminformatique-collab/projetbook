@@ -7,6 +7,7 @@ $salonId = bookili_id($_GET['salonId'] ?? null);
 $serviceId = bookili_id($_GET['serviceId'] ?? null);
 $day = bookili_booking_date($_GET['date'] ?? null);
 $excludeId = isset($_GET['appointmentId']) ? bookili_id($_GET['appointmentId']) : 0;
+$staffId = isset($_GET['staffId']) ? bookili_id($_GET['staffId']) : 0;
 
 try {
     $pdo = bookili_database();
@@ -20,7 +21,11 @@ try {
         if (!$statement->fetch()) bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
     }
     $service = bookili_service($pdo, $salonId, $serviceId);
-    bookili_json_response(200, ['slots' => bookili_slots($pdo, $salonId, $service, $day, $excludeId), 'timezone' => 'Africa/Algiers']);
+    $staff = bookili_salon_staff($pdo, $salonId);
+    $slots = count($staff) > 0 && $staffId === 0
+        ? []
+        : bookili_slots($pdo, $salonId, $service, $day, $excludeId, $staffId);
+    bookili_json_response(200, ['slots' => $slots, 'staff' => $staff, 'timezone' => 'Africa/Algiers']);
 } catch (Throwable $error) {
     bookili_database_error($error);
 }

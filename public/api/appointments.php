@@ -13,14 +13,21 @@ try {
 
     if ($method === 'GET') {
         $params = [];
-        $sql = "SELECT b.id, b.salon_id, b.service_id, b.service_name, b.price_dzd, b.starts_at, b.ends_at, b.status,
+        $sql = "SELECT b.id, b.salon_id, b.service_id, b.staff_id, m.name AS staff_name,
+                       b.service_name, b.price_dzd, b.starts_at, b.ends_at, b.status,
                        s.name AS salon_name, s.city, s.address, s.phone_number AS salon_phone";
         if ($professional) $sql .= ', c.first_name, c.last_name, c.phone_number AS client_phone';
-        $sql .= ' FROM appointments b INNER JOIN salons s ON s.id = b.salon_id';
+        $sql .= ' FROM appointments b INNER JOIN salons s ON s.id = b.salon_id
+                  LEFT JOIN staff_members m ON m.id = b.staff_id';
         if ($professional) {
             $salon = bookili_own_salon($pdo, (int) $account['id']);
             $sql .= ' INNER JOIN client_profiles c ON c.account_id = b.client_id WHERE b.salon_id = :salon_id';
             $params['salon_id'] = $salon['id'];
+            if (isset($_GET['staffId'])) {
+                $staffId = bookili_id($_GET['staffId']);
+                $sql .= ' AND b.staff_id = :staff_id';
+                $params['staff_id'] = $staffId;
+            }
             $date = $_GET['date'] ?? bookili_now()->format('Y-m-d');
             $day = bookili_calendar_date($date);
             $sql .= ' AND b.starts_at >= :day_start AND b.starts_at < :day_end';
@@ -57,6 +64,7 @@ try {
     }
     if ($action !== 'cancel') {
         $serviceId = bookili_id($data['serviceId'] ?? null);
+        $staffId = isset($data['staffId']) ? bookili_id($data['staffId']) : 0;
         $day = bookili_booking_date($data['date'] ?? null);
         $time = $data['time'] ?? null;
         if (!is_string($time) || !preg_match('/^([01][0-9]|2[0-3]):[0-5][0-9]$/D', $time)
@@ -103,12 +111,17 @@ try {
     } else {
         bookili_public_salon($pdo, $salonId);
         $service = bookili_service($pdo, $salonId, $serviceId);
+        $staff = bookili_salon_staff($pdo, $salonId);
+        if (count($staff) > 0 && $staffId === 0) {
+            $pdo->rollBack();
+            bookili_json_response(422, ['error' => 'Choisissez un collaborateur pour ce rendez-vous.']);
+        }
         if ((int) $service['price_dzd'] !== $data['expectedPrice']
             || (int) $service['duration_minutes'] !== $data['expectedDuration']) {
             $pdo->rollBack();
             bookili_json_response(409, ['error' => 'Le tarif ou la durée a changé. Rechargez la page pour consulter la prestation avant de confirmer.']);
         }
-        $slots = bookili_slots($pdo, $salonId, $service, $day, $appointmentId ?? 0);
+        $slots = bookili_slots($pdo, $salonId, $service, $day, $appointmentId ?? 0, $staffId);
         if (!in_array($time, $slots, true)) {
             $pdo->rollBack();
             bookili_json_response(409, ['error' => 'Ce créneau n’est plus disponible. Choisissez un autre horaire.']);
@@ -118,13 +131,14 @@ try {
         $params = [
             'service_id' => $serviceId, 'service_name' => $service['name'], 'price' => $service['price_dzd'],
             'starts' => $starts->format('Y-m-d H:i:s'), 'ends' => $ends->format('Y-m-d H:i:s'),
+            'staff_id' => $staffId > 0 ? $staffId : null,
         ];
         if ($action === 'book') {
-            $sql = 'INSERT INTO appointments (salon_id, client_id, service_id, service_name, price_dzd, starts_at, ends_at)
-                    VALUES (:salon_id, :client_id, :service_id, :service_name, :price, :starts, :ends)';
+            $sql = 'INSERT INTO appointments (salon_id, client_id, service_id, staff_id, service_name, price_dzd, starts_at, ends_at)
+                    VALUES (:salon_id, :client_id, :service_id, :staff_id, :service_name, :price, :starts, :ends)';
             $params += ['salon_id' => $salonId, 'client_id' => $account['id']];
         } else {
-            $sql = 'UPDATE appointments SET service_id = :service_id, service_name = :service_name, price_dzd = :price,
+            $sql = 'UPDATE appointments SET service_id = :service_id, staff_id = :staff_id, service_name = :service_name, price_dzd = :price,
                     starts_at = :starts, ends_at = :ends, notification_version = notification_version + 1 WHERE id = :id';
             $params['id'] = $appointmentId;
         }
