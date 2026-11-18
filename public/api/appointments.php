@@ -49,12 +49,38 @@ try {
     }
 
     $action = $data['action'] ?? '';
-    if (!in_array($action, ['book', 'reschedule', 'cancel'], true) || ($professional && $action === 'book')) {
+    if (!in_array($action, ['book', 'reschedule', 'cancel'], true)) {
         bookili_json_response(422, ['error' => 'Action non autorisée.']);
     }
+    $newClient = null;
+    $existingClientId = null;
     $appointmentId = $action !== 'book' ? bookili_id($data['appointmentId'] ?? null) : null;
     if ($action === 'book') {
-        $salonId = bookili_id($data['salonId'] ?? null);
+        if ($professional) {
+            if (isset($data['newClient'], $data['clientId'])) {
+                bookili_json_response(422, ['error' => 'Sélectionnez un client existant ou saisissez un nouveau client, pas les deux.']);
+            }
+            $salonId = (int) bookili_own_salon($pdo, (int) $account['id'])['id'];
+            if (isset($data['newClient'])) {
+                if (!is_array($data['newClient'])) bookili_json_response(422, ['error' => 'Informations du client invalides.']);
+                $newClient = $data['newClient'];
+                $newClient['firstName'] = bookili_required_text($newClient, 'firstName', 100);
+                $newClient['lastName'] = bookili_required_text($newClient, 'lastName', 100);
+                $newClient['email'] = bookili_normalize_email($newClient);
+                $newClient['phone'] = bookili_required_text($newClient, 'phone', 32);
+                $newClient['dateOfBirth'] = bookili_required_text($newClient, 'dateOfBirth', 10);
+                $birthDate = DateTimeImmutable::createFromFormat('!Y-m-d', $newClient['dateOfBirth']);
+                if (!bookili_valid_phone($newClient['phone'])
+                    || !$birthDate || $birthDate->format('Y-m-d') !== $newClient['dateOfBirth']
+                    || $birthDate > new DateTimeImmutable('today')) {
+                    bookili_json_response(422, ['error' => 'Vérifiez le téléphone et la date de naissance du client.']);
+                }
+            } else {
+                $existingClientId = bookili_id($data['clientId'] ?? null);
+            }
+        } else {
+            $salonId = bookili_id($data['salonId'] ?? null);
+        }
     } else {
         $statement = $pdo->prepare('SELECT salon_id FROM appointments WHERE id = :id');
         $statement->execute(['id' => $appointmentId]);
@@ -63,7 +89,10 @@ try {
         $salonId = (int) $salonId;
     }
     if ($action !== 'cancel') {
-        $serviceId = bookili_id($data['serviceId'] ?? null);
+        $serviceIds = $data['serviceIds'] ?? [$data['serviceId'] ?? null];
+        if (!is_array($serviceIds) || !array_is_list($serviceIds)) {
+            bookili_json_response(422, ['error' => 'Sélection de prestations invalide.']);
+        }
         $staffId = isset($data['staffId']) ? bookili_id($data['staffId']) : 0;
         $day = bookili_booking_date($data['date'] ?? null);
         $time = $data['time'] ?? null;
@@ -78,6 +107,47 @@ try {
     $statement = $pdo->prepare('SELECT id FROM salons WHERE id = :id FOR UPDATE');
     $statement->execute(['id' => $salonId]);
     if (!$statement->fetch()) throw new RuntimeException('Appointment salon is missing.');
+    if ($professional) {
+        $ownSalon = bookili_own_salon($pdo, (int) $account['id'], true);
+        if ((int) $ownSalon['id'] !== $salonId) {
+            $pdo->rollBack();
+            bookili_json_response(404, ['error' => 'Établissement introuvable.']);
+        }
+    }
+
+    $clientId = (int) $account['id'];
+    if ($action === 'book' && $professional) {
+        if ($newClient !== null) {
+            $pdo->prepare(
+                "INSERT INTO accounts (email, password_hash, role, status)
+                 VALUES (:email, :password, 'client', 'active')"
+            )->execute([
+                'email' => $newClient['email'],
+                'password' => password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT),
+            ]);
+            $clientId = (int) $pdo->lastInsertId();
+            $pdo->prepare(
+                'INSERT INTO client_profiles (account_id, first_name, last_name, date_of_birth, phone_number)
+                 VALUES (:account, :first, :last, :birth, :phone)'
+            )->execute([
+                'account' => $clientId, 'first' => $newClient['firstName'], 'last' => $newClient['lastName'],
+                'birth' => $newClient['dateOfBirth'], 'phone' => $newClient['phone'],
+            ]);
+            $pdo->prepare(
+                'INSERT INTO client_marketing_preferences (account_id, consent, updated_at) VALUES (:id, 0, :updated)'
+            )->execute(['id' => $clientId, 'updated' => bookili_now()->format('Y-m-d H:i:s')]);
+        } else {
+            $statement = $pdo->prepare(
+                "SELECT id FROM accounts WHERE id = :id AND role = 'client' AND status = 'active' FOR UPDATE"
+            );
+            $statement->execute(['id' => $existingClientId]);
+            $clientId = (int) $statement->fetchColumn();
+            if ($clientId < 1) {
+                $pdo->rollBack();
+                bookili_json_response(404, ['error' => 'Client introuvable ou compte indisponible.']);
+            }
+        }
+    }
 
     if ($action !== 'book') {
         $statement = $pdo->prepare('SELECT * FROM appointments WHERE id = :id FOR UPDATE');
@@ -98,6 +168,13 @@ try {
             $pdo->rollBack();
             bookili_json_response(409, ['error' => 'Ce rendez-vous ne peut plus être modifié.']);
         }
+        $statement = $pdo->prepare('SELECT id, voided_at FROM cash_sales WHERE appointment_id = :id');
+        $statement->execute(['id' => $appointmentId]);
+        $linkedSale = $statement->fetch();
+        if ($linkedSale && ($action === 'reschedule' || $linkedSale['voided_at'] === null)) {
+            $pdo->rollBack();
+            bookili_json_response(409, ['error' => 'Un rendez-vous déjà enregistré en caisse ne peut plus être déplacé. Pour l’annuler, annulez d’abord la vente dans le journal de caisse.']);
+        }
     }
     if ($action === 'cancel') {
         $pdo->prepare("UPDATE appointments SET status = 'cancelled', notification_version = notification_version + 1 WHERE id = :id")
@@ -110,7 +187,7 @@ try {
         bookili_queue_appointment_emails($pdo, $appointmentId, 'cancelled');
     } else {
         if (!$professional) bookili_public_salon($pdo, $salonId);
-        $service = bookili_service($pdo, $salonId, $serviceId);
+        $service = bookili_selected_services($pdo, $salonId, $serviceIds);
         $staff = bookili_salon_staff($pdo, $salonId);
         if (count($staff) > 0 && $staffId === 0) {
             $pdo->rollBack();
@@ -129,14 +206,14 @@ try {
         $starts = new DateTimeImmutable($day->format('Y-m-d') . ' ' . $time, new DateTimeZone('Africa/Algiers'));
         $ends = $starts->modify('+' . (int) $service['duration_minutes'] . ' minutes');
         $params = [
-            'service_id' => $serviceId, 'service_name' => $service['name'], 'price' => $service['price_dzd'],
+            'service_id' => $service['id'], 'service_name' => $service['name'], 'price' => $service['price_dzd'],
             'starts' => $starts->format('Y-m-d H:i:s'), 'ends' => $ends->format('Y-m-d H:i:s'),
             'staff_id' => $staffId > 0 ? $staffId : null,
         ];
         if ($action === 'book') {
             $sql = 'INSERT INTO appointments (salon_id, client_id, service_id, staff_id, service_name, price_dzd, starts_at, ends_at)
                     VALUES (:salon_id, :client_id, :service_id, :staff_id, :service_name, :price, :starts, :ends)';
-            $params += ['salon_id' => $salonId, 'client_id' => $account['id']];
+            $params += ['salon_id' => $salonId, 'client_id' => $clientId];
         } else {
             $sql = 'UPDATE appointments SET service_id = :service_id, staff_id = :staff_id, service_name = :service_name, price_dzd = :price,
                     starts_at = :starts, ends_at = :ends, notification_version = notification_version + 1 WHERE id = :id';
@@ -151,11 +228,15 @@ try {
                  AND status IN ('queued', 'retry')"
             )->execute(['id' => $appointmentId]);
         }
+        bookili_save_appointment_services($pdo, $appointmentId, $service);
         bookili_queue_appointment_emails($pdo, $appointmentId, $action === 'book' ? 'confirmation' : 'rescheduled');
     }
     $pdo->commit();
     bookili_json_response($action === 'book' ? 201 : 200, ['appointmentId' => $appointmentId, 'message' => $action === 'cancel' ? 'Rendez-vous annulé.' : 'Votre rendez-vous est confirmé.']);
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    if ($error instanceof PDOException && $error->getCode() === '23000') {
+        bookili_json_response(409, ['error' => 'Un compte existe déjà avec cette adresse e-mail. Recherchez le client par son nom ou son téléphone.']);
+    }
     bookili_database_error($error);
 }

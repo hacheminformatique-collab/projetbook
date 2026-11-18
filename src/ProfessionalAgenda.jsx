@@ -32,7 +32,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   const [showClient, setShowClient] = useState(false);
   const [history, setHistory] = useState(null);
   const [editing, setEditing] = useState(!!destination);
-  const [serviceId, setServiceId] = useState(String(appointment.service_id));
+  const [serviceIds, setServiceIds] = useState((appointment.services || [{ id: appointment.service_id }]).map((item) => String(item.id)));
   const [staffId, setStaffId] = useState(destination?.staffId ?? (agenda.staff.some((item) => Number(item.is_active) && String(item.id) === String(appointment.staff_id)) ? String(appointment.staff_id) : ""));
   const [date, setDate] = useState(destination?.date ?? appointment.starts_at.slice(0, 10));
   const [suggestedTime, setSuggestedTime] = useState(destination?.time || "");
@@ -43,9 +43,16 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
   const closeRef = useRef(null);
-  const service = agenda.services.find((item) => String(item.id) === serviceId);
+  const selectedServices = serviceIds.map((id) => agenda.services.find((item) => String(item.id) === id)).filter(Boolean);
+  const service = selectedServices.length === serviceIds.length && selectedServices.length > 0 ? {
+    id: selectedServices[0].id,
+    name: selectedServices.map((item) => item.name).join(" + "),
+    duration_minutes: selectedServices.reduce((total, item) => total + Number(item.duration_minutes), 0),
+    price_dzd: selectedServices.reduce((total, item) => total + Number(item.price_dzd), 0),
+  } : null;
   const activeStaff = agenda.staff.filter((item) => Number(item.is_active));
-  const editable = startsInFuture(appointment);
+  const canEdit = startsInFuture(appointment) && !appointment.cash_sale_id;
+  const canCancel = startsInFuture(appointment) && (!appointment.cash_sale_id || appointment.voided_at);
   useEffect(() => {
     const controller = new AbortController();
     apiRequest(`professional-agenda.php?${new URLSearchParams({ historyFor: appointment.id })}`, { signal: controller.signal })
@@ -78,7 +85,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
     if (!editing || !service || !date || (activeStaff.length > 0 && !staffId)) return undefined;
     const controller = new AbortController();
     setLoadingSlots(true);
-    const query = new URLSearchParams({ salonId: agenda.salonId, serviceId, date, appointmentId: appointment.id });
+    const query = new URLSearchParams({ salonId: agenda.salonId, serviceIds: serviceIds.join(","), date, appointmentId: appointment.id });
     if (staffId) query.set("staffId", staffId);
     apiRequest(`availability.php?${query}`, { signal: controller.signal })
       .then((response) => {
@@ -89,7 +96,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
       .catch((error) => { if (!controller.signal.aborted) setSlotError(error.message); })
       .finally(() => { if (!controller.signal.aborted) setLoadingSlots(false); });
     return () => controller.abort();
-  }, [editing, service, serviceId, staffId, date, agenda.salonId, appointment.id, activeStaff.length, suggestedTime]);
+  }, [editing, serviceIds.join(","), staffId, date, agenda.salonId, appointment.id, activeStaff.length, suggestedTime]);
 
   useEffect(() => {
     if (destination) closeRef.current?.closest("[role=dialog]")?.querySelector(".agenda-edit")?.scrollIntoView({ block: "nearest" });
@@ -119,7 +126,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
     try {
       const response = await apiRequest("appointments.php", {
         csrfToken, body: {
-          action: "reschedule", appointmentId: Number(appointment.id), serviceId: Number(serviceId),
+          action: "reschedule", appointmentId: Number(appointment.id), serviceIds: serviceIds.map(Number),
           ...(staffId ? { staffId: Number(staffId) } : {}), date, time,
           expectedPrice: Number(service.price_dzd), expectedDuration: Number(service.duration_minutes),
         },
@@ -148,6 +155,8 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         Durée : {(new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000} min<br />
         Collaborateur : {agenda.staff.find((member) => String(member.id) === String(appointment.staff_id))?.name || "Non attribué"}
       </p>
+      <ul className="agenda-service-lines">{(appointment.services || [{ name: appointment.service_name, duration_minutes: (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000, price_dzd: appointment.price_dzd }]).map((item) =>
+        <li key={item.id || item.name}>{item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</li>)}</ul>
       <button type="button" className="agenda-client-link" onClick={() => setShowClient(!showClient)} aria-expanded={showClient}>
         {appointment.first_name} {appointment.last_name}
       </button>
@@ -175,17 +184,22 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
           <p>{item.note}</p>
         </article>)}
       </details>
-      {editable && <div className="review-buttons">
-        <button className="admin-nav-link" type="button" disabled={busy} onClick={() => setEditing(!editing)}>{editing ? "Fermer la modification" : "Modifier le rendez-vous"}</button>
-        <button className="review-reject" type="button" disabled={busy} onClick={cancel}>Annuler le rendez-vous</button>
+      {(canEdit || canCancel) && <div className="review-buttons">
+        {canEdit && <button className="admin-nav-link" type="button" disabled={busy} onClick={() => setEditing(!editing)}>{editing ? "Fermer la modification" : "Modifier le rendez-vous"}</button>}
+        {canCancel && <button className="review-reject" type="button" disabled={busy} onClick={cancel}>Annuler le rendez-vous</button>}
       </div>}
+      {appointment.cash_sale_id
+        ? <p className="field-hint">Ce rendez-vous possède déjà une vente dans le journal{appointment.voided_at ? " (annulée)" : ""}.</p>
+        : <button className="auth-submit agenda-cash-button" type="button" disabled={busy} onClick={() => onCheckout(appointment)}>Encaisser · {priceLabel(appointment.price_dzd)}</button>}
       {editing && <form className="auth-form agenda-edit" onSubmit={reschedule}>
         {suggestedTime && <p className="field-hint">Déplacement proposé à {suggestedTime}. {loadingSlots ? "" : slots.includes(suggestedTime) ? "Confirmez pour enregistrer." : "Ce créneau ne convient pas à la prestation. Choisissez un autre horaire."}</p>}
         <p className="field-hint">La prestation sera enregistrée au tarif et à la durée affichés ci-dessous. Le rendez-vous initial reste inchangé si le créneau est indisponible.</p>
-        <label>Prestation<select value={serviceId} required onChange={(event) => { setSuggestedTime(""); setServiceId(event.target.value); }}>
-          {!service && <option value={serviceId} disabled>Prestation actuelle indisponible — choisissez une prestation</option>}
-          {agenda.services.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</option>)}
-        </select></label>
+        <fieldset className="agenda-service-picker"><legend>Prestations</legend>
+          {agenda.services.map((item) => <label key={item.id}><input type="checkbox" checked={serviceIds.includes(String(item.id))}
+            onChange={(event) => { setSuggestedTime(""); setServiceIds((ids) => event.target.checked ? [...ids, String(item.id)] : ids.filter((id) => id !== String(item.id))); }} />
+            {item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</label>)}
+        </fieldset>
+        {service && <p><strong>Total : {service.duration_minutes} min · {priceLabel(service.price_dzd)}</strong></p>}
         {activeStaff.length > 0 && <label>Collaborateur<select value={staffId} required onChange={(event) => { setSuggestedTime(""); setStaffId(event.target.value); }}>
           <option value="">Choisir un collaborateur</option>
           {activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -203,7 +217,171 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   </div>;
 }
 
-export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTarget }) {
+function AppointmentCreate({ agenda, csrfToken, initial, onClose, onCreated }) {
+  const [query, setQuery] = useState("");
+  const [clients, setClients] = useState(null);
+  const [client, setClient] = useState(null);
+  const [newClient, setNewClient] = useState(false);
+  const [clientForm, setClientForm] = useState({ firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "" });
+  const [serviceIds, setServiceIds] = useState([]);
+  const [staffId, setStaffId] = useState(initial?.staffId && agenda.staff.some((item) => String(item.id) === String(initial.staffId)) ? String(initial.staffId) : "");
+  const [date, setDate] = useState(initial?.date || agenda.date);
+  const [time, setTime] = useState(initial?.time || "");
+  const [slots, setSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const closeRef = useRef(null);
+  const activeStaff = agenda.staff.filter((item) => Number(item.is_active));
+  const selectedServices = serviceIds.map((id) => agenda.services.find((item) => String(item.id) === id)).filter(Boolean);
+  const total = {
+    duration: selectedServices.reduce((sum, item) => sum + Number(item.duration_minutes), 0),
+    price: selectedServices.reduce((sum, item) => sum + Number(item.price_dzd), 0),
+  };
+  const queryKey = query.trim();
+  const availabilityKey = serviceIds.join(",");
+
+  useEffect(() => {
+    const previous = document.activeElement;
+    closeRef.current?.focus();
+    const onKey = (event) => {
+      if (event.key === "Escape") onClose();
+      if (event.key !== "Tab") return;
+      const dialog = closeRef.current?.closest("[role=dialog]");
+      const focusable = dialog?.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]');
+      if (!focusable?.length) return;
+      if (event.shiftKey && document.activeElement === focusable[0]) { event.preventDefault(); focusable[focusable.length - 1].focus(); }
+      if (!event.shiftKey && document.activeElement === focusable[focusable.length - 1]) { event.preventDefault(); focusable[0].focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); previous?.focus(); };
+  }, [onClose]);
+
+  useEffect(() => {
+    if (newClient || client || queryKey.length < 2) { setClients(null); return undefined; }
+    const controller = new AbortController();
+    setClients(null);
+    const timer = setTimeout(() => {
+      apiRequest(`professional-agenda.php?${new URLSearchParams({ clients: queryKey })}`, { signal: controller.signal })
+        .then((response) => { if (!controller.signal.aborted) setClients(response.clients); })
+        .catch((cause) => { if (!controller.signal.aborted) setClients({ error: cause.message }); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [queryKey, newClient, client]);
+
+  useEffect(() => {
+    setSlots([]);
+    setLoadingSlots(false);
+    if (serviceIds.length === 0 || (activeStaff.length > 0 && !staffId)) return undefined;
+    const controller = new AbortController();
+    setLoadingSlots(true);
+    const params = new URLSearchParams({
+      salonId: agenda.salonId, serviceIds: availabilityKey, date,
+      ...(staffId ? { staffId } : {}),
+    });
+    apiRequest(`availability.php?${params}`, { signal: controller.signal })
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setSlots(result.slots);
+        setTime((current) => result.slots.includes(current) ? current : "");
+      })
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoadingSlots(false); });
+    return () => controller.abort();
+  }, [serviceIds.length, availabilityKey, staffId, date, agenda.salonId, activeStaff.length]);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!client && !newClient) { setError("Recherchez et sélectionnez un client, ou créez sa fiche."); return; }
+    if (serviceIds.length === 0 || selectedServices.length !== serviceIds.length) { setError("Choisissez au moins une prestation."); return; }
+    if (!time || !slots.includes(time)) { setError("Choisissez un créneau disponible."); return; }
+    setBusy(true);
+    setError("");
+    try {
+      const result = await apiRequest("appointments.php", {
+        csrfToken,
+        body: {
+          action: "book",
+          ...(client ? { clientId: Number(client.id) } : { newClient: clientForm }),
+          serviceIds: serviceIds.map(Number), ...(staffId ? { staffId: Number(staffId) } : {}),
+          date, time, expectedPrice: total.price, expectedDuration: total.duration,
+        },
+      });
+      onCreated(result.message, date);
+    } catch (cause) { setError(cause.message); }
+    finally { setBusy(false); }
+  }
+
+  return <div className="agenda-backdrop">
+    <section className="agenda-detail agenda-create" role="dialog" aria-modal="true" aria-labelledby="agenda-create-title">
+      <header className="agenda-detail-header">
+        <h2 id="agenda-create-title">Nouveau rendez-vous</h2>
+        <button ref={closeRef} type="button" className="admin-nav-link" onClick={onClose}>Fermer</button>
+      </header>
+      {error && <p className="form-message form-error" role="alert">{error}</p>}
+      {!client && !newClient && <>
+        <label className="agenda-client-search">Rechercher un client par nom ou téléphone
+          <input value={query} autoComplete="off" onChange={(event) => { setQuery(event.target.value); setError(""); }}
+            placeholder="Nom, prénom ou téléphone" maxLength={100} />
+        </label>
+        {clients?.error && <p className="form-message form-error" role="alert">{clients.error}</p>}
+        {!clients && queryKey.length >= 2 && <p role="status">Recherche du fichier client…</p>}
+        {clients && !clients.error && clients.length === 0 && <p>Aucun client déjà venu dans ce salon pour cette recherche.</p>}
+        {clients && !clients.error && <div className="agenda-client-results">{clients.map((item) =>
+          <button key={item.id} type="button" onClick={() => { setClient(item); setError(""); }}>
+            <strong>{item.first_name} {item.last_name}</strong><span>{item.phone_number} · {item.email}</span>
+          </button>)}</div>}
+        <button className="admin-nav-link" type="button" onClick={() => { setNewClient(true); setQuery(""); }}>Créer la fiche d’un nouveau client</button>
+      </>}
+      <form className="auth-form agenda-create-form" onSubmit={submit}>
+      {newClient && <section className="agenda-new-client">
+        <h3>Inscription d’un nouveau client</h3>
+        <p className="field-hint">L’adresse e-mail est nécessaire à la confirmation. Le client pourra définir son mot de passe via « Mot de passe oublié ».</p>
+        <div className="auth-grid">
+          <label>Prénom<input required maxLength={100} value={clientForm.firstName} onChange={(event) => setClientForm({ ...clientForm, firstName: event.target.value })} /></label>
+          <label>Nom<input required maxLength={100} value={clientForm.lastName} onChange={(event) => setClientForm({ ...clientForm, lastName: event.target.value })} /></label>
+          <label>Téléphone<input required type="tel" maxLength={32} value={clientForm.phone} onChange={(event) => setClientForm({ ...clientForm, phone: event.target.value })} /></label>
+          <label>E-mail<input required type="email" maxLength={254} value={clientForm.email} onChange={(event) => setClientForm({ ...clientForm, email: event.target.value })} /></label>
+          <label>Date de naissance<input required type="date" max={algerianDate()} value={clientForm.dateOfBirth} onChange={(event) => setClientForm({ ...clientForm, dateOfBirth: event.target.value })} /></label>
+        </div>
+        <button className="admin-nav-link" type="button" onClick={() => { setNewClient(false); setError(""); }}>Retour à la recherche</button>
+      </section>}
+      {client && <div className="agenda-client-selected">
+        <strong>{client.first_name} {client.last_name}</strong><span>{client.phone_number} · {client.email}</span>
+        <button type="button" className="admin-nav-link" onClick={() => setClient(null)}>Changer de client</button>
+      </div>}
+      {(client || newClient) && <>
+        <fieldset className="agenda-service-picker"><legend>Choisir une ou plusieurs prestations</legend>
+          {agenda.services.map((item) => <label key={item.id}><input type="checkbox" checked={serviceIds.includes(String(item.id))}
+            onChange={(event) => {
+              setError("");
+              if (event.target.checked && serviceIds.length >= 6) { setError("Vous pouvez ajouter jusqu’à 6 prestations."); return; }
+              setServiceIds((ids) => event.target.checked ? [...ids, String(item.id)] : ids.filter((id) => id !== String(item.id)));
+            }} />
+            {item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</label>)}
+        </fieldset>
+        {serviceIds.length > 0 && <p><strong>Total : {total.duration} min · {priceLabel(total.price)}</strong></p>}
+        {activeStaff.length > 0 && <label>Collaborateur<select required value={staffId} onChange={(event) => { setStaffId(event.target.value); setError(""); }}>
+          <option value="">Choisir un collaborateur</option>
+          {activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select></label>}
+        <label>Date<input type="date" min={algerianDate()} max={algerianDate(60)} required value={date} onChange={(event) => { setDate(event.target.value); setTime(""); setError(""); }} /></label>
+        {loadingSlots && <p role="status">Recherche des créneaux…</p>}
+        {serviceIds.length > 0 && activeStaff.length > 0 && !staffId && <p className="field-hint">Choisissez un collaborateur pour afficher ses disponibilités.</p>}
+        {!loadingSlots && serviceIds.length > 0 && slots.length === 0 && (activeStaff.length === 0 || staffId) && <p>Aucun créneau disponible pour cette sélection.</p>}
+        <label>Horaire<select required value={time} onChange={(event) => setTime(event.target.value)} disabled={serviceIds.length === 0 || (activeStaff.length > 0 && !staffId) || slots.length === 0}>
+          <option value="">Choisir un horaire</option>{slots.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
+        </select></label>
+        <button className="auth-submit" type="submit" disabled={busy || (!client && !newClient) || serviceIds.length === 0 || !time}>
+          {busy ? "Création en cours…" : "Confirmer le rendez-vous"}
+        </button>
+      </>}
+      </form>
+    </section>
+  </div>;
+}
+
+export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTarget, onCheckout }) {
   const [response, setResponse] = useState(null);
   const [view, setView] = useState("day");
   const [scale, setScale] = useState(30);
@@ -214,6 +392,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   const [selected, setSelected] = useState(null);
   const [dropTarget, setDropTarget] = useState("");
   const [hiddenStaff, setHiddenStaff] = useState([]);
+  const [createSlot, setCreateSlot] = useState(null);
   const monday = weekStart(date);
   const firstDay = view === "week" ? monday : date;
   const dayCount = view === "week" ? 7 : 1;
@@ -321,6 +500,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
               const free = canDrop && !busy;
               const targetKey = `${day.date}:${member.id}:${row}`;
               return <div key={row} className={`agenda-slot ${free ? "agenda-slot-free" : "agenda-slot-unavailable"}${dropTarget === targetKey ? " agenda-drop-target" : ""}`} aria-label={`${timeLabel(canDrop ? targetTime : row)} : ${free ? "libre" : busy ? "occupé" : "indisponible"}`}
+                onClick={free ? () => setCreateSlot({ date: day.date, time: timeLabel(targetTime), staffId: String(member.id) }) : undefined}
                 onDragOver={free ? (event) => {
                   if (!event.dataTransfer.types.includes("application/x-bookili-appointment")) return;
                   event.preventDefault();
@@ -356,6 +536,13 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
         })}
       </div>
     </div>}
-    {selected && selectedDay && <AppointmentDetail key={selected.appointment.id} {...selected} agenda={selectedDay} csrfToken={csrfToken} onClose={closeDetail} onChanged={changed} />}
+    {days && <button className="agenda-add-button" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date })}>+</button>}
+    {createSlot && days && <AppointmentCreate key={`${createSlot.date}:${createSlot.time || "new"}:${createSlot.staffId || ""}`} agenda={days.find((day) => day.date === createSlot.date) || days[0]} csrfToken={csrfToken} initial={createSlot} onClose={() => setCreateSlot(null)} onCreated={(message, nextDate) => {
+      setCreateSlot(null);
+      setNotice(message);
+      if (nextDate !== date) setDate(nextDate);
+      else setRevision((value) => value + 1);
+    }} />}
+    {selected && selectedDay && <AppointmentDetail key={selected.appointment.id} {...selected} agenda={selectedDay} csrfToken={csrfToken} onClose={closeDetail} onChanged={changed} onCheckout={onCheckout} />}
   </div>;
 }

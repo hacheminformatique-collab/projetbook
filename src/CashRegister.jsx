@@ -23,7 +23,7 @@ function Feedback({ notice }) {
   return <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>;
 }
 
-export default function CashRegister({ csrfToken }) {
+export default function CashRegister({ csrfToken, appointment = null, onAppointmentHandled }) {
   const [view, setView] = useState("sale");
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -36,10 +36,11 @@ export default function CashRegister({ csrfToken }) {
       )}
     </nav>
     <div hidden={view !== "sale"}>
-      <SaleForm csrfToken={csrfToken} revision={revision} onBusy={setBusy} onRecorded={(result) => {
+      <SaleForm key={appointment?.id || "regular"} csrfToken={csrfToken} revision={revision} appointment={appointment} onBusy={setBusy} onRecorded={(result) => {
         setSaleId(result.saleId);
         refresh();
         setView("journal");
+        if (appointment) onAppointmentHandled?.();
       }} />
     </div>
     {view === "gift-cards" && <GiftCards csrfToken={csrfToken} onBusy={setBusy} onRecorded={refresh} />}
@@ -48,10 +49,12 @@ export default function CashRegister({ csrfToken }) {
   </>;
 }
 
-function SaleForm({ csrfToken, revision, onBusy, onRecorded }) {
+function SaleForm({ csrfToken, revision, appointment, onBusy, onRecorded }) {
   const [kind, setKind] = useState("product");
   const [search, setSearch] = useState("");
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(() => appointment?.services.map((item) => ({
+    kind: "service", id: Number(item.id), name: item.name, quantity: 1, expectedPrice: Number(item.price_dzd),
+  })) || []);
   const [paymentMethod, setPayment] = useState("cash");
   const [giftCardCode, setGiftCardCode] = useState("");
   const [notice, setNotice] = useState(null);
@@ -75,6 +78,7 @@ function SaleForm({ csrfToken, revision, onBusy, onRecorded }) {
     try {
       const body = pending || {
         action: "record", requestKey: crypto.randomUUID(), paymentMethod,
+        ...(appointment ? { appointmentId: Number(appointment.id) } : {}),
         ...(giftCardCode.trim() ? { giftCardCode: giftCardCode.trim().replaceAll(" ", "").toUpperCase() } : {}),
         lines: cart.map(({ name: _name, ...line }) => line),
       };
@@ -94,9 +98,10 @@ function SaleForm({ csrfToken, revision, onBusy, onRecorded }) {
     }
   }
   return <section className="client-card">
-    <h2>Enregistrer une vente</h2>
+    <h2>{appointment ? `Encaisser le rendez-vous de ${appointment.first_name} ${appointment.last_name}` : "Enregistrer une vente"}</h2>
+    {appointment && <p>{appointment.service_name} · {appointment.starts_at.slice(0, 16)} · {priceLabel(appointment.price_dzd)}</p>}
     <p>Enregistrez uniquement un règlement déjà reçu. BOOKILI ne débite ni carte ni compte bancaire.</p>
-    <form className="booking-toolbar" onSubmit={(event) => {
+    {!appointment && <form className="booking-toolbar" onSubmit={(event) => {
       event.preventDefault();
       setSearch(new FormData(event.currentTarget).get("q").trim());
       setCatalogRefresh((value) => value + 1);
@@ -104,21 +109,23 @@ function SaleForm({ csrfToken, revision, onBusy, onRecorded }) {
       <label>Catalogue<select value={kind} onChange={(event) => setKind(event.target.value)}><option value="product">Produits</option><option value="service">Prestations</option></select></label>
       <label>Nom ou référence<input name="q" maxLength={180} /></label>
       <button className="admin-nav-link" type="submit">Rechercher / actualiser</button>
-    </form>
-    {error && <Feedback notice={{ kind: "error", text: error }} />}
-    {!catalog && !error && <p role="status">Chargement du catalogue…</p>}
-    {catalog?.items.length === 0 && <p>Aucun article actif correspondant.</p>}
-    <div className="service-list">
+    </form>}
+    {!appointment && error && <Feedback notice={{ kind: "error", text: error }} />}
+    {!appointment && !catalog && !error && <p role="status">Chargement du catalogue…</p>}
+    {!appointment && catalog?.items.length === 0 && <p>Aucun article actif correspondant.</p>}
+    {!appointment && <div className="service-list">
       {catalog?.items.map((item) => <div className="service-row" key={item.id}>
         <span><strong>{item.name}</strong> · {priceLabel(item.price_dzd)}{kind === "product" && <> · Stock : {item.quantity}{item.reference && ` · ${item.reference}`}</>}</span>
         <button className="admin-nav-link" type="button" disabled={saving || !!pending || cart.length >= 20 || (kind === "product" && Number(item.quantity) === 0) || cart.some((line) => line.kind === kind && String(line.id) === String(item.id))} onClick={() => add(item)}>Ajouter au panier</button>
       </div>)}
-    </div>
-    {catalog?.hasMore && <p>Plus de 50 résultats : affinez la recherche.</p>}
-    <h3>Panier</h3>
+    </div>}
+    {!appointment && catalog?.hasMore && <p>Plus de 50 résultats : affinez la recherche.</p>}
+    <h3>{appointment ? "Prestations à encaisser" : "Panier"}</h3>
     <Feedback notice={notice} />
     {cart.length === 0 ? <p>Ajoutez un produit ou une prestation au panier.</p> : <form className="auth-form" onSubmit={submit}>
-      <fieldset className="form-fieldset" disabled={saving || !!pending}>
+      {appointment ? <div className="agenda-service-lines">
+        {cart.map((line) => <p key={`${line.kind}:${line.id}`}>{line.name} · {priceLabel(line.expectedPrice)}</p>)}
+      </div> : <fieldset className="form-fieldset" disabled={saving || !!pending}>
         {cart.map((line, index) => <div className="service-row" key={`${line.kind}:${line.id}`}>
           <span>{line.name} · {priceLabel(line.expectedPrice)}</span>
           <label>Quantité<input type="number" min={1} max={100} step={1} required value={line.quantity} onChange={(event) => {
@@ -127,13 +134,14 @@ function SaleForm({ csrfToken, revision, onBusy, onRecorded }) {
           }} /></label>
           <button className="admin-nav-link" type="button" onClick={() => setCart((items) => items.filter((_, position) => position !== index))}>Retirer</button>
         </div>)}
-        <label>Mode de règlement du complément<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)}>
-          {Object.entries(methods).filter(([key]) => key !== "gift_card").map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select></label>
-        <label>Code carte cadeau (facultatif)<input autoComplete="off" maxLength={35} value={giftCardCode} onChange={(event) => setGiftCardCode(event.target.value.toUpperCase())} placeholder="32 caractères" /></label>
-      </fieldset>
+      </fieldset>}
+      <label>{appointment ? "Mode de règlement" : "Mode de règlement du complément"}<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)} disabled={saving || !!pending}>
+        {Object.entries(methods).filter(([key]) => key !== "gift_card").map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select></label>
+      <label>Code carte cadeau (facultatif)<input autoComplete="off" maxLength={35} value={giftCardCode} onChange={(event) => setGiftCardCode(event.target.value.toUpperCase())} placeholder="32 caractères" disabled={saving || !!pending} /></label>
       <p><strong>Total : {priceLabel(cart.reduce((sum, line) => sum + line.quantity * line.expectedPrice, 0))}</strong></p>
-      <p className="field-hint">Si le solde de la carte ne couvre pas toute la vente, le reste est enregistré selon le mode de règlement choisi.</p>
+      {appointment && <p className="field-hint">Les prestations et le montant correspondent au rendez-vous. Une seule vente peut être enregistrée par rendez-vous.</p>}
+      {!appointment && <p className="field-hint">Si le solde de la carte ne couvre pas toute la vente, le reste est enregistré selon le mode de règlement choisi.</p>}
       {pending && !saving && <p className="field-hint">La réponse est incertaine. Réessayez la même demande pour éviter un doublon. Vérifiez le journal avant de recréer la vente.</p>}
       <button className="auth-submit" type="submit" disabled={saving}>{saving ? "Enregistrement…" : pending ? "Réessayer la même vente" : "Confirmer le règlement reçu"}</button>
     </form>}

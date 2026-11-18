@@ -22,6 +22,7 @@ export default function ProfessionalSpace() {
   const [view, setView] = useState(workspaceViews.agenda[0][0]);
   const [agendaDate, setAgendaDate] = useState(algerianDate);
   const [agendaFilters, setAgendaFilters] = useState(null);
+  const [cashAppointment, setCashAppointment] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -90,9 +91,13 @@ export default function ProfessionalSpace() {
           {!configuration && !error && <p role="status">Chargement de votre espace…</p>}
           {configuration && <>
             <h1>{workspaceViews[tab].find(([value]) => value === view)[1]}</h1>
-            {view === "planning" && <ProfessionalAgenda csrfToken={session.csrfToken} date={agendaDate} setDate={setAgendaDate} filtersTarget={agendaFilters} />}
+            {view === "planning" && <ProfessionalAgenda csrfToken={session.csrfToken} date={agendaDate} setDate={setAgendaDate} filtersTarget={agendaFilters} onCheckout={(appointment) => {
+              setCashAppointment(appointment);
+              setTab("caisse");
+              setView("cash");
+            }} />}
             {view === "closures" && <ClosureSettings csrfToken={session.csrfToken} />}
-            {view === "cash" && <CashRegister csrfToken={session.csrfToken} />}
+            {view === "cash" && <CashRegister csrfToken={session.csrfToken} appointment={cashAppointment} onAppointmentHandled={() => setCashAppointment(null)} />}
             {view === "directory" && <ProfessionalClients />}
             {view === "services" && <ServiceSettings csrfToken={session.csrfToken} />}
             {view === "staff" && <StaffSettings csrfToken={session.csrfToken} salonHours={configuration.hours} />}

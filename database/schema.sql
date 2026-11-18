@@ -216,6 +216,21 @@ CREATE TABLE IF NOT EXISTS appointment_private_notes (
     FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS appointment_services (
+  appointment_id BIGINT UNSIGNED NOT NULL,
+  position TINYINT UNSIGNED NOT NULL,
+  service_id BIGINT UNSIGNED NOT NULL,
+  service_name VARCHAR(180) NOT NULL,
+  duration_minutes SMALLINT UNSIGNED NOT NULL,
+  price_dzd BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (appointment_id, position),
+  UNIQUE KEY appointment_services_unique (appointment_id, service_id),
+  CONSTRAINT appointment_services_appointment_fk
+    FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE CASCADE,
+  CONSTRAINT appointment_services_service_fk
+    FOREIGN KEY (service_id) REFERENCES services (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS notification_outbox (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   appointment_id BIGINT UNSIGNED NOT NULL,
@@ -271,6 +286,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 CREATE TABLE IF NOT EXISTS cash_sales (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   salon_id BIGINT UNSIGNED NOT NULL,
+  appointment_id BIGINT UNSIGNED NULL,
   actor_id BIGINT UNSIGNED NOT NULL,
   request_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -285,9 +301,11 @@ CREATE TABLE IF NOT EXISTS cash_sales (
   void_reason VARCHAR(255) NULL,
   PRIMARY KEY (id),
   UNIQUE KEY cash_sales_request (salon_id, request_key),
+  UNIQUE KEY cash_sales_appointment_unique (appointment_id),
   KEY cash_sales_recorded (salon_id, recorded_at, id),
   KEY cash_sales_voided (salon_id, voided_at, id),
   CONSTRAINT cash_sales_salon_fk FOREIGN KEY (salon_id) REFERENCES salons (id),
+  CONSTRAINT cash_sales_appointment_fk FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE RESTRICT,
   CONSTRAINT cash_sales_actor_fk FOREIGN KEY (actor_id) REFERENCES accounts (id),
   CONSTRAINT cash_sales_void_actor_fk FOREIGN KEY (voided_by) REFERENCES accounts (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

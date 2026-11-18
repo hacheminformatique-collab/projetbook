@@ -4,7 +4,15 @@ require_once __DIR__ . '/booking.php';
 bookili_require_method('GET');
 
 $salonId = bookili_id($_GET['salonId'] ?? null);
-$serviceId = bookili_id($_GET['serviceId'] ?? null);
+$serviceIdsValue = $_GET['serviceIds'] ?? null;
+if ($serviceIdsValue !== null) {
+    if (!is_string($serviceIdsValue) || !preg_match('/^[1-9][0-9]*(?:,[1-9][0-9]*){0,5}$/D', $serviceIdsValue)) {
+        bookili_json_response(422, ['error' => 'Sélection de prestations invalide.']);
+    }
+    $serviceIds = explode(',', $serviceIdsValue);
+} else {
+    $serviceIds = [$_GET['serviceId'] ?? null];
+}
 $day = bookili_booking_date($_GET['date'] ?? null);
 $excludeId = isset($_GET['appointmentId']) ? bookili_id($_GET['appointmentId']) : 0;
 $staffId = isset($_GET['staffId']) ? bookili_id($_GET['staffId']) : 0;
@@ -27,7 +35,7 @@ try {
         }
         if (!$statement->fetch()) bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
     } else bookili_public_salon($pdo, $salonId);
-    $service = bookili_service($pdo, $salonId, $serviceId);
+    $service = bookili_selected_services($pdo, $salonId, $serviceIds);
     $staff = bookili_salon_staff($pdo, $salonId);
     $slots = count($staff) > 0 && $staffId === 0
         ? []

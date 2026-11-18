@@ -82,8 +82,9 @@ Le test `tests/cash.py` vérifie la caisse et les cartes cadeaux. Le test
 aux campagnes marketing. Ils nécessitent chacun une base jetable neuve avec
 toutes les migrations à jour.
 Le test `tests/professional-agenda.py` vérifie les notes privées, les droits
-par salon et les modifications de rendez-vous ; il exige également une base
-jetable neuve et les mêmes variables.
+par salon, la recherche et la création de clients, le cumul de prestations,
+les créneaux, et l’encaissement unique lié au rendez-vous ; il exige également
+une base jetable neuve et les mêmes variables.
 
 La clé de test doit correspondre à `setup_token` et contenir au moins
 64 caractères. Les tests qui créent le super-admin ne doivent pas partager
@@ -134,7 +135,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/013_marketing_campaigns.sql`,
 `database/migrations/014_staff_hours.sql`,
 `database/migrations/015_password_reset.sql`, puis
-`database/migrations/016_appointment_notes.sql` dans phpMyAdmin,
+`database/migrations/016_appointment_notes.sql` et
+`database/migrations/017_appointment_services.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -428,5 +430,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/013_marketing_campaigns.sql`,
 `database/migrations/014_staff_hours.sql`,
 `database/migrations/015_password_reset.sql` et
-`database/migrations/016_appointment_notes.sql`, dans cet ordre,
+`database/migrations/016_appointment_notes.sql` et
+`database/migrations/017_appointment_services.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

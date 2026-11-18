@@ -99,6 +99,49 @@ function bookili_service(PDO $pdo, int $salonId, int $serviceId): array
     return $service;
 }
 
+function bookili_selected_services(PDO $pdo, int $salonId, array $serviceIds): array
+{
+    if (!array_is_list($serviceIds) || count($serviceIds) < 1 || count($serviceIds) > 6) {
+        bookili_json_response(422, ['error' => 'Choisissez entre 1 et 6 prestations.']);
+    }
+    $services = [];
+    $seen = [];
+    $duration = 0;
+    $price = 0;
+    foreach ($serviceIds as $value) {
+        $id = bookili_id($value);
+        if (isset($seen[$id])) bookili_json_response(422, ['error' => 'Une prestation ne peut être ajoutée qu’une fois.']);
+        $seen[$id] = true;
+        $service = bookili_service($pdo, $salonId, $id);
+        $services[] = $service;
+        $duration += (int) $service['duration_minutes'];
+        $price += (int) $service['price_dzd'];
+    }
+    $name = implode(' + ', array_column($services, 'name'));
+    if ($duration > 1440 || $price > 10000000 || strlen($name) > 180) {
+        bookili_json_response(422, ['error' => 'Le cumul des prestations dépasse les limites autorisées.']);
+    }
+    return [
+        'id' => (int) $services[0]['id'], 'name' => $name, 'duration_minutes' => $duration,
+        'price_dzd' => $price, 'services' => $services,
+    ];
+}
+
+function bookili_save_appointment_services(PDO $pdo, int $appointmentId, array $selection): void
+{
+    $pdo->prepare('DELETE FROM appointment_services WHERE appointment_id = :id')->execute(['id' => $appointmentId]);
+    $insert = $pdo->prepare(
+        'INSERT INTO appointment_services (appointment_id, position, service_id, service_name, duration_minutes, price_dzd)
+         VALUES (:appointment, :position, :service, :name, :duration, :price)'
+    );
+    foreach ($selection['services'] as $position => $service) {
+        $insert->execute([
+            'appointment' => $appointmentId, 'position' => $position, 'service' => $service['id'],
+            'name' => $service['name'], 'duration' => $service['duration_minutes'], 'price' => $service['price_dzd'],
+        ]);
+    }
+}
+
 function bookili_salon_staff(PDO $pdo, int $salonId): array
 {
     $statement = $pdo->prepare(
@@ -173,7 +216,7 @@ function bookili_queue_email(PDO $pdo, array $appointment, string $kind, DateTim
     $price = number_format((int) $appointment['price_dzd'], 0, ',', ' ') . ' DA';
     $details = "Établissement : {$appointment['salon_name']}\nPrestation : {$appointment['service_name']}\nDate et heure : {$formattedDate}\nAdresse : {$appointment['address']}, {$appointment['city']}\nTéléphone : {$salonPhone}\nPrix à régler sur place : {$price} (aucun paiement en ligne).\n";
     $content = match ($kind) {
-        'confirmation' => ["Votre rendez-vous BOOKILI est confirmé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous est confirmé.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
+        'confirmation' => ["Votre rendez-vous BOOKILI est confirmé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous est confirmé.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client. Si votre professionnel a créé votre compte, choisissez « Mot de passe oublié » sur la page Mon compte pour définir votre mot de passe."],
         'rescheduled' => ["Votre rendez-vous BOOKILI a été modifié", "Bonjour {$appointment['first_name']},\n\nLa modification de votre rendez-vous est confirmée.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
         'cancelled' => ["Votre rendez-vous BOOKILI a été annulé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous du {$formattedDate} chez {$appointment['salon_name']} a été annulé. Aucun paiement n’a été effectué.\n\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
         'reminder_7d' => ["Rappel BOOKILI : rendez-vous dans une semaine", "Bonjour {$appointment['first_name']},\n\nPetit rappel : votre rendez-vous BOOKILI aura lieu dans une semaine.\n\n{$details}\nNous vous attendons bientôt !"],

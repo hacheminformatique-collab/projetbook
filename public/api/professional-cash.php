@@ -36,6 +36,7 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
     $key = $data['requestKey'] ?? null;
     $lines = $data['lines'] ?? null;
     $giftCode = $data['giftCardCode'] ?? '';
+    $appointmentId = isset($data['appointmentId']) ? bookili_id($data['appointmentId']) : null;
     if (!is_string($payment) || !in_array($payment, ['cash', 'card', 'transfer', 'other'], true)
         || !is_string($key) || !preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/D', $key)
         || !is_string($giftCode) || strlen($giftCode) > 64
@@ -57,7 +58,7 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
         $cart[$index] = ['kind' => $kind, 'id' => $id, 'quantity' => $quantity, 'price' => $price];
     }
     ksort($cart);
-    $fingerprint = hash('sha256', json_encode([$payment, $cart, $giftCode], JSON_THROW_ON_ERROR));
+    $fingerprint = hash('sha256', json_encode([$payment, $cart, $giftCode, $appointmentId], JSON_THROW_ON_ERROR));
     $pdo->beginTransaction();
     $salonId = (int) bookili_own_salon($pdo, $actorId, true)['id'];
     $statement = $pdo->prepare(    'SELECT id, request_hash, gift_card_id FROM cash_sales WHERE salon_id = :salon AND request_key = :key');
@@ -66,6 +67,53 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
         if ($previous['request_hash'] !== $fingerprint) bookili_cash_conflict($pdo, 'Cette demande correspond déjà à une autre vente.');
         $pdo->commit();
         bookili_json_response(200, ['saleId' => (int) $previous['id'], 'duplicate' => true]);
+    }
+    $appointment = null;
+    $appointmentServices = [];
+    if ($appointmentId !== null) {
+        $statement = $pdo->prepare(
+            "SELECT id, service_id, service_name, price_dzd, status FROM appointments
+             WHERE id = :id AND salon_id = :salon FOR UPDATE"
+        );
+        $statement->execute(['id' => $appointmentId, 'salon' => $salonId]);
+        $appointment = $statement->fetch();
+        if (!$appointment || $appointment['status'] !== 'confirmed') {
+            bookili_cash_conflict($pdo, 'Ce rendez-vous n’est plus disponible pour l’encaissement.');
+        }
+        $statement = $pdo->prepare(
+            'SELECT service_id, service_name, price_dzd FROM appointment_services
+             WHERE appointment_id = :id ORDER BY position'
+        );
+        $statement->execute(['id' => $appointmentId]);
+        $appointmentServices = $statement->fetchAll();
+        if (!$appointmentServices) {
+            $appointmentServices = [[
+                'service_id' => $appointment['service_id'], 'service_name' => $appointment['service_name'],
+                'price_dzd' => $appointment['price_dzd'],
+            ]];
+        }
+        $statement = $pdo->prepare('SELECT id FROM cash_sales WHERE appointment_id = :id FOR UPDATE');
+        $statement->execute(['id' => $appointmentId]);
+        if ($statement->fetchColumn()) bookili_cash_conflict($pdo, 'Ce rendez-vous possède déjà une vente dans le journal.');
+        $expected = [];
+        foreach ($appointmentServices as $service) {
+            $expected[(int) $service['service_id']] = [
+                'name' => $service['service_name'], 'price' => (int) $service['price_dzd'],
+            ];
+        }
+        if (count($cart) !== count($expected)) {
+            bookili_cash_conflict($pdo, 'Le panier ne correspond plus aux prestations du rendez-vous.');
+        }
+        foreach ($cart as $index => &$line) {
+            if ($line['kind'] !== 'service' || $line['quantity'] !== 1 || !isset($expected[$line['id']])
+                || $expected[$line['id']]['price'] !== $line['price']) {
+                bookili_cash_conflict($pdo, 'Le panier ne correspond plus aux prestations du rendez-vous.');
+            }
+            $line['name'] = $expected[$line['id']]['name'];
+            unset($expected[$line['id']]);
+        }
+        unset($line);
+        if ($expected) bookili_cash_conflict($pdo, 'Le panier ne correspond plus aux prestations du rendez-vous.');
     }
     $total = 0;
     $giftCard = null;
@@ -86,9 +134,11 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
     }
     foreach ($cart as &$line) {
         $product = $line['kind'] === 'product';
-        $item = $product
-            ? bookili_own_product($pdo, $salonId, $line['id'], true)
-            : bookili_service($pdo, $salonId, $line['id']);
+        $item = $appointmentId !== null
+            ? ['name' => $line['name'], 'price_dzd' => $line['price']]
+            : ($product
+                ? bookili_own_product($pdo, $salonId, $line['id'], true)
+                : bookili_service($pdo, $salonId, $line['id']));
         if ((int) $item['price_dzd'] !== $line['price']) {
             bookili_cash_conflict($pdo, 'Un prix a changé. Actualisez le catalogue et ajoutez de nouveau l’article.');
         }
@@ -100,16 +150,19 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
         $total += $line['quantity'] * $line['price'];
     }
     unset($line);
+    if ($appointment && $total !== (int) $appointment['price_dzd']) {
+        bookili_cash_conflict($pdo, 'Le total du rendez-vous ne correspond pas à ses prestations.');
+    }
     $applied = min($total, (int) ($giftCard['balance_dzd'] ?? 0));
     $collected = $total - $applied;
     $storedPayment = $collected === 0 ? 'gift_card' : $payment;
     $now = bookili_now()->format('Y-m-d H:i:s');
     $pdo->prepare(
         'INSERT INTO cash_sales
-         (salon_id, actor_id, request_key, request_hash, payment_method, total_dzd, collected_dzd, gift_card_applied_dzd, gift_card_id, recorded_at)
-         VALUES (:salon, :actor, :key, :hash, :payment, :total, :collected, :applied, :gift_card, :now)'
+         (salon_id, appointment_id, actor_id, request_key, request_hash, payment_method, total_dzd, collected_dzd, gift_card_applied_dzd, gift_card_id, recorded_at)
+         VALUES (:salon, :appointment, :actor, :key, :hash, :payment, :total, :collected, :applied, :gift_card, :now)'
     )->execute([
-        'salon' => $salonId, 'actor' => $actorId, 'key' => $key, 'hash' => $fingerprint,
+        'salon' => $salonId, 'appointment' => $appointmentId, 'actor' => $actorId, 'key' => $key, 'hash' => $fingerprint,
         'payment' => $storedPayment, 'total' => $total, 'collected' => $collected,
         'applied' => $applied, 'gift_card' => $giftCard['id'] ?? null, 'now' => $now,
     ]);
