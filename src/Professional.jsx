@@ -8,6 +8,7 @@ import AgendaDisplaySettings from "./AgendaDisplaySettings.jsx";
 import ProfessionalProfile from "./ProfessionalProfile.jsx";
 import ProfessionalPhotos from "./ProfessionalPhotos.jsx";
 import StaffAbsences from "./StaffAbsences.jsx";
+import { InstallLink } from "./PwaInstall.jsx";
 import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
 
@@ -90,6 +91,7 @@ export default function ProfessionalSpace() {
           {Number(configuration.salon.is_public)
             ? <Link className="pro-public-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link>
             : <p className="pro-public-link">Salon non publié</p>}
+          <InstallLink pro />
         </aside>}
         <main className="pro-panel">
           {error && <p className="form-message form-error" role="alert">{error}</p>}

@@ -170,12 +170,21 @@ si nécessaire.
 
 ### Installation sur mobile
 
-Sur HTTPS, BOOKILI fournit un manifeste Web et une icône. Utilisez
-**Sur l’écran d’accueil** dans le menu Partager de Safari sur iOS ou
-**Installer / Ajouter à l’écran d’accueil** dans le menu de Chrome sur Android
-(le libellé dépend du navigateur). La connexion reste nécessaire pour consulter
-les données, réserver ou enregistrer une vente. Le service worker affiche une
-page hors ligne sans stocker les données de compte, de réservation ou de caisse.
+Sur HTTPS, **📱 Installer l’application** ouvre le guide correspondant :
+**BOOKILI Client** sur l’accueil et dans l’espace client, **BOOKILI Pro** dans
+l’espace professionnel. Les deux raccourcis ont une icône et une adresse
+de lancement distinctes ; ils ouvrent l’espace correspondant, ou sa page de
+connexion si nécessaire.
+
+Sur Chrome pour Android, le bouton du guide peut ouvrir l’invitation native.
+Si elle n’est pas disponible, utilisez le menu du navigateur. Sur iPhone/iPad,
+ouvrez le guide dans Safari, puis choisissez **Partager → Sur l’écran
+d’accueil** et, si proposée, l’option **Ouvrir comme app web**.
+
+La connexion reste nécessaire pour consulter les données, réserver ou
+enregistrer une vente. Le service worker affiche une page hors ligne sans
+stocker les données de compte, de réservation ou de caisse. Les rappels par
+e-mail sont inchangés ; l’installation n’active pas de notifications push.
 
 Le serveur doit avoir PHP 8.1+ avec PDO MySQL, MySQL/MariaDB et Apache avec
 `mod_rewrite` pour les pages de l'application. L'extension PHP **GD**, avec

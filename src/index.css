@@ -109,6 +109,15 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .hero-shortcuts a:hover { background: #ffffff20; }
 .hero-shortcuts a:focus-visible, .site-header:not(.site-header-scrolled) a:focus-visible { outline-color: #ffbcd7; }
 .hero-notice { font-size: 13px; margin: 16px 0 0; }
+.pwa-install-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--rose-ink); border-radius: 9px; background: #fff; color: var(--rose-ink); font: inherit; font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.pwa-install-link:hover { background: var(--rose-wash); }
+.pwa-install-link:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.pwa-install-link:disabled { opacity: .65; cursor: wait; }
+.hero-content > .pwa-install-link { margin-top: 12px; }
+.pwa-entry-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.pwa-guide { line-height: 1.55; }
+.pwa-guide img { display: block; margin: auto; border-radius: 14px; }
+.pwa-guide .pwa-install-link { margin-block: 4px; }
 
 .faq { background: #fff; padding: 120px 24px 140px; scroll-margin-top: 80px; }
 .faq-inner { max-width: 970px; margin: auto; }

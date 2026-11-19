@@ -7,6 +7,7 @@ import PasswordReset from "./PasswordReset.jsx";
 import { apiRequest, apiUrl, serviceCategories } from "./api-client.js";
 import HomeSearch from "./HomeSearch.jsx";
 import { AdminAccounts, AdminBilling, AdminCampaigns, AdminProfileReviews } from "./AdminOperations.jsx";
+import { InstallLink, InstallPage } from "./PwaInstall.jsx";
 
 const questions = [
   {
@@ -103,6 +104,7 @@ function HomePage() {
             <h1 id="hero-title">Trouvez votre professionnel de la beauté<br className="hero-title-break" /> et prenez <span>rendez-vous en ligne</span></h1>
             <HomeSearch />
             <p className="hero-notice">Partout en Algérie</p>
+            <InstallLink />
           </div>
         </section>
         <section className="faq" id="faq" aria-labelledby="faq-title">
@@ -389,6 +391,10 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
         {superAdmin && (
           <p className="auth-footnote">Première installation ? Créez votre compte depuis la <Link to="/gestion-commercial">gestion commerciale</Link>.</p>
         )}
+        {!commercial && !superAdmin && <div className="pwa-entry-actions">
+          {!professional && <Link className="text-link" to="/recherche">Rechercher un institut</Link>}
+          <InstallLink pro={professional} />
+        </div>}
       </section>
     </main>
   );
@@ -1064,6 +1070,10 @@ function ClientAccount() {
       <div className="client-content">
         <p className="eyebrow">ESPACE CLIENT</p>
         <h1>Mon compte</h1>
+        <div className="pwa-entry-actions">
+          <Link className="text-link" to="/recherche">Rechercher un institut</Link>
+          <InstallLink />
+        </div>
         {error && <p className="form-message form-error" role="alert">{error}</p>}
         {loading && <p>Chargement de votre compte…</p>}
         {profile && (
@@ -1129,6 +1139,8 @@ export default function App() {
       <Route path="/salons/:salonId" element={<SalonPage />} />
       <Route path="/professionnels" element={<AuthPage professional />} />
       <Route path="/compte" element={<AuthPage />} />
+      <Route path="/installer/client" element={<InstallPage />} />
+      <Route path="/installer/pro" element={<InstallPage pro />} />
       <Route path="/mot-de-passe-oublie" element={<PasswordReset key="request" />} />
       <Route path="/nouveau-mot-de-passe" element={<PasswordReset key="confirm" confirm />} />
       <Route path="/gestion-commercial" element={<CommercialGate />} />
