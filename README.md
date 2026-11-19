@@ -299,6 +299,11 @@ La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
 un glisser-déposer vers un créneau visible en vue jour ou semaine prépare le
 déplacement, à confirmer depuis la fiche ; sur mobile, la fiche permet de
 choisir le nouvel horaire.
+Pendant le glisser-déposer, la grille vérifie la durée du rendez-vous, les
+horaires et les autres réservations. Un déplacement peut chevaucher son ancien
+créneau, mais pas un autre rendez-vous. Les rendez-vous déjà enregistrés en
+caisse ne sont pas déplaçables. La validation serveur reste obligatoire et
+revérifie les durées, tarifs et disponibilités actuels avant enregistrement.
 Dans **Admin → Affichage agenda**, le professionnel peut choisir d’afficher
 ou masquer l’horaire, le nom du client, les prestations et la note privée dans
 les blocs, puis activer ou masquer le bouton +. Ces préférences sont propres au

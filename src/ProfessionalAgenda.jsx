@@ -396,6 +396,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState(null);
   const [dropTarget, setDropTarget] = useState("");
+  const [dragged, setDragged] = useState(null);
   const [hiddenStaff, setHiddenStaff] = useState([]);
   const [createSlot, setCreateSlot] = useState(null);
   const [focusedSlots, setFocusedSlots] = useState({});
@@ -421,6 +422,8 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   }, []);
   useEffect(() => {
     setSelected(null);
+    setDragged(null);
+    setDropTarget("");
   }, [date]);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 5000);
@@ -474,7 +477,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
     if (nextDate && nextDate !== date) setDate(nextDate);
     else setRevision((value) => value + 1);
   }
-  return <div className="pro-agenda">
+  return <div className={`pro-agenda${dragged ? " agenda-dragging" : ""}`}>
     <div className="agenda-mobile-heading">
       <button type="button" className="admin-nav-link" aria-label="Jour précédent" onClick={() => navigateDate(dayOffset(date, -1))}>‹</button>
       <div>
@@ -520,6 +523,12 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
           const bookings = day.appointments.filter((item) => String(item.staff_id || "") === String(member.id));
           const blocked = day.appointments.filter((item) => member.id ? !item.staff_id : !hasActiveStaff && item.staff_id);
           const busyRanges = [...bookings, ...blocked].map((item) => bounds(item, day.date));
+          const moveBusyRanges = [...bookings, ...blocked]
+            .filter((item) => String(item.id) !== String(dragged?.id))
+            .map((item) => bounds(item, day.date));
+          const moveDuration = dragged
+            ? (new Date(dragged.ends_at.replace(" ", "T") + "+01:00") - new Date(dragged.starts_at.replace(" ", "T") + "+01:00")) / 60000
+            : 0;
           const hours = member.id ? day.staff.find((item) => item.id === member.id) : day.hours;
           const absent = member.id && day.staffAbsences?.some((absence) => Number(absence.staff_id) === Number(member.id));
           const open = !day.closed && !absent && day.hours && hours?.opens_at && (member.id ? Number(hours.is_active) : !hasActiveStaff);
@@ -532,13 +541,15 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
             const canDrop = open && day.date <= maxBookingDate && targetTime >= opens && targetTime + 15 <= closes
               && new Date(`${day.date}T${timeLabel(targetTime)}:00+01:00`) > now;
             const busy = busyRanges.some(([from, to]) => targetTime < to && targetTime + 15 > from);
-            return { row, targetTime, free: canDrop && !busy };
+            const movable = canDrop && dragged && moveDuration > 0 && targetTime + moveDuration <= closes
+              && !moveBusyRanges.some(([from, to]) => targetTime < to && targetTime + moveDuration > from);
+            return { row, targetTime, free: canDrop && !busy, movable };
           });
           const freeRows = rowInfo.filter((item) => item.free);
           const focusedRow = freeRows.some((item) => item.row === focusedSlots[columnKey])
             ? focusedSlots[columnKey] : freeRows[0]?.row;
           return <div className={`agenda-day-column${absent ? " agenda-day-column-absent" : ""}`} key={`${day.date}:${member.id}`}>
-            {rowInfo.map(({ row, targetTime, free }) => {
+            {rowInfo.map(({ row, targetTime, free, movable }) => {
               const targetKey = `${day.date}:${member.id}:${row}`;
               const Slot = free ? "button" : "div";
               return <Slot key={row} type={free ? "button" : undefined}
@@ -555,26 +566,28 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
                   buttons[index + (event.key === "ArrowDown" ? 1 : -1)]?.focus();
                 } : undefined}
                 onClick={free ? () => setCreateSlot({ date: day.date, time: timeLabel(targetTime), staffId: String(member.id) }) : undefined}
-                onDragOver={free ? (event) => {
+                onDragOver={movable ? (event) => {
                   if (!event.dataTransfer.types.includes("application/x-bookili-appointment")) return;
                   event.preventDefault();
                   event.dataTransfer.dropEffect = "move";
                   setDropTarget(targetKey);
                 } : undefined}
-                onDragLeave={free ? () => setDropTarget("") : undefined}
-                onDrop={free ? (event) => {
+                onDragLeave={movable ? () => setDropTarget("") : undefined}
+                onDrop={movable ? (event) => {
                   event.preventDefault();
                   setDropTarget("");
                   const id = event.dataTransfer.getData("application/x-bookili-appointment");
                   const source = days.find((entry) => entry.appointments.some((item) => String(item.id) === id));
-                  const appointment = source?.appointments.find((item) => String(item.id) === id && startsInFuture(item));
+                  const appointment = source?.appointments.find((item) => String(item.id) === id
+                    && String(item.id) === String(dragged.id) && startsInFuture(item) && !item.cash_sale_id);
+                  setDragged(null);
                   if (appointment) setSelected({ appointment, sourceDate: source.date, destination: { date: day.date, staffId: String(member.id), time: timeLabel(targetTime) } });
                 } : undefined}
               />;
             })}
             {bookings.map((item) => {
               const [from, to] = bounds(item, day.date);
-              const draggable = startsInFuture(item, now);
+              const draggable = startsInFuture(item, now) && !item.cash_sale_id;
               const label = [
                 `${item.starts_at.slice(11, 16)}–${item.ends_at.slice(11, 16)}`,
                 `${item.first_name} ${item.last_name}`,
@@ -584,8 +597,9 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
                 onDragStart={draggable ? (event) => {
                   event.dataTransfer.effectAllowed = "move";
                   event.dataTransfer.setData("application/x-bookili-appointment", String(item.id));
+                  setDragged(item);
                 } : undefined}
-                onDragEnd={() => setDropTarget("")}
+                onDragEnd={() => { setDropTarget(""); setDragged(null); }}
                 onClick={() => setSelected({ appointment: item, sourceDate: day.date })}>
                 {displaySettings.showTime && <strong>{item.starts_at.slice(11, 16)}–{item.ends_at.slice(11, 16)}</strong>}
                 {displaySettings.showClient && <span>{item.first_name} {item.last_name}</span>}

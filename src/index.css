@@ -271,6 +271,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .agenda-drop-target { background: var(--rose-soft); outline: 2px dashed var(--rose-ink); outline-offset: -2px; }
 .agenda-booking { position: absolute; left: 3px; right: 3px; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; overflow: hidden; padding: 2px 7px; border: 0; border-left: 4px solid var(--rose-ink); border-radius: 5px; background: var(--rose-soft); color: #381a2a; text-align: left; font-size: 12px; cursor: pointer; }
 .agenda-booking[draggable="true"] { cursor: grab; }
+.agenda-dragging .agenda-booking { pointer-events: none; }
 .agenda-booking span, .agenda-booking strong, .agenda-booking-note { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agenda-booking-note { font-size: 11px; font-weight: 400; }
 .agenda-backdrop { position: fixed; inset: 0; z-index: 30; display: flex; justify-content: flex-end; background: #0008; }

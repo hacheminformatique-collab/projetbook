@@ -76,6 +76,7 @@ try {
     };
     const originalFetch = window.fetch;
     let clientNote = "Préférence salon";
+    window.appointmentMutations = 0;
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === "string" ? input : input.url, location.href);
       let data;
@@ -93,8 +94,13 @@ try {
           ],
           staffAbsences: [{ staff_id: 2 }],
           appointments: date === "2026-11-19" ? [{
-            id: 3, client_id: 7, staff_id: 1, starts_at: date + " 11:00:00", ends_at: date + " 11:30:00",
+            id: 3, client_id: 7, staff_id: 1, service_id: 1,
+            starts_at: date + " 11:00:00", ends_at: date + " 11:30:00",
             first_name: "Test", last_name: "Client", service_name: "Coupe", private_note: "",
+          }, {
+            id: 4, client_id: 8, staff_id: 1, service_id: 1, cash_sale_id: 20,
+            starts_at: date + " 12:00:00", ends_at: date + " 12:30:00",
+            first_name: "Autre", last_name: "Client", service_name: "Coupe encaissée", private_note: "",
           }] : [],
           services: [{ id: 1, name: "Coupe", duration_minutes: 30, price_dzd: 1000 }],
           displaySettings: { showTime: true, showClient: true, showServices: true, showNote: true, showAddButton: true },
@@ -130,9 +136,14 @@ try {
           };
         }
       } else if (url.pathname.endsWith("/api/availability.php")) {
-        data = { slots: ["11:30", "11:45"], staff: [
+        data = { slots: ["10:45", "11:30", "11:45"], staff: [
           { id: 1, name: "Sonia", is_absent: false }, { id: 2, name: "Lina", is_absent: true },
         ] };
+      } else if (url.pathname.endsWith("/api/appointments.php")) {
+        window.appointmentMutations++;
+        return new Response(JSON.stringify({ error: "Ce créneau n’est plus disponible." }), {
+          status: 409, headers: { "Content-Type": "application/json" },
+        });
       } else return originalFetch(input, options);
       return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
     };
@@ -176,6 +187,33 @@ try {
   await waitFor("document.querySelector('.agenda-client-info')?.textContent.includes('Ancien soin')");
   await key("Escape");
   await waitFor("!document.querySelector('[role=dialog]')");
+  assert.equal(await evaluate("document.querySelectorAll('.agenda-booking')[1].draggable"), false);
+  await evaluate(`(() => {
+    window.agendaDrag = new DataTransfer();
+    document.querySelector('.agenda-booking').dispatchEvent(new DragEvent('dragstart', {
+      bubbles: true, cancelable: true, dataTransfer: window.agendaDrag,
+    }));
+  })()`);
+  await waitFor("document.querySelector('.pro-agenda').classList.contains('agenda-dragging')");
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.agenda-booking')).pointerEvents"), "none");
+  const dragOver = (column, row) => evaluate(`(() => {
+    const target = document.querySelectorAll('.agenda-day-column')[${column}].querySelectorAll('.agenda-slot')[${row}];
+    return !target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: window.agendaDrag }));
+  })()`);
+  assert.equal(await dragOver(0, 7), true, "10:45 may overlap the original 11:00 appointment");
+  assert.equal(await dragOver(0, 11), false, "11:45 cannot fit before the 12:00 appointment");
+  assert.equal(await dragOver(0, 35), false, "17:45 cannot fit a 30-minute appointment before closing");
+  assert.equal(await dragOver(1, 7), false, "an absent collaborator cannot receive a drop");
+  await evaluate(`document.querySelector('.agenda-day-column').querySelectorAll('.agenda-slot')[7]
+    .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.agendaDrag }))`);
+  await waitFor("document.querySelector('.agenda-edit select option[value=\"10:45\"]')?.selected");
+  assert.equal(await evaluate("window.appointmentMutations"), 0, "dropping must only propose a move");
+  await evaluate("document.querySelector('.agenda-edit button[type=submit]').click()");
+  await waitFor("document.querySelector('.agenda-detail [role=alert]')?.textContent.includes('plus disponible')");
+  assert.equal(await evaluate("window.appointmentMutations"), 1);
+  await key("Escape");
+  await waitFor("!document.querySelector('[role=dialog]')");
+  assert.match(await evaluate("document.querySelector('.agenda-booking').textContent"), /11:00–11:30/);
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await waitFor("document.querySelectorAll('.agenda-day-column').length === 1");
   assert.equal(await evaluate("document.querySelector('.agenda-scroll').scrollWidth <= document.querySelector('.agenda-scroll').clientWidth"), true);
