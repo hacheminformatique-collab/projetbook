@@ -337,6 +337,11 @@ sans effacer la vente initiale. À utiliser seulement si les produits ont
 remboursement bancaire ; ce journal interne n’est ni une facture ni un export
 comptable réglementaire.
 
+**Caisse → Synthèse** présente les ventes brutes, les annulations, le net des
+règlements et une ventilation par jour. Les rendez-vous comptés ont un horaire
+passé et sont confirmés ; BOOKILI ne suit pas encore la présence effective du
+client.
+
 Le test `tests/cash.py` utilise les mêmes variables que `tests/bookings.py` et
 nécessite sa propre base jetable et plusieurs workers PHP.
 

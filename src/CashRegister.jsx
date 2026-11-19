@@ -3,7 +3,7 @@ import { algerianDate, apiRequest, apiUrl, appointmentDate, priceLabel } from ".
 import Inventory from "./Inventory.jsx";
 
 const endpoint = "professional-cash.php";
-const methods = { cash: "Espèces", card: "Carte", transfer: "Virement", other: "Autre" };
+const methods = { cash: "Espèces", card: "Carte", transfer: "Virement", other: "Autre", gift_card: "Carte cadeau" };
 
 function useCashData(query, revision = 0, api = endpoint) {
   const [response, setResponse] = useState(null);
@@ -31,7 +31,7 @@ export default function CashRegister({ csrfToken, appointment = null, onAppointm
   const refresh = () => setRevision((value) => value + 1);
   return <>
     <nav className="workspace-tabs" aria-label="Caisse professionnelle">
-      {[["sale", "Vente"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
+      {[["sale", "Vente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
         <button key={value} type="button" disabled={busy && view !== value} aria-current={view === value ? "page" : undefined} onClick={() => setView(value)}>{name}</button>
       )}
     </nav>
@@ -43,10 +43,68 @@ export default function CashRegister({ csrfToken, appointment = null, onAppointm
         if (appointment) onAppointmentHandled?.();
       }} />
     </div>
+    {view === "overview" && <CashOverview revision={revision} />}
     {view === "gift-cards" && <GiftCards csrfToken={csrfToken} onBusy={setBusy} onRecorded={refresh} />}
     {view === "journal" && <Journal csrfToken={csrfToken} saleId={saleId} onSelect={setSaleId} revision={revision} onChanged={refresh} onBusy={setBusy} />}
     {view === "inventory" && <Inventory csrfToken={csrfToken} />}
   </>;
+}
+
+function CashOverview({ revision }) {
+  const [dates, setDates] = useState(() => ({ from: algerianDate(), to: algerianDate() }));
+  const [period, setPeriod] = useState(dates);
+  const query = new URLSearchParams({ view: "overview", ...period }).toString();
+  const { data, error } = useCashData(query, revision);
+  const maximum = Math.max(1, ...(data?.days || []).map((day) => Math.abs(day.net_dzd)));
+  return <section className="client-card cash-overview">
+    <header className="cash-overview-header">
+      <div><h2>Synthèse de caisse</h2><p>Ventes, annulations et règlements enregistrés pour la période choisie.</p></div>
+      <button className="admin-nav-link" type="button" onClick={() => window.print()}>Imprimer</button>
+    </header>
+    <form className="booking-toolbar" onSubmit={(event) => {
+      event.preventDefault();
+      const fields = new FormData(event.currentTarget);
+      setPeriod({ from: fields.get("from"), to: fields.get("to") });
+    }}>
+      <label>Du<input name="from" type="date" required max={algerianDate()} value={dates.from} onChange={(event) => setDates({ ...dates, from: event.target.value })} /></label>
+      <label>Au<input name="to" type="date" required max={algerianDate()} value={dates.to} onChange={(event) => setDates({ ...dates, to: event.target.value })} /></label>
+      <button className="admin-nav-link" type="submit">Afficher la période</button>
+    </form>
+    {error && <Feedback notice={{ kind: "error", text: error }} />}
+    {!data && !error && <p role="status">Calcul de la synthèse…</p>}
+    {data && <>
+      <div className="cash-kpis">
+        <article><span>Ventes brutes</span><strong>{priceLabel(data.summary.gross_dzd)}</strong><small>{data.summary.sale_count} vente(s)</small></article>
+        <article><span>Annulations</span><strong>{priceLabel(data.summary.void_dzd)}</strong><small>{data.summary.void_count} annulation(s)</small></article>
+        <article><span>Net sur la période</span><strong>{priceLabel(data.summary.net_dzd)}</strong><small>Ventes moins annulations</small></article>
+        <article><span>Règlements encaissés</span><strong>{priceLabel(data.summary.received_dzd)}</strong><small>Espèces, carte, virement et autres</small></article>
+        <article><span>Cartes cadeaux utilisées</span><strong>{priceLabel(data.summary.gift_card_dzd)}</strong><small>Montant consommé sur les ventes</small></article>
+      </div>
+      <section className="cash-report-section">
+        <h3>Répartition des règlements</h3>
+        {data.payments.length === 0 ? <p>Aucun règlement enregistré sur cette période.</p> :
+          <div className="cash-report-table"><table>
+            <thead><tr><th>Mode de règlement</th><th>Net des ventes</th><th>Montant encaissé</th><th>Carte cadeau</th><th>Ventes</th></tr></thead>
+            <tbody>{data.payments.map((row) => <tr key={row.payment_method}>
+              <th scope="row">{methods[row.payment_method] || row.payment_method}</th>
+              <td>{priceLabel(row.net_dzd)}</td><td>{priceLabel(row.received_dzd)}</td>
+              <td>{priceLabel(row.gift_card_dzd)}</td><td>{row.sale_count}</td>
+            </tr>)}</tbody>
+          </table></div>}
+      </section>
+      <section className="cash-report-section">
+        <h3>Activité par jour</h3>
+        <p className="field-hint">Les rendez-vous comptent ici s’ils sont confirmés et que leur créneau est passé ; l’application ne suit pas encore la présence effective.</p>
+        {data.days.length === 0 ? <p>Aucune vente ni aucun rendez-vous sur cette période.</p> :
+          <div className="cash-report-days">{data.days.map((day) => <article key={day.day}>
+            <div className="cash-report-day-heading"><strong>{day.day.split("-").reverse().join("/")}</strong><span>{day.visit_count} RDV · {day.sale_count} vente(s) · {day.void_count} annulation(s)</span><b>{priceLabel(day.net_dzd)}</b></div>
+            <div className="cash-report-bar" role="img" aria-label={`Net ${priceLabel(day.net_dzd)}`}>
+              <span className={day.net_dzd < 0 ? "cash-report-negative" : ""} style={{ width: `${Math.max(1, Math.abs(day.net_dzd) / maximum * 100)}%` }} />
+            </div>
+          </article>)}</div>}
+      </section>
+    </>}
+  </section>;
 }
 
 function SaleForm({ csrfToken, revision, appointment, onBusy, onRecorded }) {

@@ -272,7 +272,7 @@ function bookili_cash_catalog(PDO $pdo, int $salonId): never
     bookili_json_response(200, ['items' => array_slice($items, 0, 50), 'hasMore' => count($items) > 50]);
 }
 
-function bookili_cash_journal(PDO $pdo, int $salonId, bool $csv): never
+function bookili_cash_period(): array
 {
     $today = bookili_now()->format('Y-m-d');
     $from = bookili_calendar_date($_GET['from'] ?? $today);
@@ -282,7 +282,12 @@ function bookili_cash_journal(PDO $pdo, int $salonId, bool $csv): never
         || $from->diff($to)->days > 365 || $page > 10000) {
         bookili_json_response(422, ['error' => 'Sélectionnez une période passée ou en cours de 366 jours maximum.']);
     }
-    $sql = "(SELECT id, payment_method, CAST(total_dzd AS SIGNED) AS amount_dzd, recorded_at AS event_at,
+    return [$from, $to, $page];
+}
+
+function bookili_cash_event_sql(): string
+{
+    return "(SELECT id, payment_method, CAST(total_dzd AS SIGNED) AS amount_dzd, recorded_at AS event_at,
                     'sale' AS event_kind, voided_at, NULL AS reason, collected_dzd, gift_card_applied_dzd
              FROM cash_sales WHERE salon_id = :sale_salon AND recorded_at >= :sale_from AND recorded_at < :sale_to)
             UNION ALL
@@ -290,9 +295,89 @@ function bookili_cash_journal(PDO $pdo, int $salonId, bool $csv): never
                     'void' AS event_kind, voided_at, void_reason AS reason, -CAST(collected_dzd AS SIGNED) AS collected_dzd,
                     -CAST(gift_card_applied_dzd AS SIGNED) AS gift_card_applied_dzd
              FROM cash_sales WHERE salon_id = :void_salon AND voided_at >= :void_from AND voided_at < :void_to)";
+}
+
+function bookili_cash_event_params(int $salonId, DateTimeImmutable $from, DateTimeImmutable $to): array
+{
     $params = ['sale_salon' => $salonId, 'void_salon' => $salonId];
-    $params['sale_from'] = $params['void_from'] = $from->format('Y-m-d H:i:s');
-    $params['sale_to'] = $params['void_to'] = $to->modify('+1 day')->format('Y-m-d H:i:s');
+    $params['sale_from'] = $params['void_from'] = $from->format('Y-m-d 00:00:00');
+    $params['sale_to'] = $params['void_to'] = $to->modify('+1 day')->format('Y-m-d 00:00:00');
+    return $params;
+}
+
+function bookili_cash_overview(PDO $pdo, int $salonId): never
+{
+    [$from, $to] = bookili_cash_period();
+    $sql = bookili_cash_event_sql();
+    $params = bookili_cash_event_params($salonId, $from, $to);
+    $statement = $pdo->prepare(
+        "SELECT COALESCE(SUM(CASE WHEN event_kind = 'sale' THEN amount_dzd ELSE 0 END), 0) AS gross_dzd,
+                COALESCE(SUM(CASE WHEN event_kind = 'void' THEN -amount_dzd ELSE 0 END), 0) AS void_dzd,
+                COALESCE(SUM(amount_dzd), 0) AS net_dzd, COALESCE(SUM(collected_dzd), 0) AS received_dzd,
+                COALESCE(SUM(gift_card_applied_dzd), 0) AS gift_card_dzd,
+                COALESCE(SUM(event_kind = 'sale'), 0) AS sale_count,
+                COALESCE(SUM(event_kind = 'void'), 0) AS void_count
+         FROM ($sql) AS journal"
+    );
+    $statement->execute($params);
+    $summary = array_map('intval', $statement->fetch());
+
+    $statement = $pdo->prepare(
+        "SELECT payment_method, COALESCE(SUM(amount_dzd), 0) AS net_dzd,
+                COALESCE(SUM(collected_dzd), 0) AS received_dzd,
+                COALESCE(SUM(gift_card_applied_dzd), 0) AS gift_card_dzd,
+                COALESCE(SUM(event_kind = 'sale'), 0) AS sale_count
+         FROM ($sql) AS journal GROUP BY payment_method ORDER BY payment_method"
+    );
+    $statement->execute($params);
+    $payments = $statement->fetchAll();
+    foreach ($payments as &$payment) {
+        foreach (['net_dzd', 'received_dzd', 'gift_card_dzd', 'sale_count'] as $field) $payment[$field] = (int) $payment[$field];
+    }
+    unset($payment);
+
+    $statement = $pdo->prepare(
+        "SELECT DATE(event_at) AS day, COALESCE(SUM(CASE WHEN event_kind = 'sale' THEN amount_dzd ELSE 0 END), 0) AS gross_dzd,
+                COALESCE(SUM(CASE WHEN event_kind = 'void' THEN -amount_dzd ELSE 0 END), 0) AS void_dzd,
+                COALESCE(SUM(amount_dzd), 0) AS net_dzd,
+                COALESCE(SUM(event_kind = 'sale'), 0) AS sale_count,
+                COALESCE(SUM(event_kind = 'void'), 0) AS void_count
+         FROM ($sql) AS journal GROUP BY DATE(event_at) ORDER BY day DESC"
+    );
+    $statement->execute($params);
+    $days = [];
+    foreach ($statement->fetchAll() as $row) {
+        $days[$row['day']] = array_map('intval', $row);
+        $days[$row['day']]['day'] = $row['day'];
+        $days[$row['day']]['visit_count'] = 0;
+    }
+    $statement = $pdo->prepare(
+        "SELECT DATE(ends_at) AS day, COUNT(*) AS visit_count FROM appointments
+         WHERE salon_id = :salon AND status = 'confirmed' AND ends_at >= :from AND ends_at < :to AND ends_at <= :now
+         GROUP BY DATE(ends_at)"
+    );
+    $statement->execute([
+        'salon' => $salonId, 'from' => $from->format('Y-m-d 00:00:00'),
+        'to' => $to->modify('+1 day')->format('Y-m-d 00:00:00'), 'now' => bookili_now()->format('Y-m-d H:i:s'),
+    ]);
+    foreach ($statement->fetchAll() as $row) {
+        if (!isset($days[$row['day']])) {
+            $days[$row['day']] = ['day' => $row['day'], 'gross_dzd' => 0, 'void_dzd' => 0, 'net_dzd' => 0, 'sale_count' => 0, 'void_count' => 0];
+        }
+        $days[$row['day']]['visit_count'] = (int) $row['visit_count'];
+    }
+    krsort($days);
+    bookili_json_response(200, [
+        'from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d'),
+        'summary' => $summary, 'payments' => $payments, 'days' => array_values($days),
+    ]);
+}
+
+function bookili_cash_journal(PDO $pdo, int $salonId, bool $csv): never
+{
+    [$from, $to, $page] = bookili_cash_period();
+    $sql = bookili_cash_event_sql();
+    $params = bookili_cash_event_params($salonId, $from, $to);
     $statement = $pdo->prepare($sql . ' ORDER BY event_at DESC, id DESC, event_kind DESC'
         . ($csv ? '' : ' LIMIT 51 OFFSET ' . (($page - 1) * 50)));
     $statement->execute($params);
@@ -337,6 +422,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === 'professional-cas
         $view = $_GET['view'] ?? 'journal';
         if ($view === 'catalog') bookili_cash_catalog($pdo, $salonId);
         if ($view === 'sale') bookili_json_response(200, bookili_cash_sale($pdo, $salonId, bookili_id($_GET['saleId'] ?? null)));
+        if ($view === 'overview') bookili_cash_overview($pdo, $salonId);
         if ($view === 'cards') {
             $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;
             if ($page > 10000) bookili_json_response(422, ['error' => 'Page invalide.']);

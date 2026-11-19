@@ -416,3 +416,116 @@ button:disabled { cursor: wait; opacity: .6; }
   html { scroll-behavior: auto; }
   .site-header, .faq-icon { transition: none; }
 }
+.cash-overview-header,
+.cash-report-day-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.cash-overview-header h2,
+.cash-report-section h3 {
+  margin-bottom: 0.35rem;
+}
+
+.cash-overview-header p {
+  color: #6b6670;
+  margin-top: 0;
+}
+
+.cash-kpis {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  margin: 1.5rem 0;
+}
+
+.cash-kpis article {
+  background: #fff7fa;
+  border: 1px solid #f1d9e3;
+  border-radius: 0.75rem;
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+}
+
+.cash-kpis strong {
+  color: var(--rose-ink);
+  font-size: 1.35rem;
+}
+
+.cash-kpis small,
+.cash-report-day-heading span {
+  color: #6b6670;
+}
+
+.cash-report-section {
+  margin-top: 1.6rem;
+}
+
+.cash-report-table {
+  overflow-x: auto;
+}
+
+.cash-report-table table {
+  border-collapse: collapse;
+  min-width: 620px;
+  width: 100%;
+}
+
+.cash-report-table th,
+.cash-report-table td {
+  border-bottom: 1px solid #ece4e9;
+  padding: 0.8rem;
+  text-align: left;
+}
+
+.cash-report-days {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.cash-report-days article {
+  background: #fff;
+  border: 1px solid #ece4e9;
+  border-radius: 0.65rem;
+  padding: 0.85rem;
+}
+
+.cash-report-day-heading {
+  margin-bottom: 0.6rem;
+}
+
+.cash-report-bar {
+  background: var(--rose-soft);
+  border-radius: 999px;
+  height: 0.45rem;
+  overflow: hidden;
+}
+
+.cash-report-bar span {
+  background: var(--rose-ink);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+.cash-report-bar .cash-report-negative {
+  background: #b93e58;
+}
+
+@media print {
+  .cash-overview-header button,
+  .cash-overview .booking-toolbar {
+    display: none !important;
+  }
+
+  .cash-overview {
+    display: block;
+    margin: 0;
+    max-width: none;
+    padding: 0;
+  }
+}

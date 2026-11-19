@@ -56,6 +56,15 @@ def main():
     assert saved["total_dzd"] == 2900 and saved["lines"][0]["item_name"] == "Shampooing"
     assert saved["lines"][0]["unit_price_dzd"] == 1200
     assert expect(professional.request(ENDPOINT), 200)["netDzd"] == 2900
+    overview = expect(professional.request(ENDPOINT + "?view=overview"), 200)
+    assert overview["summary"] == {
+        "gross_dzd": 2900, "void_dzd": 0, "net_dzd": 2900, "received_dzd": 2900,
+        "gift_card_dzd": 0, "sale_count": 1, "void_count": 0,
+    }
+    assert overview["payments"][0]["payment_method"] == "cash" and overview["payments"][0]["received_dzd"] == 2900
+    assert overview["days"][0]["day"] == overview["to"] and overview["days"][0]["sale_count"] == 1
+    isolated = expect(other.request(ENDPOINT + "?view=overview"), 200)
+    assert isolated["summary"]["gross_dzd"] == 0 and isolated["payments"] == [] and isolated["days"] == []
     void = {"action": "void", "saleId": sale_id, "reason": "=Produit rendu"}
     assert expect(professional.request(ENDPOINT, void), 200)["duplicate"] is False
     assert expect(professional.request(ENDPOINT, void), 200)["duplicate"] is True
@@ -64,6 +73,10 @@ def main():
     journal = expect(professional.request(ENDPOINT), 200)
     assert sorted(row["amount_dzd"] for row in journal["entries"]) == [-2900, 2900]
     assert journal["netDzd"] == 0
+    overview = expect(professional.request(ENDPOINT + "?view=overview"), 200)
+    assert overview["summary"]["net_dzd"] == 0 and overview["summary"]["received_dzd"] == 0
+    assert overview["summary"]["gross_dzd"] == 2900 and overview["summary"]["void_dzd"] == 2900
+    assert overview["days"][0]["net_dzd"] == 0 and overview["days"][0]["void_count"] == 1
     assert expect(other.request(ENDPOINT), 200)["entries"] == []
     expect(professional.request(ENDPOINT + "?from=2025-02-30"), 422)
     with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=csv") as response:
@@ -108,12 +121,16 @@ def main():
     redeemed = expect(professional.request(ENDPOINT, voucher_sale), 201)
     assert redeemed["totalDzd"] == 500 and redeemed["giftCardAppliedDzd"] == 500
     assert redeemed["collectedDzd"] == 0 and redeemed["giftCardRemainingDzd"] == 1500
+    overview = expect(professional.request(ENDPOINT + "?view=overview"), 200)
+    assert overview["summary"]["gift_card_dzd"] == 500
+    assert overview["summary"]["received_dzd"] == 4900
     remaining = expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"]
     assert remaining == 1500
     expect(professional.request(ENDPOINT, voucher_sale), 200)
     refund = {"action": "void", "saleId": redeemed["saleId"], "reason": "Correction carte cadeau"}
     expect(professional.request(ENDPOINT, refund), 200)
     assert expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"] == 2000
+    assert expect(professional.request(ENDPOINT + "?view=overview"), 200)["summary"]["gift_card_dzd"] == 0
     print("Cash checks passed: ownership, price snapshots, journal, CSV, void, replay and concurrent stock.")
 
 
