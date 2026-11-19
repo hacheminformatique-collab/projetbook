@@ -83,8 +83,8 @@ aux campagnes marketing. Ils nécessitent chacun une base jetable neuve avec
 toutes les migrations à jour.
 Le test `tests/professional-agenda.py` vérifie les notes privées, les droits
 par salon, la recherche et la création de clients, le cumul de prestations,
-les créneaux, et l’encaissement unique lié au rendez-vous ; il exige également
-une base jetable neuve et les mêmes variables.
+les créneaux, les absences individuelles et l’encaissement unique lié au
+rendez-vous ; il exige également une base jetable neuve et les mêmes variables.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
@@ -151,7 +151,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/020_agenda_display_settings.sql` et
 `database/migrations/021_salon_booking_message.sql` et
 `database/migrations/022_salon_public_profile.sql` et
-`database/migrations/023_salon_photos.sql` dans phpMyAdmin,
+`database/migrations/023_salon_photos.sql` et
+`database/migrations/024_staff_absences.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -317,6 +318,12 @@ comptes ou les rendez-vous d’autres salons.
   si des rendez-vous confirmés existent déjà ce jour : ils doivent d'abord être
   gérés individuellement. Aucun rendez-vous n'est annulé automatiquement.
   Le motif est privé ; les horaires hebdomadaires reprennent à la suppression.
+- Dans **Agenda → Absences collaborateurs**, le professionnel peut enregistrer
+  une absence couvrant une ou plusieurs journées, jusqu’à un an à l’avance.
+  Elle bloque les nouveaux créneaux pour ce collaborateur et apparaît dans sa
+  colonne d’agenda ; les motifs restent privés. L’ajout est refusé si des
+  rendez-vous confirmés lui sont déjà attribués. La suppression rétablit ses
+  disponibilités habituelles et n’annule jamais de rendez-vous.
 
 ## Produits et stocks professionnels
 
@@ -476,5 +483,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/020_agenda_display_settings.sql` et
 `database/migrations/021_salon_booking_message.sql` et
 `database/migrations/022_salon_public_profile.sql` et
-`database/migrations/023_salon_photos.sql`, dans cet ordre,
+`database/migrations/023_salon_photos.sql` et
+`database/migrations/024_staff_absences.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

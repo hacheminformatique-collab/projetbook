@@ -34,6 +34,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   const [editing, setEditing] = useState(!!destination);
   const [serviceIds, setServiceIds] = useState((appointment.services || [{ id: appointment.service_id }]).map((item) => String(item.id)));
   const [staffId, setStaffId] = useState(destination?.staffId ?? (agenda.staff.some((item) => Number(item.is_active) && String(item.id) === String(appointment.staff_id)) ? String(appointment.staff_id) : ""));
+  const [staffOptions, setStaffOptions] = useState([]);
   const [date, setDate] = useState(destination?.date ?? appointment.starts_at.slice(0, 10));
   const [suggestedTime, setSuggestedTime] = useState(destination?.time || "");
   const [time, setTime] = useState("");
@@ -82,7 +83,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
     setSlots([]);
     setSlotError("");
     setLoadingSlots(false);
-    if (!editing || !service || !date || (activeStaff.length > 0 && !staffId)) return undefined;
+    if (!editing || !service || !date) return undefined;
     const controller = new AbortController();
     setLoadingSlots(true);
     const query = new URLSearchParams({ salonId: agenda.salonId, serviceIds: serviceIds.join(","), date, appointmentId: appointment.id });
@@ -91,6 +92,8 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
       .then((response) => {
         if (controller.signal.aborted) return;
         setSlots(response.slots);
+        setStaffOptions(response.staff || []);
+        if (staffId && !response.staff?.some((member) => String(member.id) === staffId && !member.is_absent)) setStaffId("");
         if (response.slots.includes(suggestedTime)) setTime(suggestedTime);
       })
       .catch((error) => { if (!controller.signal.aborted) setSlotError(error.message); })
@@ -202,12 +205,12 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         {service && <p><strong>Total : {service.duration_minutes} min · {priceLabel(service.price_dzd)}</strong></p>}
         {activeStaff.length > 0 && <label>Collaborateur<select value={staffId} required onChange={(event) => { setSuggestedTime(""); setStaffId(event.target.value); }}>
           <option value="">Choisir un collaborateur</option>
-          {activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {(staffOptions.length ? staffOptions : activeStaff).map((item) => <option key={item.id} value={item.id} disabled={item.is_absent}>{item.name}{item.is_absent ? " — Absent" : ""}</option>)}
         </select></label>}
         <label>Date<input type="date" min={algerianDate()} max={algerianDate(60)} required value={date} onChange={(event) => { setSuggestedTime(""); setDate(event.target.value); }} /></label>
         {loadingSlots && <p role="status">Recherche des créneaux…</p>}
         {slotError && <p className="form-message form-error" role="alert">{slotError}</p>}
-        {!loadingSlots && !slotError && slots.length === 0 && <p>Aucun créneau disponible pour cette sélection.</p>}
+        {!loadingSlots && !slotError && slots.length === 0 && (activeStaff.length === 0 || staffId) && <p>Aucun créneau disponible pour cette sélection.</p>}
         <label>Horaire<select value={time} required onChange={(event) => setTime(event.target.value)} disabled={loadingSlots || slots.length === 0}>
           <option value="">Choisir un horaire</option>{slots.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
         </select></label>
@@ -225,6 +228,7 @@ function AppointmentCreate({ agenda, csrfToken, initial, onClose, onCreated }) {
   const [clientForm, setClientForm] = useState({ firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "" });
   const [serviceIds, setServiceIds] = useState([]);
   const [staffId, setStaffId] = useState(initial?.staffId && agenda.staff.some((item) => String(item.id) === String(initial.staffId)) ? String(initial.staffId) : "");
+  const [staffOptions, setStaffOptions] = useState([]);
   const [date, setDate] = useState(initial?.date || agenda.date);
   const [time, setTime] = useState(initial?.time || "");
   const [slots, setSlots] = useState([]);
@@ -272,7 +276,8 @@ function AppointmentCreate({ agenda, csrfToken, initial, onClose, onCreated }) {
   useEffect(() => {
     setSlots([]);
     setLoadingSlots(false);
-    if (serviceIds.length === 0 || (activeStaff.length > 0 && !staffId)) return undefined;
+    setStaffOptions(activeStaff);
+    if (serviceIds.length === 0) return undefined;
     const controller = new AbortController();
     setLoadingSlots(true);
     const params = new URLSearchParams({
@@ -283,6 +288,8 @@ function AppointmentCreate({ agenda, csrfToken, initial, onClose, onCreated }) {
       .then((result) => {
         if (controller.signal.aborted) return;
         setSlots(result.slots);
+        setStaffOptions(result.staff || []);
+        if (staffId && !result.staff?.some((member) => String(member.id) === staffId && !member.is_absent)) setStaffId("");
         setTime((current) => result.slots.includes(current) ? current : "");
       })
       .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); })
@@ -363,7 +370,7 @@ function AppointmentCreate({ agenda, csrfToken, initial, onClose, onCreated }) {
         {serviceIds.length > 0 && <p><strong>Total : {total.duration} min · {priceLabel(total.price)}</strong></p>}
         {activeStaff.length > 0 && <label>Collaborateur<select required value={staffId} onChange={(event) => { setStaffId(event.target.value); setError(""); }}>
           <option value="">Choisir un collaborateur</option>
-          {activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {(staffOptions.length ? staffOptions : activeStaff).map((item) => <option key={item.id} value={item.id} disabled={item.is_absent}>{item.name}{item.is_absent ? " — Absent" : ""}</option>)}
         </select></label>}
         <label>Date<input type="date" min={algerianDate()} max={algerianDate(60)} required value={date} onChange={(event) => { setDate(event.target.value); setTime(""); setError(""); }} /></label>
         {loadingSlots && <p role="status">Recherche des créneaux…</p>}
@@ -484,6 +491,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
         {columns.map(({ day, member }) => <div className="agenda-column-title" key={`${day.date}:${member.id}`}>
           {view === "week" && <button type="button" onClick={() => { navigateDate(day.date); setView("day"); }}>{shortDay.format(utcDate(day.date))}</button>}
           {member.name}{day.closed && <small> · Fermé</small>}
+          {member.id && day.staffAbsences?.find((absence) => Number(absence.staff_id) === Number(member.id)) && <small> · Absent</small>}
         </div>)}
         <div className="agenda-times">{rows.map((row) => <div key={row}>{(row - start) % scale === 0 && <span className="agenda-time-label">{timeLabel(row)}</span>}</div>)}</div>
         {columns.map(({ day, member }) => {
@@ -491,7 +499,8 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
           const blocked = day.appointments.filter((item) => member.id ? !item.staff_id : !hasActiveStaff && item.staff_id);
           const busyRanges = [...bookings, ...blocked].map((item) => bounds(item, day.date));
           const hours = member.id ? day.staff.find((item) => item.id === member.id) : day.hours;
-          const open = !day.closed && day.hours && hours?.opens_at && (member.id ? Number(hours.is_active) : !hasActiveStaff);
+          const absent = member.id && day.staffAbsences?.some((absence) => Number(absence.staff_id) === Number(member.id));
+          const open = !day.closed && !absent && day.hours && hours?.opens_at && (member.id ? Number(hours.is_active) : !hasActiveStaff);
           const opens = open ? Math.max(minutes(day.hours.opens_at), minutes(hours.opens_at)) : 0;
           const closes = open ? Math.min(minutes(day.hours.closes_at), minutes(hours.closes_at)) : 0;
           return <div className="agenda-day-column" key={`${day.date}:${member.id}`}>

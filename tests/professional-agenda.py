@@ -163,12 +163,60 @@ def main():
             "action": "save", "name": name, "isActive": True,
         }), 200)["staff"]
         members.append(next(item for item in staff if item["name"] == name))
+    absence_start = (datetime.date.fromisoformat(day) + datetime.timedelta(days=2)).isoformat()
+    absence_end = (datetime.date.fromisoformat(day) + datetime.timedelta(days=3)).isoformat()
+    absences_path = "professional-staff-absences.php"
+    expect(guest.request(absences_path), 401)
+    expect(client.request(absences_path), 403)
+    assert expect(other_pro.request(absences_path), 200)["absences"] == []
+    absence = {
+        "action": "add", "staffId": int(members[0]["id"]), "startDate": absence_start,
+        "endDate": absence_end, "reason": "Congé privé",
+    }
+    expect(professional.request(absences_path, absence, csrf=False), 403)
+    expect(other_pro.request(absences_path, absence), 404)
+    expect(professional.request(absences_path, {**absence, "endDate": day}), 422)
+    expect(professional.request(absences_path, {**absence, "reason": "x" * 181}), 422)
+    expect(professional.request(absences_path, absence), 200)
+    absences = expect(professional.request(absences_path), 200)
+    assert len(absences["absences"]) == 1
+    absence_id = absences["absences"][0]["id"]
+    expect(professional.request(absences_path, absence), 409)
+    absent_slots = f"availability.php?salonId={salon['id']}&serviceId={service['id']}&date={absence_start}&appointmentId={appointment_id}&staffId={members[0]['id']}"
+    available_slots = absent_slots.replace(f"staffId={members[0]['id']}", f"staffId={members[1]['id']}")
+    absent_availability = expect(professional.request(absent_slots), 200)
+    assert absent_availability["slots"] == []
+    assert next(item for item in absent_availability["staff"] if item["id"] == int(members[0]["id"]))["is_absent"] is True
+    available_availability = expect(professional.request(available_slots), 200)
+    assert available_availability["slots"]
+    assert next(item for item in available_availability["staff"] if item["id"] == int(members[1]["id"]))["is_absent"] is False
+    absent_booking = {
+        "action": "book", "clientId": int(found[0]["id"]), "serviceIds": [int(service["id"])],
+        "staffId": int(members[0]["id"]), "date": absence_start, "time": "09:00",
+        "expectedPrice": 1500, "expectedDuration": 30,
+    }
+    expect(professional.request("appointments.php", absent_booking), 409)
+    agenda_absence = expect(professional.request(f"professional-agenda.php?date={absence_start}"), 200)
+    assert agenda_absence["staffAbsences"] == [{
+        "staff_id": int(members[0]["id"]), "reason": "Congé privé",
+    }]
+    expect(other_pro.request(absences_path, {
+        "action": "remove", "absenceId": absence_id,
+    }), 404)
+    expect(professional.request(absences_path, {
+        "action": "remove", "absenceId": absence_id,
+    }), 200)
+    assert expect(professional.request(absent_slots), 200)["slots"]
+    expect(professional.request("appointments.php", absent_booking), 201)
     for member in members:
         expect(professional.request("appointments.php", {
             **move, "time": "12:00", "staffId": int(member["id"]),
         }), 200)
     current = next(item for item in expect(professional.request(agenda_path), 200)["appointments"] if item["id"] == appointment_id)
     assert int(current["staff_id"]) == int(members[1]["id"])
+    expect(professional.request(absences_path, {
+        **absence, "staffId": int(members[1]["id"]), "startDate": day, "endDate": day,
+    }), 409)
     expect(professional.request("professional-staff.php", {
         "action": "save", "staffId": int(members[1]["id"]), "name": members[1]["name"], "isActive": False,
     }), 200)

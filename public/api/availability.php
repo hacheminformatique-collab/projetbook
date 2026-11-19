@@ -37,6 +37,20 @@ try {
     } else bookili_public_salon($pdo, $salonId);
     $service = bookili_selected_services($pdo, $salonId, $serviceIds);
     $staff = bookili_salon_staff($pdo, $salonId);
+    if ($staff) {
+        $statement = $pdo->prepare(
+            'SELECT a.staff_id FROM staff_absences a
+             INNER JOIN staff_members m ON m.id = a.staff_id
+             WHERE m.salon_id = :salon AND a.start_date <= :absence_end_day AND a.end_date >= :absence_start_day'
+        );
+        $statement->execute([
+            'salon' => $salonId, 'absence_end_day' => $day->format('Y-m-d'),
+            'absence_start_day' => $day->format('Y-m-d'),
+        ]);
+        $absentIds = array_fill_keys(array_map('strval', $statement->fetchAll(PDO::FETCH_COLUMN)), true);
+        foreach ($staff as &$member) $member['is_absent'] = isset($absentIds[(string) $member['id']]);
+        unset($member);
+    }
     $slots = count($staff) > 0 && $staffId === 0
         ? []
         : bookili_slots($pdo, $salonId, $service, $day, $excludeId, $staffId);

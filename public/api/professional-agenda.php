@@ -133,6 +133,18 @@ try {
     );
     $statement->execute(['salon' => $salon['id'], 'weekday' => (int) $day->format('N')]);
     $staff = $statement->fetchAll();
+    $statement = $pdo->prepare(
+        'SELECT a.staff_id, a.reason FROM staff_absences a
+         INNER JOIN staff_members m ON m.id = a.staff_id
+         WHERE m.salon_id = :salon AND a.start_date <= :absence_end_day AND a.end_date >= :absence_start_day'
+    );
+    $statement->execute([
+        'salon' => $salon['id'], 'absence_end_day' => $day->format('Y-m-d'),
+        'absence_start_day' => $day->format('Y-m-d'),
+    ]);
+    $staffAbsences = $statement->fetchAll();
+    foreach ($staffAbsences as &$absence) $absence['staff_id'] = (int) $absence['staff_id'];
+    unset($absence);
     $statement = $pdo->prepare('SELECT opens_at, closes_at FROM salon_hours WHERE salon_id = :salon AND weekday = :weekday');
     $statement->execute(['salon' => $salon['id'], 'weekday' => (int) $day->format('N')]);
     $hours = $statement->fetch();
@@ -151,7 +163,7 @@ try {
     bookili_json_response(200, [
         'salonId' => (int) $salon['id'], 'date' => $day->format('Y-m-d'),
         'hours' => $hours ?: null, 'closed' => $closed, 'staff' => $staff,
-        'appointments' => $appointments, 'services' => $services,
+        'staffAbsences' => $staffAbsences, 'appointments' => $appointments, 'services' => $services,
         'displaySettings' => [
             'showTime' => (bool) $displaySettings['agenda_show_time'],
             'showClient' => (bool) $displaySettings['agenda_show_client'],

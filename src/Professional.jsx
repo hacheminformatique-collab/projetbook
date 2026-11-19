@@ -7,12 +7,13 @@ import ProfessionalClients from "./ProfessionalClients.jsx";
 import AgendaDisplaySettings from "./AgendaDisplaySettings.jsx";
 import ProfessionalProfile from "./ProfessionalProfile.jsx";
 import ProfessionalPhotos from "./ProfessionalPhotos.jsx";
+import StaffAbsences from "./StaffAbsences.jsx";
 import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
 
 const workspaceTabs = [["agenda", "Agenda"], ["caisse", "Caisse"], ["clients", "Clients"], ["admin", "Admin"]];
 const workspaceViews = {
-  agenda: [["planning", "Planning"], ["closures", "Fermetures exceptionnelles"]],
+  agenda: [["planning", "Planning"], ["closures", "Fermetures exceptionnelles"], ["staff-absences", "Absences collaborateurs"]],
   caisse: [["cash", "Caisse et suivi des ventes"]],
   clients: [["directory", "Fichier clients"]],
   admin: [["services", "Prestations"], ["staff", "Collaborateurs"], ["agenda-display", "Affichage agenda"], ["salon", "Salon et horaires"], ["profile", "Descriptif établissement"], ["photos", "Gestion des photos"]],
@@ -101,6 +102,7 @@ export default function ProfessionalSpace() {
               setView("cash");
             }} />}
             {view === "closures" && <ClosureSettings csrfToken={session.csrfToken} />}
+            {view === "staff-absences" && <StaffAbsences csrfToken={session.csrfToken} />}
             {view === "cash" && <CashRegister csrfToken={session.csrfToken} appointment={cashAppointment} onAppointmentHandled={() => setCashAppointment(null)} />}
             {view === "directory" && <ProfessionalClients csrfToken={session.csrfToken} />}
             {view === "services" && <ServiceSettings csrfToken={session.csrfToken} />}

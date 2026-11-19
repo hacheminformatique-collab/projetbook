@@ -176,6 +176,15 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
         $hours['opens_at'] = max($hours['opens_at'], $staffHours['opens_at']);
         $hours['closes_at'] = min($hours['closes_at'], $staffHours['closes_at']);
         if ($hours['opens_at'] >= $hours['closes_at']) return [];
+        $statement = $pdo->prepare(
+            'SELECT 1 FROM staff_absences
+             WHERE staff_id = :staff_id AND start_date <= :absence_end_day AND end_date >= :absence_start_day'
+        );
+        $statement->execute([
+            'staff_id' => $staffId, 'absence_end_day' => $day->format('Y-m-d'),
+            'absence_start_day' => $day->format('Y-m-d'),
+        ]);
+        if ($statement->fetchColumn()) return [];
     }
 
     $statement = $pdo->prepare(

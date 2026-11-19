@@ -161,7 +161,7 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
       .then((result) => {
         const activeStaff = result.staff || [];
         setStaffMembers(activeStaff);
-        if (staffId && !activeStaff.some((member) => String(member.id) === staffId)) setStaffId("");
+        if (staffId && !activeStaff.some((member) => String(member.id) === staffId && !member.is_absent)) setStaffId("");
         setSlots(result.slots);
       })
       .catch((cause) => { if (!controller.signal.aborted) setSlotError(cause.message); })
@@ -212,7 +212,7 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
         {staffMembers.length > 0 && <label>Collaborateur
           <select required value={staffId} onChange={(event) => setStaffId(event.target.value)} disabled={saving}>
             <option value="">Choisir un collaborateur</option>
-            {staffMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+            {staffMembers.map((member) => <option key={member.id} value={member.id} disabled={member.is_absent}>{member.name}{member.is_absent ? " — Absent" : ""}</option>)}
           </select>
         </label>}
         {!staffId && staffMembers.length > 0 && <p className="field-hint">Les créneaux seront affichés après le choix du collaborateur.</p>}
