@@ -43,6 +43,22 @@ def main():
     assert not expect(other_pro.request(agenda_path), 200)["appointments"]
     agenda = expect(professional.request(agenda_path), 200)
     assert len(agenda["appointments"]) == 2 and agenda["hours"]["opens_at"] == "09:00:00"
+    expected_display = {
+        "showTime": True, "showClient": True, "showServices": True,
+        "showNote": True, "showAddButton": True,
+    }
+    assert agenda["displaySettings"] == expected_display and agenda["services"]
+    settings_path = "professional-agenda-settings.php"
+    expect(guest.request(settings_path), 401)
+    expect(client.request(settings_path), 403)
+    assert expect(professional.request(settings_path), 200)["settings"] == expected_display
+    custom_display = {**expected_display, "showNote": False, "showAddButton": False}
+    expect(professional.request(settings_path, {"settings": custom_display}, csrf=False), 403)
+    expect(professional.request(settings_path, {"settings": {**custom_display, "showTime": "yes"}}), 422)
+    saved_display = expect(professional.request(settings_path, {"settings": custom_display}), 200)
+    assert saved_display["settings"] == custom_display
+    assert expect(professional.request(agenda_path), 200)["displaySettings"] == custom_display
+    expect(professional.request(settings_path, {"settings": expected_display}), 200)
     expect(guest.request(f"professional-agenda.php?clients=Client"), 401)
     expect(client.request(f"professional-agenda.php?clients=Client"), 403)
     found = expect(professional.request(f"professional-agenda.php?clients=Client%201"), 200)["clients"]

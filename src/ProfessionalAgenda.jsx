@@ -398,6 +398,9 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   const dayCount = view === "week" ? 7 : 1;
   const current = response?.firstDay === firstDay && response.dayCount === dayCount && response.revision === revision ? response : null;
   const days = current?.days;
+  const displaySettings = days?.[0]?.displaySettings || {
+    showTime: true, showClient: true, showServices: true, showNote: true, showAddButton: true,
+  };
   const closeDetail = useCallback(() => setSelected(null), []);
   useEffect(() => {
     setSelected(null);
@@ -521,7 +524,11 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
             {bookings.map((item) => {
               const [from, to] = bounds(item, day.date);
               const draggable = startsInFuture(item, now);
-              const label = `${item.starts_at.slice(11, 16)}–${item.ends_at.slice(11, 16)} · ${item.first_name} ${item.last_name}`;
+              const label = [
+                `${item.starts_at.slice(11, 16)}–${item.ends_at.slice(11, 16)}`,
+                `${item.first_name} ${item.last_name}`,
+                item.service_name,
+              ].join(" · ");
               return <button type="button" key={item.id} className="agenda-booking" title={`${label} · ${item.service_name}`} draggable={draggable} style={{ top: `${(from - start) * unit}px`, height: `${(to - from) * unit}px`, paddingBlock: (to - from) * unit < 17 ? 0 : undefined }}
                 onDragStart={draggable ? (event) => {
                   event.dataTransfer.effectAllowed = "move";
@@ -529,14 +536,19 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
                 } : undefined}
                 onDragEnd={() => setDropTarget("")}
                 onClick={() => setSelected({ appointment: item, sourceDate: day.date })}>
-                <strong>{label}</strong><span>{item.service_name}</span>
+                {displaySettings.showTime && <strong>{item.starts_at.slice(11, 16)}–{item.ends_at.slice(11, 16)}</strong>}
+                {displaySettings.showClient && <span>{item.first_name} {item.last_name}</span>}
+                {displaySettings.showServices && <span>{item.service_name}</span>}
+                {displaySettings.showNote && item.private_note && <small className="agenda-booking-note">{item.private_note}</small>}
+                {!displaySettings.showTime && !displaySettings.showClient && !displaySettings.showServices
+                  && (!displaySettings.showNote || !item.private_note) && <span>Rendez-vous</span>}
               </button>;
             })}
           </div>;
         })}
       </div>
     </div>}
-    {days && <button className="agenda-add-button" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date })}>+</button>}
+    {days && displaySettings.showAddButton && <button className="agenda-add-button" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date })}>+</button>}
     {createSlot && days && <AppointmentCreate key={`${createSlot.date}:${createSlot.time || "new"}:${createSlot.staffId || ""}`} agenda={days.find((day) => day.date === createSlot.date) || days[0]} csrfToken={csrfToken} initial={createSlot} onClose={() => setCreateSlot(null)} onCreated={(message, nextDate) => {
       setCreateSlot(null);
       setNotice(message);

@@ -87,7 +87,8 @@ les créneaux, et l’encaissement unique lié au rendez-vous ; il exige égalem
 une base jetable neuve et les mêmes variables.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
-des données entre salons.
+des données entre salons. `tests/professional-agenda.py` vérifie également
+les options d’affichage de l’agenda.
 
 La clé de test doit correspondre à `setup_token` et contenir au moins
 64 caractères. Les tests qui créent le super-admin ne doivent pas partager
@@ -141,7 +142,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/016_appointment_notes.sql`,
 `database/migrations/017_appointment_services.sql` et
 `database/migrations/018_cash_pending_tickets.sql` et
-`database/migrations/019_professional_client_notes.sql` dans phpMyAdmin,
+`database/migrations/019_professional_client_notes.sql` et
+`database/migrations/020_agenda_display_settings.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -254,6 +256,11 @@ La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
 un glisser-déposer vers un créneau visible en vue jour ou semaine prépare le
 déplacement, à confirmer depuis la fiche ; sur mobile, la fiche permet de
 choisir le nouvel horaire.
+Dans **Admin → Affichage agenda**, le professionnel peut choisir d’afficher
+ou masquer l’horaire, le nom du client, les prestations et la note privée dans
+les blocs, puis activer ou masquer le bouton +. Ces préférences sont propres au
+salon ; la fiche rendez-vous conserve le détail complet. Masquer le bouton +
+n’empêche pas de créer un rendez-vous en cliquant sur un créneau disponible.
 L’onglet **Clients** permet de rechercher par nom, téléphone ou e-mail, puis
 d’ouvrir la fiche d’un client ayant un rendez-vous confirmé dans le salon.
 La fiche affiche ses coordonnées, ses statistiques de rendez-vous, les ventes
@@ -457,5 +464,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/016_appointment_notes.sql`,
 `database/migrations/017_appointment_services.sql` et
 `database/migrations/018_cash_pending_tickets.sql` et
-`database/migrations/019_professional_client_notes.sql`, dans cet ordre,
+`database/migrations/019_professional_client_notes.sql` et
+`database/migrations/020_agenda_display_settings.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

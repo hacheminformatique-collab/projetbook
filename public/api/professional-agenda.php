@@ -141,10 +141,24 @@ try {
     $closed = (bool) $statement->fetchColumn();
     $statement = $pdo->prepare('SELECT id, name, duration_minutes, price_dzd FROM services WHERE salon_id = :salon AND is_active = 1 ORDER BY name, id');
     $statement->execute(['salon' => $salon['id']]);
+    $services = $statement->fetchAll();
+    $statement = $pdo->prepare(
+        'SELECT agenda_show_time, agenda_show_client, agenda_show_services,
+                agenda_show_note, agenda_show_add_button FROM salons WHERE id = :id'
+    );
+    $statement->execute(['id' => $salon['id']]);
+    $displaySettings = $statement->fetch();
     bookili_json_response(200, [
         'salonId' => (int) $salon['id'], 'date' => $day->format('Y-m-d'),
         'hours' => $hours ?: null, 'closed' => $closed, 'staff' => $staff,
-        'appointments' => $appointments, 'services' => $statement->fetchAll(),
+        'appointments' => $appointments, 'services' => $services,
+        'displaySettings' => [
+            'showTime' => (bool) $displaySettings['agenda_show_time'],
+            'showClient' => (bool) $displaySettings['agenda_show_client'],
+            'showServices' => (bool) $displaySettings['agenda_show_services'],
+            'showNote' => (bool) $displaySettings['agenda_show_note'],
+            'showAddButton' => (bool) $displaySettings['agenda_show_add_button'],
+        ],
     ]);
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
