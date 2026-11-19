@@ -35,6 +35,13 @@ export function DirectoryResults({ search }) {
       <div className="salon-grid">
         {result?.salons.map((salon) => (
           <article className="client-card" key={salon.id}>
+            <div className="salon-presentation-image">
+              {salon.presentation_photo_id && <img
+                src={apiUrl(`salon-photo.php?id=${encodeURIComponent(salon.presentation_photo_id)}`)}
+                alt={`Présentation de ${salon.name}`}
+                loading="lazy"
+              />}
+            </div>
             <p className="eyebrow">{getWilayaName(salon.wilaya_code)}</p>
             <h2>{salon.name}</h2>
             <p>{salon.address}, {salon.city}</p>

@@ -86,6 +86,11 @@ def main():
 
     public = expect(guest.request(f"salons.php?id={salon_id}"), 200)
     assert public["photos"] == []
+    def presentation_photo():
+        salons = expect(guest.request("salons.php"), 200)["salons"]
+        return next(item for item in salons if int(item["id"]) == salon_id)["presentation_photo_id"]
+
+    assert presentation_photo() is None
     assert raw(guest, f"salon-photo.php?id={ids[0]}")[0] == 404
     assert raw(other_professional, f"salon-photo.php?id={ids[0]}")[0] == 404
     status, headers, image_bytes = raw(admin, f"salon-photo.php?id={ids[0]}")
@@ -106,6 +111,7 @@ def main():
     assert raw(guest, f"salon-photo.php?id={ids[2]}")[0] == 404
     assert multipart(professional, image)[0] == 422
     assert [int(photo["id"]) for photo in expect(guest.request(f"salons.php?id={salon_id}"), 200)["photos"]] == ids[:2]
+    assert int(presentation_photo()) == ids[0]
     expect(professional.request("professional-salon.php", salon_payload(salon, public=False)), 200)
     assert raw(guest, f"salon-photo.php?id={ids[0]}")[0] == 404
     assert raw(professional, f"salon-photo.php?id={ids[0]}")[0] == 200
@@ -116,13 +122,26 @@ def main():
     }), 200)["photos"]
     assert [int(photo["id"]) for photo in reordered if photo["status"] != "rejected"] == [ids[1], ids[0], ids[3]]
     assert [int(photo["id"]) for photo in expect(guest.request(f"salons.php?id={salon_id}"), 200)["photos"]] == [ids[1], ids[0]]
+    assert int(presentation_photo()) == ids[1]
+    expect(professional.request("professional-salon-photos.php", {
+        "action": "reorder", "photoIds": [ids[3], ids[1], ids[0]],
+    }), 200)
+    assert int(presentation_photo()) == ids[1], "A pending photo must not become the public presentation image"
+    expect(professional.request("professional-salon-photos.php", {
+        "action": "delete", "photoId": ids[1],
+    }), 200)
+    assert int(presentation_photo()) == ids[0]
     expect(professional.request("professional-salon-photos.php", {
         "action": "delete", "photoId": ids[2],
     }), 200)
     remaining = expect(professional.request("professional-salon-photos.php"), 200)["photos"]
-    assert len(remaining) == 3
+    assert len(remaining) == 2
     added = expect(multipart(professional, image), 200)["photos"]
-    assert len(added) == 4 and added[-1]["status"] == "pending"
+    assert len(added) == 3 and added[-1]["status"] == "pending"
+    expect(professional.request("professional-salon-photos.php", {
+        "action": "delete", "photoId": ids[0],
+    }), 200)
+    assert presentation_photo() is None
     print("Professional photo checks passed: upload limits, salon isolation, moderation and public gallery.")
 
 

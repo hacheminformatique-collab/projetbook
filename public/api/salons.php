@@ -48,6 +48,9 @@ try {
     if ($category === 'cadeau') bookili_json_response(200, ['salons' => [], 'hasMore' => false]);
 
     $sql = "SELECT s.id, s.name, s.city, s.wilaya_code, s.address,
+                   (SELECT photo.id FROM salon_photos photo
+                    WHERE photo.salon_id = s.id AND photo.status = 'approved'
+                    ORDER BY photo.position, photo.id LIMIT 1) AS presentation_photo_id,
                    (SELECT MIN(price_dzd) FROM services WHERE salon_id = s.id AND is_active = 1) AS from_price
             FROM salons s
             INNER JOIN professional_profiles p ON p.id = s.professional_profile_id

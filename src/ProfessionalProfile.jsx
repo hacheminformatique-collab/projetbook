@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "./api-client.js";
+import ProfessionalPhotos from "./ProfessionalPhotos.jsx";
 
 const categories = [
   ["access", "Accès"],
@@ -105,7 +106,9 @@ export default function ProfessionalProfile({ csrfToken }) {
     }
   }
 
-  return <section className="client-card">
+  return <>
+    <ProfessionalPhotos csrfToken={csrfToken} />
+    <section className="client-card">
     <h2>Descriptif établissement</h2>
     <p className="field-hint">Présentez votre établissement. Chaque modification est vérifiée par BOOKILI avant d’être publiée.</p>
     {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
@@ -131,5 +134,6 @@ export default function ProfessionalProfile({ csrfToken }) {
         </section>;
       })}
     </>}
-  </section>;
+    </section>
+  </>;
 }

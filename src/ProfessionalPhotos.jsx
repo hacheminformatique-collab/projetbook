@@ -10,6 +10,7 @@ export default function ProfessionalPhotos({ csrfToken }) {
   const [working, setWorking] = useState(false);
   const activePhotos = useMemo(() => photos?.filter((photo) => photo.status !== "rejected") || [], [photos]);
   const rejectedPhotos = useMemo(() => photos?.filter((photo) => photo.status === "rejected") || [], [photos]);
+  const presentationPhoto = activePhotos.find((photo) => photo.status === "approved");
 
   async function load(signal) {
     const result = await apiRequest("professional-salon-photos.php", { signal });
@@ -99,13 +100,14 @@ export default function ProfessionalPhotos({ csrfToken }) {
   const shownPhotos = tab === "active" ? activePhotos : rejectedPhotos;
   return <section className="client-card">
     <div className="client-directory-header">
-      <div><h2>Gestion des photos</h2><p>Vos images seront affichées sur votre page BOOKILI après validation.</p></div>
+      <div><h2>Image de présentation et photos</h2><p>Ajoutez votre logo ou une photo de l’intérieur ou de l’extérieur du salon.</p></div>
       <label className="admin-nav-link photo-upload">
         Importer des photos
         <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={working || (photos?.length || 0) >= 4} onChange={upload} />
       </label>
     </div>
     <p className="field-hint">JPEG, PNG ou WebP · 2 Mo maximum par photo · 8 mégapixels maximum · quatre photos maximum.</p>
+    <p className="field-hint">La première photo validée illustre votre carte dans les résultats de recherche et apparaît en premier sur votre fiche publique. Utilisez « Présenter » pour la choisir. Les nouvelles images restent privées jusqu’à leur validation par BOOKILI.</p>
     {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
     <nav className="photo-tabs" aria-label="Statut des photos">
       <button type="button" className={tab === "active" ? "selected" : ""} onClick={() => setTab("active")}>Photos validées et en validation ({activePhotos.length})</button>
@@ -123,8 +125,9 @@ export default function ProfessionalPhotos({ csrfToken }) {
             <span className={`photo-status photo-status-${photo.status}`}>{statusNames[photo.status]}</span>
           </div>
           <div className="salon-photo-actions">
-            <span>Position {position}</span>
+            <span>{photo.id === presentationPhoto?.id ? "Image de présentation" : `Position ${position}`}</span>
             <div>
+              {photo.status === "approved" && photo.id !== presentationPhoto?.id && <button className="admin-nav-link" type="button" disabled={working} onClick={() => move(photo, -index)}>Présenter</button>}
               {photo.status !== "rejected" && <>
                 <button className="admin-nav-link" type="button" aria-label={`Monter la photo ${position}`} disabled={working || index <= 0} onClick={() => move(photo, -1)}>↑</button>
                 <button className="admin-nav-link" type="button" aria-label={`Descendre la photo ${position}`} disabled={working || index === activePhotos.length - 1} onClick={() => move(photo, 1)}>↓</button>

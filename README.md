@@ -93,7 +93,8 @@ les options d’affichage de l’agenda.
 descriptifs d’établissement, la visibilité publique des contenus validés et
 l’isolation entre salons.
 `tests/professional-photos.py` vérifie l’import des photos, les limites par
-établissement, les permissions, la modération et l’ordre de la galerie publique.
+établissement, les permissions, la modération, l’ordre de la galerie publique
+et l’image de présentation dans les résultats de recherche.
 
 La clé de test doit correspondre à `setup_token` et contenir au moins
 64 caractères. Les tests qui créent le super-admin ne doivent pas partager
@@ -255,6 +256,16 @@ prestation, ville, wilaya et catégorie, avec pagination. La fiche
 `/salons/ID` présente les prestations, l'adresse, le téléphone et les
 disponibilités. Les comptes suspendus et les salons masqués ne sont pas
 réservables.
+
+Dans **Admin → Descriptif établissement**, le professionnel peut importer un
+logo ou une photo du salon (JPEG, PNG ou WebP, 2 Mo et 8 mégapixels maximum).
+Ces images sont aussi accessibles depuis **Gestion des photos**, avec une limite
+commune de quatre photos. La première photo validée illustre la carte du salon
+dans l’annuaire et apparaît en premier sur sa fiche publique ; le bouton
+**Présenter** permet de choisir une autre photo validée. Les photos en attente
+ou refusées ne sont jamais affichées au public. Sans photo validée, la carte
+conserve un emplacement gris. Cette évolution réutilise la galerie existante
+et ne nécessite pas de nouvelle migration.
 
 Un client connecté peut confirmer un créneau, retrouver ses rendez-vous à
 venir ou passés dans `/espace-client`, puis modifier la prestation et le
