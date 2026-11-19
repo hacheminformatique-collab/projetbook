@@ -23,11 +23,11 @@ function Feedback({ notice }) {
   return <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>;
 }
 
-export default function CashRegister({ csrfToken, appointment = null, onAppointmentHandled }) {
-  const [view, setView] = useState("sale");
+export default function CashRegister({ csrfToken, appointment = null, initialSaleId = null, onAppointmentHandled }) {
+  const [view, setView] = useState(initialSaleId !== null ? "journal" : "sale");
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [saleId, setSaleId] = useState(null);
+  const [saleId, setSaleId] = useState(initialSaleId);
   const [activeTicket, setActiveTicket] = useState(null);
   const refresh = () => setRevision((value) => value + 1);
   return <>

@@ -103,6 +103,8 @@ try {
             first_name: "Test", last_name: "Client", service_name: "Coupe", private_note: "",
           }, {
             id: 4, client_id: 8, staff_id: 1, service_id: 1, cash_sale_id: 20,
+            price_dzd: 1000,
+            voided_at: "2026-11-18 10:00:00",
             starts_at: date + " 12:00:00", ends_at: date + " 12:30:00",
             first_name: "Autre", last_name: "Client", service_name: "Coupe encaissée", private_note: "",
           }] : [],
@@ -152,9 +154,17 @@ try {
         } else if (url.searchParams.get("view") === "catalog") {
           data = { items: [], hasMore: false };
         } else if (url.searchParams.get("view") === "sale") {
+          if (window.saleLookupFails) {
+            return new Response(JSON.stringify({ error: "Vente introuvable." }), {
+              status: 404, headers: { "Content-Type": "application/json" },
+            });
+          }
+          const saleId = Number(url.searchParams.get("saleId"));
           data = {
-            id: 21, recorded_at: "2026-11-19 10:30:45", payment_method: "cash",
+            id: saleId, recorded_at: saleId === 20 ? "2026-10-10 10:00:00" : "2026-11-19 10:30:45", payment_method: "cash",
             total_dzd: 1000, collected_dzd: 1000, gift_card_applied_dzd: 0,
+            voided_at: saleId === 20 ? "2026-11-18 10:00:00" : null,
+            void_reason: saleId === 20 ? "Erreur de saisie" : null,
             lines: [{ item_kind: "service", item_id: 1, item_name: "Coupe", quantity: 1, unit_price_dzd: 1000 }],
           };
         } else {
@@ -293,6 +303,35 @@ try {
   await waitFor("!!document.querySelector('.agenda-detail')");
   assert.equal(await evaluate("!!document.querySelector('.agenda-cash-button')"), false);
   assert.match(await evaluate("document.querySelector('.agenda-detail').textContent"), /possède déjà une vente/);
+  await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Voir la vente n° 21').click()");
+  await waitFor("document.querySelector('.appointment-card h3')?.textContent === 'Détail de la vente n° 21'");
+  assert.equal(await evaluate("document.querySelector('.workspace-tabs [aria-current=page]').textContent"), "Journal");
+  await waitFor("document.querySelector('.appointment-card')?.textContent.includes('Coupe')");
+  assert.equal(await evaluate("window.cashRequests.length"), 2, "consulting a linked sale must not record a payment");
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
+  await waitFor("document.querySelectorAll('.agenda-booking').length === 2");
+  await evaluate("document.querySelectorAll('.agenda-booking')[1].click()");
+  await waitFor("!!document.querySelector('.agenda-detail')");
+  assert.match(await evaluate("document.querySelector('.agenda-detail').textContent"), /journal \(annulée\)/);
+  assert.equal(await evaluate("!!document.querySelector('.agenda-cash-button')"), false);
+  await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Voir la vente n° 20').click()");
+  await waitFor("document.querySelector('.appointment-card')?.textContent.includes('Erreur de saisie')");
+  assert.equal(await evaluate("document.querySelector('.appointment-card h3').textContent"), "Détail de la vente n° 20");
+  assert.equal(await evaluate("!!document.querySelector('.appointment-card form')"), false, "a voided sale cannot be voided again");
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
+  await waitFor("!!document.querySelector('.agenda-booking')");
+  await evaluate("window.saleLookupFails = true; document.querySelector('.agenda-booking').click()");
+  await waitFor("!!document.querySelector('.agenda-detail')");
+  await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Voir la vente n° 21').click()");
+  await waitFor("document.querySelector('.appointment-card [role=alert]')?.textContent === 'Vente introuvable.'");
+  assert.equal(await evaluate("!!document.querySelector('.appointment-card form')"), false);
+  assert.equal(await evaluate("window.cashRequests.length"), 2);
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
+  await waitFor("!!document.querySelector('.agenda-booking')");
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Caisse').click()");
+  await waitFor("document.querySelector('.workspace-tabs [aria-current=page]')?.textContent === 'Vente'");
+  assert.equal(await evaluate("!!document.querySelector('.appointment-card')"), false, "normal cash navigation must not reopen an old sale");
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 } finally {
   const closed = once(chrome, "exit");

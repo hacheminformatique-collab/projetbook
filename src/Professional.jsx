@@ -29,6 +29,7 @@ export default function ProfessionalSpace() {
   const [agendaDate, setAgendaDate] = useState(algerianDate);
   const [agendaFilters, setAgendaFilters] = useState(null);
   const [cashAppointment, setCashAppointment] = useState(null);
+  const [cashSaleId, setCashSaleId] = useState(null);
   const [error, setError] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
 
@@ -68,6 +69,7 @@ export default function ProfessionalSpace() {
           {workspaceTabs.map(([value, name]) => (
             <button key={value} type="button" aria-current={tab === value ? "page" : undefined} onClick={() => {
               if (value !== tab) {
+                setCashSaleId(null);
                 setTab(value);
                 setView(workspaceViews[value][0][0]);
               }
@@ -103,12 +105,18 @@ export default function ProfessionalSpace() {
             <h1>{workspaceViews[tab].find(([value]) => value === view)[1]}</h1>
             {view === "planning" && <ProfessionalAgenda csrfToken={session.csrfToken} date={agendaDate} setDate={setAgendaDate} filtersTarget={agendaFilters} onCheckout={(appointment) => {
               setCashAppointment(appointment);
+              setCashSaleId(null);
+              setTab("caisse");
+              setView("cash");
+            }} onViewSale={(saleId) => {
+              setCashAppointment(null);
+              setCashSaleId(saleId);
               setTab("caisse");
               setView("cash");
             }} />}
             {view === "closures" && <ClosureSettings csrfToken={session.csrfToken} />}
             {view === "staff-absences" && <StaffAbsences csrfToken={session.csrfToken} />}
-            {view === "cash" && <CashRegister csrfToken={session.csrfToken} appointment={cashAppointment} onAppointmentHandled={() => setCashAppointment(null)} />}
+            {view === "cash" && <CashRegister csrfToken={session.csrfToken} appointment={cashAppointment} initialSaleId={cashSaleId} onAppointmentHandled={() => setCashAppointment(null)} />}
             {view === "directory" && <ProfessionalClients csrfToken={session.csrfToken} />}
             {view === "services" && <ServiceSettings csrfToken={session.csrfToken} />}
             {view === "staff" && <StaffSettings csrfToken={session.csrfToken} salonHours={configuration.hours} />}

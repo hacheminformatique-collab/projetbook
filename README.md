@@ -418,6 +418,9 @@ Aucune vente n’est créée avant la confirmation du règlement reçu. Après
 enregistrement, la vente apparaît dans le journal et le rendez-vous ne propose
 plus d’encaissement. En cas de réponse serveur incertaine, utilisez
 **Réessayer la même vente** pour conserver la même demande sans doublon.
+Pour un rendez-vous déjà encaissé, **Voir la vente n° …** ouvre directement son
+détail dans **Caisse → Journal**, même si la vente est ancienne ou annulée.
+Cette consultation ne crée pas de nouveau règlement.
 
 **Caisse → Journal** affiche les ventes et les annulations de la période,
 avec un total net et un export CSV. L’annulation intégrale d’une vente est

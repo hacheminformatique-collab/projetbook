@@ -29,7 +29,7 @@ function bounds(item, date) {
   ];
 }
 
-function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged, onCheckout, destination }) {
+function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged, onCheckout, onViewSale, destination }) {
   const [note, setNote] = useState(appointment.private_note);
   const [showClient, setShowClient] = useState(false);
   const [history, setHistory] = useState(null);
@@ -190,7 +190,10 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         {canCancel && <button className="review-reject" type="button" disabled={busy} onClick={cancel}>Annuler le rendez-vous</button>}
       </div>}
       {appointment.cash_sale_id
-        ? <p className="field-hint">Ce rendez-vous possède déjà une vente dans le journal{appointment.voided_at ? " (annulée)" : ""}.</p>
+        ? <>
+          <p className="field-hint">Ce rendez-vous possède déjà une vente dans le journal{appointment.voided_at ? " (annulée)" : ""}.</p>
+          <button className="admin-nav-link" type="button" disabled={busy} onClick={() => onViewSale(appointment.cash_sale_id)}>Voir la vente n° {appointment.cash_sale_id}</button>
+        </>
         : <button className="auth-submit agenda-cash-button" type="button" disabled={busy} onClick={() => onCheckout(appointment)}>Encaisser · {priceLabel(appointment.price_dzd)}</button>}
       {editing && <form className="auth-form agenda-edit" onSubmit={reschedule}>
         {suggestedTime && <p className="field-hint">Déplacement proposé à {suggestedTime}. {loadingSlots ? "" : slots.includes(suggestedTime) ? "Confirmez pour enregistrer." : "Ce créneau ne convient pas à la prestation. Choisissez un autre horaire."}</p>}
@@ -386,7 +389,7 @@ function AppointmentCreate({ agenda, csrfToken, initial, onClose, onCreated }) {
   </div>;
 }
 
-export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTarget, onCheckout }) {
+export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTarget, onCheckout, onViewSale }) {
   const [response, setResponse] = useState(null);
   const [view, setView] = useState("day");
   const [scale, setScale] = useState(30);
@@ -621,6 +624,6 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
       if (nextDate !== date) setDate(nextDate);
       else setRevision((value) => value + 1);
     }} />}
-    {selected && selectedDay && <AppointmentDetail key={selected.appointment.id} {...selected} agenda={selectedDay} csrfToken={csrfToken} onClose={closeDetail} onChanged={changed} onCheckout={onCheckout} />}
+    {selected && selectedDay && <AppointmentDetail key={selected.appointment.id} {...selected} agenda={selectedDay} csrfToken={csrfToken} onClose={closeDetail} onChanged={changed} onCheckout={onCheckout} onViewSale={onViewSale} />}
   </div>;
 }
