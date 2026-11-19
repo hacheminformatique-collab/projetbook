@@ -401,6 +401,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   const [dropTarget, setDropTarget] = useState("");
   const [hiddenStaff, setHiddenStaff] = useState([]);
   const [createSlot, setCreateSlot] = useState(null);
+  const [focusedSlots, setFocusedSlots] = useState({});
   const monday = weekStart(date);
   const firstDay = view === "week" ? monday : date;
   const dayCount = view === "week" ? 7 : 1;
@@ -410,6 +411,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
     showTime: true, showClient: true, showServices: true, showNote: true, showAddButton: true,
   };
   const closeDetail = useCallback(() => setSelected(null), []);
+  const closeCreate = useCallback(() => setCreateSlot(null), []);
   useEffect(() => {
     setSelected(null);
   }, [date]);
@@ -481,7 +483,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
       {filtersTarget ? createPortal(filters, filtersTarget) : filters}
       <label className="agenda-full-day"><input type="checkbox" checked={fullDay} onChange={(event) => setFullDay(event.target.checked)} /> Afficher de 0 h à 24 h</label>
     </div>
-    <p className="field-hint">Heures d’Algérie · Ouvrez un rendez-vous pour le modifier, ou faites-le glisser sur ordinateur puis confirmez.</p>
+    <p className="field-hint">Heures d’Algérie · Ouvrez un rendez-vous pour le modifier, ou faites-le glisser sur ordinateur puis confirmez. Au clavier, utilisez les flèches haut et bas pour parcourir les créneaux libres d’une colonne, puis Entrée pour en choisir un. La disponibilité dépend de la durée des prestations.</p>
     {notice && <p className="form-message form-success" role="status">{notice}</p>}
     {current?.error && <p className="form-message form-error" role="alert">{current.error}</p>}
     {!current && <p role="status">Chargement de l’agenda…</p>}
@@ -505,15 +507,34 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
           const opens = open ? Math.max(minutes(day.hours.opens_at), minutes(hours.opens_at)) : 0;
           const closes = open ? Math.min(minutes(day.hours.closes_at), minutes(hours.closes_at)) : 0;
           const currentPosition = currentTimePosition(now, day.date, start, end, unit);
+          const columnKey = `${day.date}:${member.id}`;
+          const rowInfo = rows.map((row) => {
+            const targetTime = opens + Math.ceil((row - opens) / 15) * 15;
+            const canDrop = open && day.date <= maxBookingDate && targetTime >= opens && targetTime + 15 <= closes
+              && new Date(`${day.date}T${timeLabel(targetTime)}:00+01:00`) > now;
+            const busy = busyRanges.some(([from, to]) => targetTime < to && targetTime + 15 > from);
+            return { row, targetTime, free: canDrop && !busy };
+          });
+          const freeRows = rowInfo.filter((item) => item.free);
+          const focusedRow = freeRows.some((item) => item.row === focusedSlots[columnKey])
+            ? focusedSlots[columnKey] : freeRows[0]?.row;
           return <div className={`agenda-day-column${absent ? " agenda-day-column-absent" : ""}`} key={`${day.date}:${member.id}`}>
-            {rows.map((row) => {
-              const targetTime = opens + Math.ceil((row - opens) / 15) * 15;
-              const canDrop = open && day.date <= maxBookingDate && targetTime >= opens && targetTime + 15 <= closes
-                && new Date(`${day.date}T${timeLabel(targetTime)}:00+01:00`) > now;
-              const busy = busyRanges.some(([from, to]) => targetTime < to && targetTime + 15 > from);
-              const free = canDrop && !busy;
+            {rowInfo.map(({ row, targetTime, free }) => {
               const targetKey = `${day.date}:${member.id}:${row}`;
-              return <div key={row} className={`agenda-slot ${free ? "agenda-slot-free" : "agenda-slot-unavailable"}${dropTarget === targetKey ? " agenda-drop-target" : ""}`} aria-label={`${timeLabel(canDrop ? targetTime : row)} : ${free ? "libre" : busy ? "occupé" : "indisponible"}`}
+              const Slot = free ? "button" : "div";
+              return <Slot key={row} type={free ? "button" : undefined}
+                className={`agenda-slot ${free ? "agenda-slot-free" : "agenda-slot-unavailable"}${dropTarget === targetKey ? " agenda-drop-target" : ""}`}
+                aria-label={free ? `Créer un rendez-vous : ${member.name}, ${shortDay.format(utcDate(day.date))}, ${timeLabel(targetTime)}` : undefined}
+                aria-hidden={free ? undefined : true}
+                tabIndex={free ? (row === focusedRow ? 0 : -1) : undefined}
+                onFocus={free ? () => setFocusedSlots((current) => ({ ...current, [columnKey]: row })) : undefined}
+                onKeyDown={free ? (event) => {
+                  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                  event.preventDefault();
+                  const buttons = [...event.currentTarget.parentElement.querySelectorAll("button.agenda-slot-free")];
+                  const index = buttons.indexOf(event.currentTarget);
+                  buttons[index + (event.key === "ArrowDown" ? 1 : -1)]?.focus();
+                } : undefined}
                 onClick={free ? () => setCreateSlot({ date: day.date, time: timeLabel(targetTime), staffId: String(member.id) }) : undefined}
                 onDragOver={free ? (event) => {
                   if (!event.dataTransfer.types.includes("application/x-bookili-appointment")) return;
@@ -561,7 +582,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
       </div>
     </div>}
     {days && displaySettings.showAddButton && <button className="agenda-add-button" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date })}>+</button>}
-    {createSlot && days && <AppointmentCreate key={`${createSlot.date}:${createSlot.time || "new"}:${createSlot.staffId || ""}`} agenda={days.find((day) => day.date === createSlot.date) || days[0]} csrfToken={csrfToken} initial={createSlot} onClose={() => setCreateSlot(null)} onCreated={(message, nextDate) => {
+    {createSlot && days && <AppointmentCreate key={`${createSlot.date}:${createSlot.time || "new"}:${createSlot.staffId || ""}`} agenda={days.find((day) => day.date === createSlot.date) || days[0]} csrfToken={csrfToken} initial={createSlot} onClose={closeCreate} onCreated={(message, nextDate) => {
       setCreateSlot(null);
       setNotice(message);
       if (nextDate !== date) setDate(nextDate);

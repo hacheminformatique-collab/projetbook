@@ -85,6 +85,9 @@ Le test `tests/professional-agenda.py` vérifie les notes privées, les droits
 par salon, la recherche et la création de clients, le cumul de prestations,
 les créneaux, les absences individuelles et l’encaissement unique lié au
 rendez-vous ; il exige également une base jetable neuve et les mêmes variables.
+Pour vérifier la navigation au clavier avec des réponses API simulées, exécutez
+`npm run build -- --base=/masalledereception/` puis `node tests/agenda-keyboard.mjs`
+sur une machine disposant de Google Chrome. Le test n'accède à aucune base réelle.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
@@ -347,6 +350,10 @@ comptes ou les rendez-vous d’autres salons.
 - Dans la grille, un trait rose indique l’heure actuelle en Algérie sur la
   journée correspondante lorsqu’elle est affichée. Les colonnes d’un
   collaborateur absent sont ombrées ; ses horaires ne deviennent pas disponibles.
+- Les créneaux libres de la grille sont accessibles au clavier : Tab atteint
+  une colonne, puis les flèches haut/bas parcourent ses créneaux et Entrée
+  ouvre le formulaire. Le créneau choisi reste à vérifier selon la durée des
+  prestations avant confirmation.
 
 ## Produits et stocks professionnels
 
