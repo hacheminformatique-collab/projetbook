@@ -262,6 +262,9 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .agenda-column-title small { font-weight: 400; }
 .agenda-day-column { position: relative; border-left: 1px solid #dce1e6; }
 .agenda-slot-unavailable { background: repeating-linear-gradient(135deg, #f3f4f6, #f3f4f6 5px, #e9ebee 5px, #e9ebee 6px); }
+.agenda-day-column-absent .agenda-slot-unavailable { background: #e8dfe4; }
+.agenda-current-time { position: absolute; z-index: 2; left: 0; right: 0; height: 2px; background: var(--rose-ink); pointer-events: none; }
+.agenda-current-time::before { content: ""; position: absolute; left: 0; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--rose-ink); }
 .agenda-slot-free { background: #fff; }
 .agenda-drop-target { background: var(--rose-soft); outline: 2px dashed var(--rose-ink); outline-offset: -2px; }
 .agenda-booking { position: absolute; left: 3px; right: 3px; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; overflow: hidden; padding: 2px 7px; border: 0; border-left: 4px solid var(--rose-ink); border-radius: 5px; background: var(--rose-soft); color: #381a2a; text-align: left; font-size: 12px; cursor: pointer; }

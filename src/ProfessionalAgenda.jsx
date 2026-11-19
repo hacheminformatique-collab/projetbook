@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { algerianDate, apiRequest, appointmentDate, priceLabel } from "./api-client.js";
+import { currentTimePosition } from "./lib/agenda-time.js";
 
 const minutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
 const timeLabel = (value) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
@@ -503,7 +504,8 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
           const open = !day.closed && !absent && day.hours && hours?.opens_at && (member.id ? Number(hours.is_active) : !hasActiveStaff);
           const opens = open ? Math.max(minutes(day.hours.opens_at), minutes(hours.opens_at)) : 0;
           const closes = open ? Math.min(minutes(day.hours.closes_at), minutes(hours.closes_at)) : 0;
-          return <div className="agenda-day-column" key={`${day.date}:${member.id}`}>
+          const currentPosition = currentTimePosition(now, day.date, start, end, unit);
+          return <div className={`agenda-day-column${absent ? " agenda-day-column-absent" : ""}`} key={`${day.date}:${member.id}`}>
             {rows.map((row) => {
               const targetTime = opens + Math.ceil((row - opens) / 15) * 15;
               const canDrop = open && day.date <= maxBookingDate && targetTime >= opens && targetTime + 15 <= closes
@@ -553,6 +555,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
                   && (!displaySettings.showNote || !item.private_note) && <span>Rendez-vous</span>}
               </button>;
             })}
+            {currentPosition !== null && <div className="agenda-current-time" aria-hidden="true" style={{ top: `${currentPosition}px` }} />}
           </div>;
         })}
       </div>

@@ -310,7 +310,7 @@ comptes ou les rendez-vous d’autres salons.
   l'intersection avec ceux du salon. Les créneaux commencent toutes les
   15 minutes depuis l'ouverture et doivent contenir toute la prestation.
 - Les fermetures exceptionnelles du salon s'appliquent à toute l'équipe ;
-  les congés individuels datés ne sont pas encore gérés.
+  les absences individuelles couvrent des journées entières.
 - Les dates sont calculées explicitement dans le fuseau `Africa/Algiers`.
   Réservation et modification de créneau possibles jusqu'à 60 jours à l'avance.
 - La confirmation est immédiate à l'écran, sans validation manuelle
@@ -344,6 +344,9 @@ comptes ou les rendez-vous d’autres salons.
   colonne d’agenda ; les motifs restent privés. L’ajout est refusé si des
   rendez-vous confirmés lui sont déjà attribués. La suppression rétablit ses
   disponibilités habituelles et n’annule jamais de rendez-vous.
+- Dans la grille, un trait rose indique l’heure actuelle en Algérie sur la
+  journée correspondante lorsqu’elle est affichée. Les colonnes d’un
+  collaborateur absent sont ombrées ; ses horaires ne deviennent pas disponibles.
 
 ## Produits et stocks professionnels
 
