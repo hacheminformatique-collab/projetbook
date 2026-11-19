@@ -130,6 +130,18 @@ try {
   await waitFor("!document.querySelector('.agenda-create')");
   assert.match(await evaluate("document.activeElement.getAttribute('aria-label')"), /Sonia.*11:30/);
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await waitFor("document.querySelectorAll('.agenda-day-column').length === 1");
+  assert.equal(await evaluate("document.querySelector('.agenda-scroll').scrollWidth <= document.querySelector('.agenda-scroll').clientWidth"), true);
+  assert.equal(await evaluate("document.querySelector('.agenda-scroll').getBoundingClientRect().height > innerHeight * .65"), true);
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.pro-tabs')).position"), "fixed");
+  await evaluate("(() => { const select = document.querySelector('[aria-label=\"Collaborateur affiché\"]'); select.value = '2'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await waitFor("!!document.querySelector('.agenda-day-column-absent')");
+  assert.equal(await evaluate("document.querySelectorAll('.agenda-slot-free').length"), 0);
+  await evaluate("(() => { const select = document.querySelector('[aria-label=\"Collaborateur affiché\"]'); select.value = '1'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await waitFor("!!document.querySelector('.agenda-slot-free')");
+  await evaluate("document.querySelector('.pro-mobile-menu').click()");
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.pro-sidebar')).display"), "block");
+  await evaluate("document.querySelector('.pro-mobile-menu').click()");
   await evaluate("document.querySelector('.agenda-slot-free[tabindex=\"0\"]').click()");
   await waitFor("!!document.querySelector('.agenda-create')");
   assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);

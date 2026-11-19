@@ -30,6 +30,7 @@ export default function ProfessionalSpace() {
   const [agendaFilters, setAgendaFilters] = useState(null);
   const [cashAppointment, setCashAppointment] = useState(null);
   const [error, setError] = useState("");
+  const [mobileMenu, setMobileMenu] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -58,7 +59,7 @@ export default function ProfessionalSpace() {
     } catch (cause) { setError(cause.message); }
   }
   return (
-    <div className="pro-workspace">
+    <div className={`pro-workspace${view === "planning" ? " pro-planning" : ""}${mobileMenu ? " pro-menu-open" : ""}`}>
       <header className="pro-topbar">
         <Link className="pro-salon-name" to="/" aria-label={`${configuration?.salon.name || "BOOKILI"} — Accueil BOOKILI`}>
           {configuration?.salon.name || "BOOKILI"}
@@ -70,18 +71,20 @@ export default function ProfessionalSpace() {
                 setTab(value);
                 setView(workspaceViews[value][0][0]);
               }
+              setMobileMenu(false);
             }}>{name}</button>
           ))}
         </nav>}
         <div className="pro-session">
+          <button className="pro-mobile-menu" type="button" aria-expanded={mobileMenu} aria-controls="pro-sidebar" onClick={() => setMobileMenu(!mobileMenu)}>Menu</button>
           {session && <button type="button" onClick={logout}>Se déconnecter</button>}
         </div>
       </header>
       <div className="pro-layout">
-        {configuration && <aside className="pro-sidebar">
+        {configuration && <aside className="pro-sidebar" id="pro-sidebar">
           <nav aria-label={`Rubriques ${workspaceTabs.find(([value]) => value === tab)[1]}`}>
             {workspaceViews[tab].map(([value, label]) => (
-              <button key={value} type="button" aria-current={view === value ? "page" : undefined} onClick={() => setView(value)}>{label}</button>
+              <button key={value} type="button" aria-current={view === value ? "page" : undefined} onClick={() => { setView(value); setMobileMenu(false); }}>{label}</button>
             ))}
           </nav>
           {view === "planning" && <>

@@ -173,6 +173,17 @@ si nécessaire.
 
 ### Installation sur mobile
 
+Les icônes Client et Pro sont incluses dans `public/` et automatiquement copiées
+dans `dist/` par chaque build : aucun remplacement manuel n’est nécessaire.
+Un appareil ayant déjà installé BOOKILI peut conserver son ancienne icône ;
+la réinstallation du raccourci peut être nécessaire.
+
+Sur téléphone, l’agenda occupe l’espace disponible entre son en-tête et la
+navigation inférieure. Le sélecteur affiche un collaborateur à la fois, sans
+défilement horizontal. Le bouton Menu donne accès au calendrier et aux autres
+rubriques ; Options affiche l’échelle et l’actualisation. La vue multi-colonnes
+et la vue semaine restent disponibles sur grand écran.
+
 Sur HTTPS, **📱 Installer l’application** ouvre le guide correspondant :
 **BOOKILI Client** sur l’accueil et dans l’espace client, **BOOKILI Pro** dans
 l’espace professionnel. Les deux raccourcis ont une icône et une adresse
