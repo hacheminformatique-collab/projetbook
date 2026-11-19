@@ -29,7 +29,7 @@ function bounds(item, date) {
   ];
 }
 
-function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged, destination }) {
+function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged, onCheckout, destination }) {
   const [note, setNote] = useState(appointment.private_note);
   const [showClient, setShowClient] = useState(false);
   const [history, setHistory] = useState(null);

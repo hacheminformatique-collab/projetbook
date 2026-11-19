@@ -77,6 +77,8 @@ try {
     const originalFetch = window.fetch;
     let clientNote = "Préférence salon";
     window.appointmentMutations = 0;
+    window.cashRequests = [];
+    let appointmentSaleId = null;
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === "string" ? input : input.url, location.href);
       let data;
@@ -95,6 +97,8 @@ try {
           staffAbsences: [{ staff_id: 2 }],
           appointments: date === "2026-11-19" ? [{
             id: 3, client_id: 7, staff_id: 1, service_id: 1,
+            price_dzd: 1000, cash_sale_id: appointmentSaleId,
+            services: [{ id: 1, name: "Coupe", duration_minutes: 30, price_dzd: 1000 }],
             starts_at: date + " 11:00:00", ends_at: date + " 11:30:00",
             first_name: "Test", last_name: "Client", service_name: "Coupe", private_note: "",
           }, {
@@ -134,6 +138,30 @@ try {
             }],
             hasMoreHistory: !secondPage,
           };
+        }
+      } else if (url.pathname.endsWith("/api/professional-cash.php")) {
+        if (options?.method === "POST") {
+          window.cashRequests.push(JSON.parse(options.body));
+          if (window.cashRequests.length === 1) {
+            return new Response(JSON.stringify({ error: "Réponse temporairement indisponible." }), {
+              status: 503, headers: { "Content-Type": "application/json" },
+            });
+          }
+          appointmentSaleId = 21;
+          data = { saleId: appointmentSaleId };
+        } else if (url.searchParams.get("view") === "catalog") {
+          data = { items: [], hasMore: false };
+        } else if (url.searchParams.get("view") === "sale") {
+          data = {
+            id: 21, recorded_at: "2026-11-19 10:30:45", payment_method: "cash",
+            total_dzd: 1000, collected_dzd: 1000, gift_card_applied_dzd: 0,
+            lines: [{ item_kind: "service", item_id: 1, item_name: "Coupe", quantity: 1, unit_price_dzd: 1000 }],
+          };
+        } else {
+          data = { netDzd: 1000, hasMore: false, entries: [{
+            id: 21, event_kind: "sale", amount_dzd: 1000,
+            event_at: "2026-11-19 10:30:45", payment_method: "cash",
+          }] };
         }
       } else if (url.pathname.endsWith("/api/availability.php")) {
         data = { slots: ["10:45", "11:30", "11:45"], staff: [
@@ -236,7 +264,36 @@ try {
   await evaluate("Array.from(document.querySelectorAll('.client-directory-actions button')).find(b => b.textContent === 'Ouvrir la fiche').click()");
   await waitFor("!!document.querySelector('.client-profile-panel textarea')");
   assert.equal(await evaluate("document.querySelector('.client-profile-panel textarea').value"), "Nouvelle préférence");
-  console.log("Agenda keyboard navigation and focus checks passed.");
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
+  await waitFor("!!document.querySelector('.agenda-booking')");
+  await evaluate("document.querySelector('.agenda-booking').click()");
+  await waitFor("!!document.querySelector('.agenda-cash-button')");
+  await evaluate("document.querySelector('.agenda-cash-button').click()");
+  await waitFor("document.querySelector('.pro-tabs [aria-current=page]')?.textContent === 'Caisse'");
+  await waitFor("document.querySelector('.pro-panel h2')?.textContent === 'Encaisser le rendez-vous de Test Client'");
+  assert.match(await evaluate("document.querySelector('.pro-panel .agenda-service-lines').textContent"), /Coupe.*1.?000 DA/);
+  assert.equal(await evaluate("window.cashRequests.length"), 0, "opening checkout must not record a sale");
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('.workspace-tabs button')).find(b => b.textContent === 'Tickets en attente').disabled"), true);
+  await evaluate("document.querySelector('.pro-panel .auth-form button[type=submit]').click()");
+  await waitFor("document.querySelector('.pro-panel [role=alert]')?.textContent.includes('temporairement indisponible')");
+  assert.match(await evaluate("document.querySelector('.pro-panel .auth-form button[type=submit]').textContent"), /Réessayer la même vente/);
+  await evaluate("document.querySelector('.pro-panel .auth-form button[type=submit]').click()");
+  await waitFor("document.querySelector('.appointment-card h3')?.textContent === 'Détail de la vente n° 21'");
+  const cashRequests = await evaluate("window.cashRequests");
+  assert.equal(cashRequests.length, 2);
+  assert.deepEqual(cashRequests[0], cashRequests[1], "retrying an uncertain response must reuse the same request");
+  assert.equal(cashRequests[0].appointmentId, 3);
+  assert.equal(cashRequests[0].action, "record");
+  assert.equal(cashRequests[0].paymentMethod, "cash");
+  assert.ok(cashRequests[0].requestKey);
+  assert.deepEqual(cashRequests[0].lines, [{ kind: "service", id: 1, quantity: 1, expectedPrice: 1000 }]);
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
+  await waitFor("!!document.querySelector('.agenda-booking')");
+  await evaluate("document.querySelector('.agenda-booking').click()");
+  await waitFor("!!document.querySelector('.agenda-detail')");
+  assert.equal(await evaluate("!!document.querySelector('.agenda-cash-button')"), false);
+  assert.match(await evaluate("document.querySelector('.agenda-detail').textContent"), /possède déjà une vente/);
+  console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 } finally {
   const closed = once(chrome, "exit");
   chrome.kill("SIGTERM");

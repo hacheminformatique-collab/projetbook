@@ -412,6 +412,13 @@ les prix et les quantités. L’enregistrement fige le nom et le prix de chaque
 ligne, et déduit les produits vendus dans la même transaction. Une réservation
 ne crée pas de vente et ne modifie pas les stocks.
 
+Depuis la fiche d’un rendez-vous dans **Agenda**, le bouton **Encaisser** ouvre
+la caisse avec le client, les prestations et les tarifs du rendez-vous.
+Aucune vente n’est créée avant la confirmation du règlement reçu. Après
+enregistrement, la vente apparaît dans le journal et le rendez-vous ne propose
+plus d’encaissement. En cas de réponse serveur incertaine, utilisez
+**Réessayer la même vente** pour conserver la même demande sans doublon.
+
 **Caisse → Journal** affiche les ventes et les annulations de la période,
 avec un total net et un export CSV. L’annulation intégrale d’une vente est
 motivée, remet les produits en stock, et ajoute une ligne négative datée
