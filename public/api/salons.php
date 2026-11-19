@@ -19,9 +19,18 @@ try {
         );
         $statement->execute(['id' => $salon['id']]);
         $profileEntries = $statement->fetchAll();
+        $statement = $pdo->prepare(
+            "SELECT id, position FROM salon_photos
+             WHERE salon_id = :id AND status = 'approved' ORDER BY position, id"
+        );
+        $statement->execute(['id' => $salon['id']]);
+        $photos = $statement->fetchAll();
         $statement = $pdo->prepare('SELECT weekday, opens_at, closes_at FROM salon_hours WHERE salon_id = :id ORDER BY weekday');
         $statement->execute(['id' => $salon['id']]);
-        bookili_json_response(200, ['salon' => $salon, 'services' => $services, 'hours' => $statement->fetchAll(), 'profileEntries' => $profileEntries]);
+        bookili_json_response(200, [
+            'salon' => $salon, 'services' => $services, 'hours' => $statement->fetchAll(),
+            'profileEntries' => $profileEntries, 'photos' => $photos,
+        ]);
     }
 
     $query = $_GET['q'] ?? '';

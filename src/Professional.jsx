@@ -6,6 +6,7 @@ import CashRegister from "./CashRegister.jsx";
 import ProfessionalClients from "./ProfessionalClients.jsx";
 import AgendaDisplaySettings from "./AgendaDisplaySettings.jsx";
 import ProfessionalProfile from "./ProfessionalProfile.jsx";
+import ProfessionalPhotos from "./ProfessionalPhotos.jsx";
 import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
 
@@ -14,7 +15,7 @@ const workspaceViews = {
   agenda: [["planning", "Planning"], ["closures", "Fermetures exceptionnelles"]],
   caisse: [["cash", "Caisse et suivi des ventes"]],
   clients: [["directory", "Fichier clients"]],
-  admin: [["services", "Prestations"], ["staff", "Collaborateurs"], ["agenda-display", "Affichage agenda"], ["salon", "Salon et horaires"], ["profile", "Descriptif établissement"]],
+  admin: [["services", "Prestations"], ["staff", "Collaborateurs"], ["agenda-display", "Affichage agenda"], ["salon", "Salon et horaires"], ["profile", "Descriptif établissement"], ["photos", "Gestion des photos"]],
 };
 
 export default function ProfessionalSpace() {
@@ -107,6 +108,7 @@ export default function ProfessionalSpace() {
             {view === "agenda-display" && <AgendaDisplaySettings csrfToken={session.csrfToken} />}
             {view === "salon" && <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} />}
             {view === "profile" && <ProfessionalProfile csrfToken={session.csrfToken} />}
+            {view === "photos" && <ProfessionalPhotos csrfToken={session.csrfToken} />}
           </>}
         </main>
       </div>

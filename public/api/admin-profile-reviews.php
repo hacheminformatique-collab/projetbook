@@ -25,6 +25,8 @@ try {
             'reject-description' => ['description', 'rejected'],
             'approve-entry' => ['entry', 'approved'],
             'reject-entry' => ['entry', 'rejected'],
+            'approve-photo' => ['photo', 'approved'],
+            'reject-photo' => ['photo', 'rejected'],
         ];
         if (!is_string($action) || !isset($decisions[$action])) {
             bookili_json_response(422, ['error' => 'Décision de validation invalide.']);
@@ -38,9 +40,14 @@ try {
                     : "UPDATE salons SET profile_description_status = 'rejected'
                        WHERE id = :id AND profile_description_status = 'pending'"
             );
-        } else {
+        } elseif ($type === 'entry') {
             $statement = $pdo->prepare(
                 'UPDATE salon_profile_entries SET status = :status WHERE id = :id AND status = \'pending\''
+            );
+            $statement->bindValue(':status', $status);
+        } else {
+            $statement = $pdo->prepare(
+                'UPDATE salon_photos SET status = :status WHERE id = :id AND status = \'pending\''
             );
             $statement->bindValue(':status', $status);
         }
@@ -60,7 +67,13 @@ try {
          INNER JOIN salons s ON s.id = e.salon_id
          WHERE e.status = 'pending' ORDER BY e.created_at, e.id"
     )->fetchAll();
-    bookili_json_response(200, ['descriptions' => $descriptions, 'entries' => $entries]);
+    $photos = $pdo->query(
+        "SELECT p.id, p.created_at, s.name AS salon_name, s.city
+         FROM salon_photos p
+         INNER JOIN salons s ON s.id = p.salon_id
+         WHERE p.status = 'pending' ORDER BY p.created_at, p.id"
+    )->fetchAll();
+    bookili_json_response(200, ['descriptions' => $descriptions, 'entries' => $entries, 'photos' => $photos]);
 } catch (Throwable $error) {
     bookili_database_error($error);
 }

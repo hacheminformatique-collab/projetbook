@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { apiRequest, algerianDate, appointmentDate, priceLabel, weekDays } from "./api-client.js";
+import { apiRequest, apiUrl, algerianDate, appointmentDate, priceLabel, weekDays } from "./api-client.js";
 import { getWilayaName } from "./data/algerian-wilayas.js";
 
 export function DirectoryResults({ search }) {
@@ -85,6 +85,13 @@ export function SalonPage() {
             <h1>{result.salon.name}</h1>
             <p>{result.salon.address}</p>
             <a href={`tel:${result.salon.phone_number}`}>{result.salon.phone_number}</a>
+            {result.photos.length > 0 && <div className="public-salon-gallery" aria-label="Photos de l’établissement">
+              {result.photos.map((photo, index) => <img
+                key={photo.id}
+                src={apiUrl(`salon-photo.php?id=${encodeURIComponent(photo.id)}`)}
+                alt={`${result.salon.name} — photo ${index + 1}`}
+              />)}
+            </div>}
             <section className="client-card">
               <h2>{appointmentId ? "Modifier mon rendez-vous" : "Prendre rendez-vous"}</h2>
               <p>Horaires d’Algérie · Réservation jusqu’à 60 jours à l’avance.</p>

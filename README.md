@@ -92,6 +92,8 @@ les options d’affichage de l’agenda.
 `tests/professional-profile.py` vérifie la soumission et la modération des
 descriptifs d’établissement, la visibilité publique des contenus validés et
 l’isolation entre salons.
+`tests/professional-photos.py` vérifie l’import des photos, les limites par
+établissement, les permissions, la modération et l’ordre de la galerie publique.
 
 La clé de test doit correspondre à `setup_token` et contenir au moins
 64 caractères. Les tests qui créent le super-admin ne doivent pas partager
@@ -148,7 +150,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/019_professional_client_notes.sql` et
 `database/migrations/020_agenda_display_settings.sql` et
 `database/migrations/021_salon_booking_message.sql` et
-`database/migrations/022_salon_public_profile.sql` dans phpMyAdmin,
+`database/migrations/022_salon_public_profile.sql` et
+`database/migrations/023_salon_photos.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -175,9 +178,9 @@ page hors ligne sans stocker les données de compte, de réservation ou de caiss
 Le serveur doit avoir PHP 8.1+ avec PDO MySQL, MySQL/MariaDB et Apache avec
 `mod_rewrite` pour les pages de l'application. L'extension PHP **GD**, avec
 prise en charge des formats JPEG, PNG et WebP, est nécessaire pour changer
-l'image d'accueil. L'extension **EXIF** est également nécessaire pour orienter
-correctement les photos JPEG. Aucun processus Node.js à maintenir sur le
-serveur.
+l'image d'accueil et gérer les photos des établissements. L'extension **EXIF**
+est également nécessaire pour orienter correctement les images JPEG. Aucun
+processus Node.js à maintenir sur le serveur.
 
 Pour les e-mails, créez dans cPanel une adresse d'expédition sur votre domaine,
 puis renseignez `mail_from` et `mail_from_name` dans
@@ -472,5 +475,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/019_professional_client_notes.sql` et
 `database/migrations/020_agenda_display_settings.sql` et
 `database/migrations/021_salon_booking_message.sql` et
-`database/migrations/022_salon_public_profile.sql`, dans cet ordre,
+`database/migrations/022_salon_public_profile.sql` et
+`database/migrations/023_salon_photos.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

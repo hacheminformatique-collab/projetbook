@@ -104,7 +104,7 @@ export function AdminProfileReviews({ csrfToken }) {
     <h2>Contenus en attente</h2>
     <Feedback notice={notice} />
     {!result && !notice && <p role="status">Chargement des contenus…</p>}
-    {result && result.descriptions.length === 0 && result.entries.length === 0 && <p>Aucun contenu à valider.</p>}
+    {result && result.descriptions.length === 0 && result.entries.length === 0 && result.photos.length === 0 && <p>Aucun contenu à valider.</p>}
     {result?.descriptions.map((item) => <article className="service-row profile-review" key={`description-${item.id}`}>
       <span><strong>{item.name} · {item.city}</strong><br /><span className="booking-message">{item.profile_description}</span></span>
       <div className="review-buttons">
@@ -117,6 +117,13 @@ export function AdminProfileReviews({ csrfToken }) {
       <div className="review-buttons">
         <button className="admin-nav-link" type="button" disabled={working} onClick={() => review("reject-entry", item.id)}>Refuser</button>
         <button className="auth-submit" type="button" disabled={working} onClick={() => review("approve-entry", item.id)}>Valider</button>
+      </div>
+    </article>)}
+    {result?.photos.map((item) => <article className="service-row profile-review" key={`photo-${item.id}`}>
+      <span className="profile-review-photo"><img src={apiUrl(`salon-photo.php?id=${encodeURIComponent(item.id)}`)} alt={`Photo proposée par ${item.salon_name}`} /><strong>{item.salon_name} · {item.city}</strong></span>
+      <div className="review-buttons">
+        <button className="admin-nav-link" type="button" disabled={working} onClick={() => review("reject-photo", item.id)}>Refuser</button>
+        <button className="auth-submit" type="button" disabled={working} onClick={() => review("approve-photo", item.id)}>Valider</button>
       </div>
     </article>)}
   </section>;
