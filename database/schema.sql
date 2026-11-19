@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS salons (
   address VARCHAR(255) NOT NULL,
   phone_number VARCHAR(32) NULL,
   is_public BOOLEAN NOT NULL DEFAULT FALSE,
+  booking_message VARCHAR(1000) NOT NULL DEFAULT '',
   agenda_show_time BOOLEAN NOT NULL DEFAULT TRUE,
   agenda_show_client BOOLEAN NOT NULL DEFAULT TRUE,
   agenda_show_services BOOLEAN NOT NULL DEFAULT TRUE,

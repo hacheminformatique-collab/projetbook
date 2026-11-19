@@ -72,6 +72,7 @@ def salon_payload(salon, public=True):
     return {
         "name": salon["name"], "city": salon["city"], "address": salon["address"],
         "phone": salon["phone_number"], "wilaya": salon["wilaya_code"], "isPublic": public,
+        "bookingMessage": salon.get("booking_message", ""),
         "hours": [{"weekday": day, "opens_at": "09:00", "closes_at": "17:00"} for day in range(1, 8)],
     }
 
@@ -103,6 +104,14 @@ def main():
     duplicate_hours["hours"][1]["weekday"] = 1
     expect(professional.request("professional-salon.php", duplicate_hours), 422)
     expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
+    booking_message = "Merci d’arriver cinq minutes avant votre rendez-vous."
+    expect(professional.request("professional-salon.php", {**salon_payload(salon), "bookingMessage": booking_message}), 200)
+    public_salon = expect(guest.request(f"salons.php?id={salon_id}"), 200)["salon"]
+    assert public_salon["booking_message"] == booking_message
+    expect(professional.request("professional-salon.php", {
+        **salon_payload(salon), "bookingMessage": "x" * 1001,
+    }), 422)
+    assert expect(other_pro.request("professional-salon.php"), 200)["salon"]["booking_message"] == ""
     search = expect(guest.request(f"salons.php?q={SUFFIX}&wilaya=19&categorie=coiffeur"), 200)
     assert [int(row["id"]) for row in search["salons"]] == [salon_id]
     assert [int(row["id"]) for row in expect(guest.request(f"salons.php?ville=Setif&q={SUFFIX}&categorie=coiffeur"), 200)["salons"]] == [salon_id]

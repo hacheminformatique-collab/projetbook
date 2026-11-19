@@ -88,7 +88,7 @@ export function SalonPage() {
             <section className="client-card">
               <h2>{appointmentId ? "Modifier mon rendez-vous" : "Prendre rendez-vous"}</h2>
               <p>Horaires d’Algérie · Réservation jusqu’à 60 jours à l’avance.</p>
-              <BookingForm key={`${salonId}-${appointmentId || "new"}`} salonId={salonId} services={result.services} session={session} appointmentId={appointmentId} />
+              <BookingForm key={`${salonId}-${appointmentId || "new"}`} salonId={salonId} services={result.services} session={session} appointmentId={appointmentId} bookingMessage={result.salon.booking_message} />
             </section>
             <section className="client-card">
               <h2>Horaires d’ouverture</h2>
@@ -106,7 +106,7 @@ export function SalonPage() {
   );
 }
 
-function BookingForm({ salonId, services, session, appointmentId }) {
+function BookingForm({ salonId, services, session, appointmentId, bookingMessage }) {
   const [serviceId, setServiceId] = useState("");
   const [staffId, setStaffId] = useState("");
   const [staffMembers, setStaffMembers] = useState([]);
@@ -206,6 +206,7 @@ function BookingForm({ salonId, services, session, appointmentId }) {
           </select>
         </label>}
         {selected && <p>{selected.name} · {selected.duration_minutes} minutes · <strong>{priceLabel(selected.price_dzd)}</strong><br />Paiement sur place. Aucun paiement en ligne.</p>}
+        {time && bookingMessage && <p className="field-hint booking-message"><strong>Message de l’établissement</strong><br />{bookingMessage}</p>}
         {client ? <button className="auth-submit" disabled={!time || loading || saving || !!slotError} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
           <p className="form-message">Connectez-vous avec un compte client pour réserver. <Link className="inline-link" to={`/compte?retour=${encodeURIComponent(`/salons/${salonId}${appointmentId ? `?appointmentId=${appointmentId}` : ""}`)}`}>Connexion ou inscription</Link></p>
         )}

@@ -143,7 +143,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/017_appointment_services.sql` et
 `database/migrations/018_cash_pending_tickets.sql` et
 `database/migrations/019_professional_client_notes.sql` et
-`database/migrations/020_agenda_display_settings.sql` dans phpMyAdmin,
+`database/migrations/020_agenda_display_settings.sql` et
+`database/migrations/021_salon_booking_message.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -465,5 +466,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/017_appointment_services.sql` et
 `database/migrations/018_cash_pending_tickets.sql` et
 `database/migrations/019_professional_client_notes.sql` et
-`database/migrations/020_agenda_display_settings.sql`, dans cet ordre,
+`database/migrations/020_agenda_display_settings.sql` et
+`database/migrations/021_salon_booking_message.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

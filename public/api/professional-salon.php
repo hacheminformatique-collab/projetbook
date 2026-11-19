@@ -13,6 +13,14 @@ try {
         $city = bookili_required_text($data, 'city', 120);
         $address = bookili_required_text($data, 'address', 255);
         $phone = bookili_required_text($data, 'phone', 32);
+        $bookingMessage = $data['bookingMessage'] ?? null;
+        if ($bookingMessage !== null && (
+            !is_string($bookingMessage) || strlen($bookingMessage) > 4000
+            || preg_match('/\A.{0,1000}\z/us', $bookingMessage) !== 1
+        )) {
+            bookili_json_response(422, ['error' => 'Le message destiné aux clients ne peut pas dépasser 1 000 caractères.']);
+        }
+        $bookingMessage = $bookingMessage === null ? null : trim($bookingMessage);
         $wilaya = $data['wilaya'] ?? '';
         $isPublic = $data['isPublic'] ?? null;
         if (!is_string($wilaya) || !preg_match('/^(0[1-9]|[1-4][0-9]|5[0-8])$/D', $wilaya)
@@ -46,11 +54,12 @@ try {
         }
         $statement = $pdo->prepare(
             'UPDATE salons SET name = :name, city = :city, address = :address, phone_number = :phone,
-             wilaya_code = :wilaya, is_public = :is_public WHERE id = :id'
+             wilaya_code = :wilaya, is_public = :is_public,
+             booking_message = COALESCE(:booking_message, booking_message) WHERE id = :id'
         );
         $statement->execute([
             'name' => $name, 'city' => $city, 'address' => $address, 'phone' => $phone,
-            'wilaya' => $wilaya, 'is_public' => (int) $isPublic, 'id' => $salon['id'],
+            'wilaya' => $wilaya, 'is_public' => (int) $isPublic, 'booking_message' => $bookingMessage, 'id' => $salon['id'],
         ]);
         $statement = $pdo->prepare('DELETE FROM salon_hours WHERE salon_id = :id');
         $statement->execute(['id' => $salon['id']]);

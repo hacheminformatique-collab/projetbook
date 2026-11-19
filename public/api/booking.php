@@ -215,6 +215,9 @@ function bookili_queue_email(PDO $pdo, array $appointment, string $kind, DateTim
     $salonPhone = $appointment['salon_phone'] ?: 'Non renseigné';
     $price = number_format((int) $appointment['price_dzd'], 0, ',', ' ') . ' DA';
     $details = "Établissement : {$appointment['salon_name']}\nPrestation : {$appointment['service_name']}\nDate et heure : {$formattedDate}\nAdresse : {$appointment['address']}, {$appointment['city']}\nTéléphone : {$salonPhone}\nPrix à régler sur place : {$price} (aucun paiement en ligne).\n";
+    if (in_array($kind, ['confirmation', 'rescheduled'], true) && trim($appointment['booking_message']) !== '') {
+        $details .= "\nMessage de {$appointment['salon_name']} :\n{$appointment['booking_message']}\n";
+    }
     $content = match ($kind) {
         'confirmation' => ["Votre rendez-vous BOOKILI est confirmé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous est confirmé.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client. Si votre professionnel a créé votre compte, choisissez « Mot de passe oublié » sur la page Mon compte pour définir votre mot de passe."],
         'rescheduled' => ["Votre rendez-vous BOOKILI a été modifié", "Bonjour {$appointment['first_name']},\n\nLa modification de votre rendez-vous est confirmée.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
@@ -242,7 +245,8 @@ function bookili_queue_appointment_emails(PDO $pdo, int $appointmentId, string $
 {
     $statement = $pdo->prepare(
         'SELECT b.id, b.notification_version, b.status, b.starts_at, b.service_name, b.price_dzd,
-                a.email, c.first_name, s.name AS salon_name, s.city, s.address, s.phone_number AS salon_phone
+                a.email, c.first_name, s.name AS salon_name, s.city, s.address, s.phone_number AS salon_phone,
+                s.booking_message
          FROM appointments b
          INNER JOIN accounts a ON a.id = b.client_id
          INNER JOIN client_profiles c ON c.account_id = b.client_id

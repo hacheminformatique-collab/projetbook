@@ -294,6 +294,8 @@ function SalonSettings({ configuration, csrfToken, onSaved }) {
           </div>
           <label>Adresse<input name="address" required maxLength={255} defaultValue={salon.address} /></label>
           <label>Téléphone<input name="phone" type="tel" required maxLength={24} defaultValue={salon.phone_number || ""} /></label>
+          <label>Message pour vos clients<textarea name="bookingMessage" maxLength={1000} rows={4} defaultValue={salon.booking_message || ""} placeholder="Informations utiles à lire avant le rendez-vous" /></label>
+          <p className="field-hint">Ce message sera affiché après le choix du créneau et ajouté aux e-mails de confirmation ou de modification.</p>
           <div className="hours-list">
             {hours.map((hour, index) => (
               <div className="hours-row" key={hour.weekday}>

@@ -1,0 +1,2 @@
+ALTER TABLE salons
+  ADD COLUMN booking_message VARCHAR(1000) NOT NULL DEFAULT '';
