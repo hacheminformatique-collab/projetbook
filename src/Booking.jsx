@@ -99,12 +99,25 @@ export function SalonPage() {
                 })}
               </dl>
             </section>
+            {(result.salon.public_description || result.profileEntries.length > 0) && <section className="client-card">
+              <h2>À propos de l’établissement</h2>
+              {result.salon.public_description && <p className="booking-message">{result.salon.public_description}</p>}
+              {categories.map(([category, label]) => {
+                const entries = result.profileEntries.filter((entry) => entry.category === category);
+                return entries.length > 0 && <div key={category}>
+                  <h3>{label}</h3>
+                  {entries.map((entry) => <p key={entry.id}><strong>{entry.title}</strong>{entry.details && <><br />{entry.details}</>}</p>)}
+                </div>;
+              })}
+            </section>}
           </>
         )}
       </div>
     </main>
   );
 }
+
+const categories = [["access", "Accès"], ["training", "Formations"], ["experience", "Expériences"]];
 
 function BookingForm({ salonId, services, session, appointmentId, bookingMessage }) {
   const [serviceId, setServiceId] = useState("");

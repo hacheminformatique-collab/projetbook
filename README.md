@@ -89,6 +89,9 @@ Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
 les options d’affichage de l’agenda.
+`tests/professional-profile.py` vérifie la soumission et la modération des
+descriptifs d’établissement, la visibilité publique des contenus validés et
+l’isolation entre salons.
 
 La clé de test doit correspondre à `setup_token` et contenir au moins
 64 caractères. Les tests qui créent le super-admin ne doivent pas partager
@@ -144,7 +147,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/018_cash_pending_tickets.sql` et
 `database/migrations/019_professional_client_notes.sql` et
 `database/migrations/020_agenda_display_settings.sql` et
-`database/migrations/021_salon_booking_message.sql` dans phpMyAdmin,
+`database/migrations/021_salon_booking_message.sql` et
+`database/migrations/022_salon_public_profile.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -467,5 +471,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/018_cash_pending_tickets.sql` et
 `database/migrations/019_professional_client_notes.sql` et
 `database/migrations/020_agenda_display_settings.sql` et
-`database/migrations/021_salon_booking_message.sql`, dans cet ordre,
+`database/migrations/021_salon_booking_message.sql` et
+`database/migrations/022_salon_public_profile.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

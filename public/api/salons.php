@@ -13,9 +13,15 @@ try {
         );
         $statement->execute(['id' => $salon['id']]);
         $services = $statement->fetchAll();
+        $statement = $pdo->prepare(
+            "SELECT id, category, title, details FROM salon_profile_entries
+             WHERE salon_id = :id AND status = 'approved' ORDER BY category, created_at, id"
+        );
+        $statement->execute(['id' => $salon['id']]);
+        $profileEntries = $statement->fetchAll();
         $statement = $pdo->prepare('SELECT weekday, opens_at, closes_at FROM salon_hours WHERE salon_id = :id ORDER BY weekday');
         $statement->execute(['id' => $salon['id']]);
-        bookili_json_response(200, ['salon' => $salon, 'services' => $services, 'hours' => $statement->fetchAll()]);
+        bookili_json_response(200, ['salon' => $salon, 'services' => $services, 'hours' => $statement->fetchAll(), 'profileEntries' => $profileEntries]);
     }
 
     $query = $_GET['q'] ?? '';

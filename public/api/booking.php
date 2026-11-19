@@ -51,7 +51,9 @@ function bookili_own_salon(PDO $pdo, int $accountId, bool $lock = false): array
 function bookili_public_salon(PDO $pdo, int $salonId, bool $lock = false): array
 {
     $statement = $pdo->prepare(
-        "SELECT s.* FROM salons s
+        "SELECT s.id, s.name, s.wilaya_code, s.city, s.address, s.phone_number, s.is_public,
+                s.booking_message, s.public_description
+         FROM salons s
          INNER JOIN professional_profiles p ON p.id = s.professional_profile_id
          INNER JOIN accounts a ON a.id = p.account_id
          WHERE s.id = :id AND s.is_public = 1 AND a.status = 'active' AND a.role = 'professional'"

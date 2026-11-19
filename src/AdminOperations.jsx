@@ -70,6 +70,58 @@ export function AdminAccounts({ csrfToken }) {
   </section>;
 }
 
+export function AdminProfileReviews({ csrfToken }) {
+  const [result, setResult] = useState(null);
+  const [refresh, setRefresh] = useState(0);
+  const [notice, setNotice] = useState(null);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setResult(null);
+    apiRequest("admin-profile-reviews.php", { signal: controller.signal })
+      .then((data) => { if (!controller.signal.aborted) setResult(data); })
+      .catch((cause) => { if (!controller.signal.aborted) setNotice({ kind: "error", text: cause.message }); });
+    return () => controller.abort();
+  }, [refresh]);
+
+  async function review(action, id) {
+    setWorking(true);
+    setNotice(null);
+    try {
+      const response = await apiRequest("admin-profile-reviews.php", { csrfToken, body: { action, id: Number(id) } });
+      setNotice({ kind: "success", text: response.message });
+      setRefresh((value) => value + 1);
+    } catch (cause) {
+      setNotice({ kind: "error", text: cause.message });
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const categoryNames = { access: "Accès", training: "Formation", experience: "Expérience" };
+  return <section className="client-card">
+    <h2>Contenus en attente</h2>
+    <Feedback notice={notice} />
+    {!result && !notice && <p role="status">Chargement des contenus…</p>}
+    {result && result.descriptions.length === 0 && result.entries.length === 0 && <p>Aucun contenu à valider.</p>}
+    {result?.descriptions.map((item) => <article className="service-row profile-review" key={`description-${item.id}`}>
+      <span><strong>{item.name} · {item.city}</strong><br /><span className="booking-message">{item.profile_description}</span></span>
+      <div className="review-buttons">
+        <button className="admin-nav-link" type="button" disabled={working} onClick={() => review("reject-description", item.id)}>Refuser</button>
+        <button className="auth-submit" type="button" disabled={working} onClick={() => review("approve-description", item.id)}>Valider</button>
+      </div>
+    </article>)}
+    {result?.entries.map((item) => <article className="service-row profile-review" key={`entry-${item.id}`}>
+      <span><strong>{item.salon_name} · {item.city}</strong><br />{categoryNames[item.category]} : {item.title}<br /><span className="booking-message">{item.details}</span></span>
+      <div className="review-buttons">
+        <button className="admin-nav-link" type="button" disabled={working} onClick={() => review("reject-entry", item.id)}>Refuser</button>
+        <button className="auth-submit" type="button" disabled={working} onClick={() => review("approve-entry", item.id)}>Valider</button>
+      </div>
+    </article>)}
+  </section>;
+}
+
 function cycleDates(cycle) {
   const today = algerianDate();
   const start = cycle === "annual" ? `${today.slice(0, 4)}-01-01` : `${today.slice(0, 7)}-01`;

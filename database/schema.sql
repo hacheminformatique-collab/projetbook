@@ -117,6 +117,9 @@ CREATE TABLE IF NOT EXISTS salons (
   phone_number VARCHAR(32) NULL,
   is_public BOOLEAN NOT NULL DEFAULT FALSE,
   booking_message VARCHAR(1000) NOT NULL DEFAULT '',
+  profile_description VARCHAR(2000) NOT NULL DEFAULT '',
+  public_description VARCHAR(2000) NOT NULL DEFAULT '',
+  profile_description_status ENUM('draft', 'pending', 'approved', 'rejected') NOT NULL DEFAULT 'draft',
   agenda_show_time BOOLEAN NOT NULL DEFAULT TRUE,
   agenda_show_client BOOLEAN NOT NULL DEFAULT TRUE,
   agenda_show_services BOOLEAN NOT NULL DEFAULT TRUE,
@@ -128,6 +131,21 @@ CREATE TABLE IF NOT EXISTS salons (
   KEY salons_public_location (is_public, wilaya_code, city),
   CONSTRAINT salons_professional_profile_fk
     FOREIGN KEY (professional_profile_id) REFERENCES professional_profiles (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS salon_profile_entries (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  salon_id BIGINT UNSIGNED NOT NULL,
+  category ENUM('access', 'training', 'experience') NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  details VARCHAR(1000) NOT NULL,
+  status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY salon_profile_entries_review (status, salon_id, category),
+  CONSTRAINT salon_profile_entries_salon_fk
+    FOREIGN KEY (salon_id) REFERENCES salons (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS services (
