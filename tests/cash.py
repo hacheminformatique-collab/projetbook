@@ -99,6 +99,55 @@ def main():
     assert sorted(status for status, _ in results) == [201, 409], results
     assert history(professional, product)["product"]["quantity"] == 1
 
+    ticket_lines = [dict(product_line, quantity=2), service_line]
+    ticket_request = {"action": "save_ticket", "requestKey": str(uuid.uuid4()), "lines": ticket_lines}
+    ticket_id = expect(professional.request(ENDPOINT, ticket_request), 201)["ticketId"]
+    assert expect(professional.request(ENDPOINT, ticket_request), 200) == {
+        "ticketId": ticket_id, "revision": 1, "duplicate": True,
+    }
+    assert history(professional, product)["product"]["quantity"] == 1
+    assert [row["id"] for row in expect(professional.request(ENDPOINT + "?view=tickets"), 200)["tickets"]] == [ticket_id]
+    assert expect(other.request(ENDPOINT + "?view=tickets"), 200)["tickets"] == []
+    expect(other.request(ENDPOINT + f"?view=ticket&ticketId={ticket_id}"), 404)
+    expect(professional.request(ENDPOINT, {**ticket_request, "lines": [service_line]}), 409)
+    checkout = {
+        "action": "record", "requestKey": str(uuid.uuid4()), "paymentMethod": "cash",
+        "ticketId": ticket_id, "ticketRevision": 1, "lines": ticket_lines,
+    }
+    expect(professional.request(ENDPOINT, checkout), 409)
+    assert history(professional, product)["product"]["quantity"] == 1
+
+    expect(professional.request(PRODUCTS, product_payload(id=product, price=1300)), 200)
+    revised_lines = [{**product_line, "quantity": 1, "expectedPrice": 1300}, service_line]
+    update = {
+        "action": "update_ticket", "ticketId": ticket_id, "expectedRevision": 1,
+        "requestKey": str(uuid.uuid4()), "lines": revised_lines,
+    }
+    assert expect(professional.request(ENDPOINT, update), 200) == {
+        "ticketId": ticket_id, "revision": 2, "duplicate": False,
+    }
+    assert expect(professional.request(ENDPOINT, update), 200) == {
+        "ticketId": ticket_id, "revision": 2, "duplicate": True,
+    }
+    expect(professional.request(ENDPOINT, {
+        **update, "requestKey": str(uuid.uuid4()), "expectedRevision": 1,
+    }), 409)
+    checkout.update({"ticketRevision": 2, "lines": revised_lines})
+    ticket_sale_id = expect(professional.request(ENDPOINT, checkout), 201)["saleId"]
+    assert expect(professional.request(ENDPOINT, checkout), 200) == {"saleId": ticket_sale_id, "duplicate": True}
+    assert expect(professional.request(ENDPOINT + "?view=ticket&ticketId=" + str(ticket_id)), 404)
+    assert history(professional, product)["product"]["quantity"] == 0
+
+    cancelled_ticket = expect(professional.request(ENDPOINT, {
+        "action": "save_ticket", "requestKey": str(uuid.uuid4()), "lines": [service_line],
+    }), 201)
+    cancel_ticket = {
+        "action": "cancel_ticket", "ticketId": cancelled_ticket["ticketId"], "expectedRevision": 1,
+    }
+    assert expect(professional.request(ENDPOINT, cancel_ticket), 200)["duplicate"] is False
+    assert expect(professional.request(ENDPOINT, cancel_ticket), 200)["duplicate"] is True
+    assert expect(professional.request(ENDPOINT + "?view=tickets"), 200)["tickets"] == []
+
     gifts = "professional-gift-cards.php"
     expect(guest.request(gifts), 401)
     expect(customer.request(gifts), 403)
@@ -123,7 +172,7 @@ def main():
     assert redeemed["collectedDzd"] == 0 and redeemed["giftCardRemainingDzd"] == 1500
     overview = expect(professional.request(ENDPOINT + "?view=overview"), 200)
     assert overview["summary"]["gift_card_dzd"] == 500
-    assert overview["summary"]["received_dzd"] == 4900
+    assert overview["summary"]["received_dzd"] == 6700
     remaining = expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"]
     assert remaining == 1500
     expect(professional.request(ENDPOINT, voucher_sale), 200)
@@ -131,7 +180,7 @@ def main():
     expect(professional.request(ENDPOINT, refund), 200)
     assert expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"] == 2000
     assert expect(professional.request(ENDPOINT + "?view=overview"), 200)["summary"]["gift_card_dzd"] == 0
-    print("Cash checks passed: ownership, price snapshots, journal, CSV, void, replay and concurrent stock.")
+    print("Cash checks passed: pending tickets, idempotency, revisions, checkout, stock, journal, gift cards and concurrency.")
 
 
 if __name__ == "__main__":

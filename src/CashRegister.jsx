@@ -28,26 +28,95 @@ export default function CashRegister({ csrfToken, appointment = null, onAppointm
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [saleId, setSaleId] = useState(null);
+  const [activeTicket, setActiveTicket] = useState(null);
   const refresh = () => setRevision((value) => value + 1);
   return <>
     <nav className="workspace-tabs" aria-label="Caisse professionnelle">
-      {[["sale", "Vente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
-        <button key={value} type="button" disabled={busy && view !== value} aria-current={view === value ? "page" : undefined} onClick={() => setView(value)}>{name}</button>
+      {[["sale", "Vente"], ["tickets", "Tickets en attente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
+        <button key={value} type="button" disabled={(busy && view !== value) || (appointment && value === "tickets")} aria-current={view === value ? "page" : undefined} onClick={() => setView(value)}>{name}</button>
       )}
     </nav>
     <div hidden={view !== "sale"}>
-      <SaleForm key={appointment?.id || "regular"} csrfToken={csrfToken} revision={revision} appointment={appointment} onBusy={setBusy} onRecorded={(result) => {
+      <SaleForm key={`${appointment?.id || "regular"}:${activeTicket?.id || "new"}:${activeTicket?.revision || 0}`} csrfToken={csrfToken} revision={revision} appointment={appointment} ticket={activeTicket} onBusy={setBusy} onTicketSaved={refresh} onRecorded={(result) => {
         setSaleId(result.saleId);
+        setActiveTicket(null);
         refresh();
         setView("journal");
         if (appointment) onAppointmentHandled?.();
       }} />
     </div>
+    {view === "tickets" && !appointment && <PendingTickets csrfToken={csrfToken} revision={revision} onBusy={setBusy} onChanged={refresh} onResume={(ticket) => {
+      setActiveTicket(ticket);
+      setView("sale");
+    }} />}
     {view === "overview" && <CashOverview revision={revision} />}
     {view === "gift-cards" && <GiftCards csrfToken={csrfToken} onBusy={setBusy} onRecorded={refresh} />}
     {view === "journal" && <Journal csrfToken={csrfToken} saleId={saleId} onSelect={setSaleId} revision={revision} onChanged={refresh} onBusy={setBusy} />}
     {view === "inventory" && <Inventory csrfToken={csrfToken} />}
   </>;
+}
+
+function PendingTickets({ csrfToken, revision, onBusy, onChanged, onResume }) {
+  const { data, error } = useCashData("view=tickets", revision);
+  const [busyTicket, setBusyTicket] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  async function resume(ticketId) {
+    setBusyTicket(ticketId);
+    onBusy(true);
+    setNotice(null);
+    try {
+      const ticket = await apiRequest(`${endpoint}?view=ticket&ticketId=${encodeURIComponent(ticketId)}`);
+      onResume(ticket);
+    } catch (cause) {
+      setNotice({ kind: "error", text: cause.message });
+      onChanged();
+    } finally {
+      setBusyTicket(null);
+      onBusy(false);
+    }
+  }
+
+  async function cancel(ticket) {
+    if (!window.confirm(`Abandonner le ticket n° ${ticket.id} ?`)) return;
+    setBusyTicket(ticket.id);
+    onBusy(true);
+    setNotice(null);
+    try {
+      await apiRequest(endpoint, {
+        csrfToken,
+        body: { action: "cancel_ticket", ticketId: ticket.id, expectedRevision: ticket.revision },
+      });
+      setNotice({ kind: "success", text: `Ticket n° ${ticket.id} abandonné.` });
+      onChanged();
+    } catch (cause) {
+      setNotice({ kind: "error", text: cause.message });
+      onChanged();
+    } finally {
+      setBusyTicket(null);
+      onBusy(false);
+    }
+  }
+
+  return <section className="client-card">
+    <h2>Tickets en attente</h2>
+    <p>Les tickets sont enregistrés pour être repris ultérieurement. Le stock n’est ajusté qu’au moment de l’encaissement.</p>
+    <Feedback notice={notice} />
+    {error && <Feedback notice={{ kind: "error", text: error }} />}
+    {!data && !error && <p role="status">Chargement des tickets…</p>}
+    {data?.tickets.length === 0 && <p>Aucun ticket en attente.</p>}
+    <div className="service-list">
+      {data?.tickets.map((ticket) => <article className="service-row" key={ticket.id}>
+        <span><strong>Ticket n° {ticket.id}</strong> · {ticket.line_count} article(s) · {priceLabel(ticket.total_dzd)}<br />
+          Mis à jour le {appointmentDate(ticket.updated_at)}
+        </span>
+        <div className="cash-ticket-actions">
+          <button className="admin-nav-link" type="button" disabled={busyTicket !== null} onClick={() => resume(ticket.id)}>{busyTicket === ticket.id ? "Chargement…" : "Reprendre"}</button>
+          <button className="admin-nav-link" type="button" disabled={busyTicket !== null} onClick={() => cancel(ticket)}>Abandonner</button>
+        </div>
+      </article>)}
+    </div>
+  </section>;
 }
 
 function CashOverview({ revision }) {
@@ -107,16 +176,23 @@ function CashOverview({ revision }) {
   </section>;
 }
 
-function SaleForm({ csrfToken, revision, appointment, onBusy, onRecorded }) {
+function SaleForm({ csrfToken, revision, appointment, ticket, onBusy, onTicketSaved, onRecorded }) {
   const [kind, setKind] = useState("product");
   const [search, setSearch] = useState("");
-  const [cart, setCart] = useState(() => appointment?.services.map((item) => ({
-    kind: "service", id: Number(item.id), name: item.name, quantity: 1, expectedPrice: Number(item.price_dzd),
-  })) || []);
+  const [cart, setCart] = useState(() => ticket
+    ? ticket.lines.map((item) => ({
+      kind: item.item_kind, id: Number(item.item_id), name: item.item_name,
+      quantity: Number(item.quantity), expectedPrice: Number(item.unit_price_dzd),
+    }))
+    : appointment?.services.map((item) => ({
+      kind: "service", id: Number(item.id), name: item.name, quantity: 1, expectedPrice: Number(item.price_dzd),
+    })) || []);
+  const [savedTicket, setSavedTicket] = useState(ticket ? { id: Number(ticket.id), revision: Number(ticket.revision) } : null);
   const [paymentMethod, setPayment] = useState("cash");
   const [giftCardCode, setGiftCardCode] = useState("");
   const [notice, setNotice] = useState(null);
   const [pending, setPending] = useState(null);
+  const [ticketRequest, setTicketRequest] = useState(null);
   const [saving, setSaving] = useState(false);
   const [catalogRefresh, setCatalogRefresh] = useState(0);
   const active = useRef(false);
@@ -137,6 +213,7 @@ function SaleForm({ csrfToken, revision, appointment, onBusy, onRecorded }) {
       const body = pending || {
         action: "record", requestKey: crypto.randomUUID(), paymentMethod,
         ...(appointment ? { appointmentId: Number(appointment.id) } : {}),
+        ...(savedTicket ? { ticketId: savedTicket.id, ticketRevision: savedTicket.revision } : {}),
         ...(giftCardCode.trim() ? { giftCardCode: giftCardCode.trim().replaceAll(" ", "").toUpperCase() } : {}),
         lines: cart.map(({ name: _name, ...line }) => line),
       };
@@ -155,8 +232,36 @@ function SaleForm({ csrfToken, revision, appointment, onBusy, onRecorded }) {
       onBusy(false);
     }
   }
+  async function saveTicket() {
+    if (active.current || cart.length === 0 || appointment) return;
+    active.current = true;
+    setSaving(true);
+    onBusy(true);
+    setNotice(null);
+    try {
+      const body = ticketRequest || {
+        action: savedTicket ? "update_ticket" : "save_ticket",
+        requestKey: crypto.randomUUID(),
+        ...(savedTicket ? { ticketId: savedTicket.id, expectedRevision: savedTicket.revision } : {}),
+        lines: cart.map(({ name: _name, ...line }) => line),
+      };
+      setTicketRequest(body);
+      const result = await apiRequest(endpoint, { csrfToken, body });
+      setSavedTicket({ id: result.ticketId, revision: result.revision });
+      setTicketRequest(null);
+      onTicketSaved();
+      setNotice({ kind: "success", text: "Ticket enregistré en attente. Il pourra être repris depuis l’onglet « Tickets en attente »." });
+    } catch (cause) {
+      if (cause.status >= 400 && cause.status < 500) setTicketRequest(null);
+      setNotice({ kind: "error", text: cause.message });
+    } finally {
+      active.current = false;
+      setSaving(false);
+      onBusy(false);
+    }
+  }
   return <section className="client-card">
-    <h2>{appointment ? `Encaisser le rendez-vous de ${appointment.first_name} ${appointment.last_name}` : "Enregistrer une vente"}</h2>
+    <h2>{appointment ? `Encaisser le rendez-vous de ${appointment.first_name} ${appointment.last_name}` : savedTicket ? `Ticket en attente n° ${savedTicket.id}` : "Enregistrer une vente"}</h2>
     {appointment && <p>{appointment.service_name} · {appointment.starts_at.slice(0, 16)} · {priceLabel(appointment.price_dzd)}</p>}
     <p>Enregistrez uniquement un règlement déjà reçu. BOOKILI ne débite ni carte ni compte bancaire.</p>
     {!appointment && <form className="booking-toolbar" onSubmit={(event) => {
@@ -174,7 +279,7 @@ function SaleForm({ csrfToken, revision, appointment, onBusy, onRecorded }) {
     {!appointment && <div className="service-list">
       {catalog?.items.map((item) => <div className="service-row" key={item.id}>
         <span><strong>{item.name}</strong> · {priceLabel(item.price_dzd)}{kind === "product" && <> · Stock : {item.quantity}{item.reference && ` · ${item.reference}`}</>}</span>
-        <button className="admin-nav-link" type="button" disabled={saving || !!pending || cart.length >= 20 || (kind === "product" && Number(item.quantity) === 0) || cart.some((line) => line.kind === kind && String(line.id) === String(item.id))} onClick={() => add(item)}>Ajouter au panier</button>
+        <button className="admin-nav-link" type="button" disabled={saving || !!pending || !!ticketRequest || cart.length >= 20 || (kind === "product" && Number(item.quantity) === 0) || cart.some((line) => line.kind === kind && String(line.id) === String(item.id))} onClick={() => add(item)}>Ajouter au panier</button>
       </div>)}
     </div>}
     {!appointment && catalog?.hasMore && <p>Plus de 50 résultats : affinez la recherche.</p>}
@@ -183,7 +288,7 @@ function SaleForm({ csrfToken, revision, appointment, onBusy, onRecorded }) {
     {cart.length === 0 ? <p>Ajoutez un produit ou une prestation au panier.</p> : <form className="auth-form" onSubmit={submit}>
       {appointment ? <div className="agenda-service-lines">
         {cart.map((line) => <p key={`${line.kind}:${line.id}`}>{line.name} · {priceLabel(line.expectedPrice)}</p>)}
-      </div> : <fieldset className="form-fieldset" disabled={saving || !!pending}>
+      </div> : <fieldset className="form-fieldset" disabled={saving || !!pending || !!ticketRequest}>
         {cart.map((line, index) => <div className="service-row" key={`${line.kind}:${line.id}`}>
           <span>{line.name} · {priceLabel(line.expectedPrice)}</span>
           <label>Quantité<input type="number" min={1} max={100} step={1} required value={line.quantity} onChange={(event) => {
@@ -193,15 +298,16 @@ function SaleForm({ csrfToken, revision, appointment, onBusy, onRecorded }) {
           <button className="admin-nav-link" type="button" onClick={() => setCart((items) => items.filter((_, position) => position !== index))}>Retirer</button>
         </div>)}
       </fieldset>}
-      <label>{appointment ? "Mode de règlement" : "Mode de règlement du complément"}<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)} disabled={saving || !!pending}>
+      <label>{appointment ? "Mode de règlement" : "Mode de règlement du complément"}<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)} disabled={saving || !!pending || !!ticketRequest}>
         {Object.entries(methods).filter(([key]) => key !== "gift_card").map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
-      <label>Code carte cadeau (facultatif)<input autoComplete="off" maxLength={35} value={giftCardCode} onChange={(event) => setGiftCardCode(event.target.value.toUpperCase())} placeholder="32 caractères" disabled={saving || !!pending} /></label>
+      <label>Code carte cadeau (facultatif)<input autoComplete="off" maxLength={35} value={giftCardCode} onChange={(event) => setGiftCardCode(event.target.value.toUpperCase())} placeholder="32 caractères" disabled={saving || !!pending || !!ticketRequest} /></label>
       <p><strong>Total : {priceLabel(cart.reduce((sum, line) => sum + line.quantity * line.expectedPrice, 0))}</strong></p>
       {appointment && <p className="field-hint">Les prestations et le montant correspondent au rendez-vous. Une seule vente peut être enregistrée par rendez-vous.</p>}
       {!appointment && <p className="field-hint">Si le solde de la carte ne couvre pas toute la vente, le reste est enregistré selon le mode de règlement choisi.</p>}
+      {!appointment && <button className="admin-nav-link" type="button" disabled={saving || !!pending || !cart.length} onClick={saveTicket}>{saving && ticketRequest ? "Enregistrement…" : ticketRequest ? "Réessayer l’enregistrement du ticket" : savedTicket ? "Enregistrer les modifications du ticket" : "Mettre en attente"}</button>}
       {pending && !saving && <p className="field-hint">La réponse est incertaine. Réessayez la même demande pour éviter un doublon. Vérifiez le journal avant de recréer la vente.</p>}
-      <button className="auth-submit" type="submit" disabled={saving}>{saving ? "Enregistrement…" : pending ? "Réessayer la même vente" : "Confirmer le règlement reçu"}</button>
+      <button className="auth-submit" type="submit" disabled={saving || !!ticketRequest}>{saving ? "Enregistrement…" : pending ? "Réessayer la même vente" : "Confirmer le règlement reçu"}</button>
     </form>}
   </section>;
 }

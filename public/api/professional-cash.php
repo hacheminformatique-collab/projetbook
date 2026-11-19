@@ -30,6 +30,215 @@ function bookili_cash_sale(PDO $pdo, int $salonId, int $saleId): array
     return $sale + ['lines' => $statement->fetchAll()];
 }
 
+function bookili_cash_ticket_input(mixed $lines): array
+{
+    if (!is_array($lines) || !array_is_list($lines) || count($lines) < 1 || count($lines) > 20) {
+        bookili_json_response(422, ['error' => 'Vérifiez le panier (1 à 20 lignes).']);
+    }
+    $cart = [];
+    foreach ($lines as $line) {
+        if (!is_array($line) || !in_array($line['kind'] ?? null, ['product', 'service'], true)) {
+            bookili_json_response(422, ['error' => 'Article invalide.']);
+        }
+        $kind = $line['kind'];
+        $id = bookili_id($line['id'] ?? null);
+        $quantity = bookili_inventory_integer($line, 'quantity', 100, 1);
+        $price = bookili_inventory_integer($line, 'expectedPrice', 10000000);
+        $index = "$kind:$id";
+        if (isset($cart[$index])) bookili_json_response(422, ['error' => 'Regroupez chaque article sur une seule ligne.']);
+        $cart[$index] = ['kind' => $kind, 'id' => $id, 'quantity' => $quantity, 'price' => $price];
+    }
+    ksort($cart);
+    return $cart;
+}
+
+function bookili_cash_ticket_current_lines(PDO $pdo, int $salonId, array $cart): array
+{
+    foreach ($cart as &$line) {
+        $item = $line['kind'] === 'product'
+            ? bookili_own_product($pdo, $salonId, $line['id'], true)
+            : bookili_service($pdo, $salonId, $line['id']);
+        if ((int) $item['price_dzd'] !== $line['price']) {
+            bookili_cash_conflict($pdo, 'Un prix a changé. Actualisez le catalogue et ajoutez de nouveau l’article.');
+        }
+        if ($line['kind'] === 'product' && !(int) $item['is_active']) {
+            bookili_cash_conflict($pdo, 'Un produit du ticket a été archivé. Modifiez le ticket avant de l’encaisser.');
+        }
+        $line['name'] = $item['name'];
+    }
+    unset($line);
+    return $cart;
+}
+
+function bookili_cash_ticket_store_lines(PDO $pdo, int $ticketId, array $cart): void
+{
+    $pdo->prepare('DELETE FROM cash_ticket_lines WHERE ticket_id = :ticket')->execute(['ticket' => $ticketId]);
+    $insert = $pdo->prepare(
+        'INSERT INTO cash_ticket_lines (ticket_id, item_kind, item_id, item_name, quantity, unit_price_dzd)
+         VALUES (:ticket, :kind, :id, :name, :quantity, :price)'
+    );
+    foreach ($cart as $line) {
+        $insert->execute([
+            'ticket' => $ticketId, 'kind' => $line['kind'], 'id' => $line['id'],
+            'name' => $line['name'], 'quantity' => $line['quantity'], 'price' => $line['price'],
+        ]);
+    }
+}
+
+function bookili_cash_ticket_total(array $cart): int
+{
+    $total = 0;
+    foreach ($cart as $line) $total += $line['quantity'] * $line['price'];
+    return $total;
+}
+
+function bookili_cash_ticket_save(PDO $pdo, int $actorId, array $data): never
+{
+    $cart = bookili_cash_ticket_input($data['lines'] ?? null);
+    $key = $data['requestKey'] ?? null;
+    if (!is_string($key) || !preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/D', $key)) {
+        bookili_json_response(422, ['error' => 'Clé de demande invalide.']);
+    }
+    $fingerprint = hash('sha256', json_encode($cart, JSON_THROW_ON_ERROR));
+    $pdo->beginTransaction();
+    $salonId = (int) bookili_own_salon($pdo, $actorId, true)['id'];
+    $statement = $pdo->prepare('SELECT id, request_hash, revision FROM cash_tickets WHERE salon_id = :salon AND request_key = :key');
+    $statement->execute(['salon' => $salonId, 'key' => $key]);
+    if ($previous = $statement->fetch()) {
+        if (!hash_equals($previous['request_hash'], $fingerprint)) {
+            bookili_cash_conflict($pdo, 'Cette demande correspond déjà à un autre ticket.');
+        }
+        $pdo->commit();
+        bookili_json_response(200, ['ticketId' => (int) $previous['id'], 'revision' => (int) $previous['revision'], 'duplicate' => true]);
+    }
+    $cart = bookili_cash_ticket_current_lines($pdo, $salonId, $cart);
+    $now = bookili_now()->format('Y-m-d H:i:s');
+    $pdo->prepare(
+        "INSERT INTO cash_tickets (salon_id, actor_id, request_key, request_hash, status, revision, total_dzd, created_at, updated_at)
+         VALUES (:salon, :actor, :key, :hash, 'pending', 1, :total, :created, :updated)"
+    )->execute([
+        'salon' => $salonId, 'actor' => $actorId, 'key' => $key, 'hash' => $fingerprint,
+        'total' => bookili_cash_ticket_total($cart), 'created' => $now, 'updated' => $now,
+    ]);
+    $ticketId = (int) $pdo->lastInsertId();
+    bookili_cash_ticket_store_lines($pdo, $ticketId, $cart);
+    $pdo->commit();
+    bookili_json_response(201, ['ticketId' => $ticketId, 'revision' => 1, 'duplicate' => false]);
+}
+
+function bookili_cash_ticket_update(PDO $pdo, int $actorId, array $data): never
+{
+    $ticketId = bookili_id($data['ticketId'] ?? null);
+    $expectedRevision = $data['expectedRevision'] ?? null;
+    $key = $data['requestKey'] ?? null;
+    if (!is_int($expectedRevision) || $expectedRevision < 1
+        || !is_string($key) || !preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/D', $key)) {
+        bookili_json_response(422, ['error' => 'Version de ticket invalide.']);
+    }
+    $cart = bookili_cash_ticket_input($data['lines'] ?? null);
+    $fingerprint = hash('sha256', json_encode([$expectedRevision, $cart], JSON_THROW_ON_ERROR));
+    $pdo->beginTransaction();
+    $salonId = (int) bookili_own_salon($pdo, $actorId, true)['id'];
+    $statement = $pdo->prepare(
+        'SELECT status, revision, update_request_key, update_request_hash
+         FROM cash_tickets WHERE id = :id AND salon_id = :salon FOR UPDATE'
+    );
+    $statement->execute(['id' => $ticketId, 'salon' => $salonId]);
+    $ticket = $statement->fetch();
+    if (!$ticket) {
+        $pdo->rollBack();
+        bookili_json_response(404, ['error' => 'Ticket introuvable.']);
+    }
+    if ($ticket['status'] !== 'pending') bookili_cash_conflict($pdo, 'Ce ticket n’est plus en attente.');
+    if ($ticket['update_request_key'] === $key) {
+        if (!hash_equals($ticket['update_request_hash'], $fingerprint)) {
+            bookili_cash_conflict($pdo, 'Cette demande correspond déjà à une autre modification.');
+        }
+        $pdo->commit();
+        bookili_json_response(200, ['ticketId' => $ticketId, 'revision' => (int) $ticket['revision'], 'duplicate' => true]);
+    }
+    if ((int) $ticket['revision'] !== $expectedRevision) {
+        bookili_cash_conflict($pdo, 'Ce ticket a été modifié ailleurs. Rechargez-le avant de continuer.');
+    }
+    $cart = bookili_cash_ticket_current_lines($pdo, $salonId, $cart);
+    $revision = $expectedRevision + 1;
+    $pdo->prepare(
+        'UPDATE cash_tickets SET revision = :revision, total_dzd = :total, update_request_key = :key,
+         update_request_hash = :hash, updated_at = :now WHERE id = :id'
+    )
+        ->execute([
+            'revision' => $revision, 'total' => bookili_cash_ticket_total($cart), 'key' => $key, 'hash' => $fingerprint,
+            'now' => bookili_now()->format('Y-m-d H:i:s'), 'id' => $ticketId,
+        ]);
+    bookili_cash_ticket_store_lines($pdo, $ticketId, $cart);
+    $pdo->commit();
+    bookili_json_response(200, ['ticketId' => $ticketId, 'revision' => $revision, 'duplicate' => false]);
+}
+
+function bookili_cash_ticket_cancel(PDO $pdo, int $actorId, array $data): never
+{
+    $ticketId = bookili_id($data['ticketId'] ?? null);
+    $expectedRevision = $data['expectedRevision'] ?? null;
+    if (!is_int($expectedRevision) || $expectedRevision < 1) {
+        bookili_json_response(422, ['error' => 'Version de ticket invalide.']);
+    }
+    $pdo->beginTransaction();
+    $salonId = (int) bookili_own_salon($pdo, $actorId, true)['id'];
+    $statement = $pdo->prepare('SELECT status, revision FROM cash_tickets WHERE id = :id AND salon_id = :salon FOR UPDATE');
+    $statement->execute(['id' => $ticketId, 'salon' => $salonId]);
+    $ticket = $statement->fetch();
+    if (!$ticket) {
+        $pdo->rollBack();
+        bookili_json_response(404, ['error' => 'Ticket introuvable.']);
+    }
+    if ($ticket['status'] === 'cancelled') {
+        $pdo->commit();
+        bookili_json_response(200, ['ticketId' => $ticketId, 'duplicate' => true]);
+    }
+    if ($ticket['status'] !== 'pending') bookili_cash_conflict($pdo, 'Un ticket encaissé ne peut pas être abandonné.');
+    if ((int) $ticket['revision'] !== $expectedRevision) {
+        bookili_cash_conflict($pdo, 'Ce ticket a été modifié ailleurs. Rechargez-le avant de continuer.');
+    }
+    $pdo->prepare("UPDATE cash_tickets SET status = 'cancelled', revision = revision + 1, updated_at = :now WHERE id = :id")
+        ->execute(['now' => bookili_now()->format('Y-m-d H:i:s'), 'id' => $ticketId]);
+    $pdo->commit();
+    bookili_json_response(200, ['ticketId' => $ticketId, 'duplicate' => false]);
+}
+
+function bookili_cash_ticket(PDO $pdo, int $salonId, int $ticketId): array
+{
+    $statement = $pdo->prepare(
+        "SELECT id, status, revision, total_dzd, created_at, updated_at
+         FROM cash_tickets WHERE id = :id AND salon_id = :salon AND status = 'pending'"
+    );
+    $statement->execute(['id' => $ticketId, 'salon' => $salonId]);
+    $ticket = $statement->fetch();
+    if (!$ticket) bookili_json_response(404, ['error' => 'Ticket en attente introuvable.']);
+    $statement = $pdo->prepare(
+        'SELECT item_kind, item_id, item_name, quantity, unit_price_dzd
+         FROM cash_ticket_lines WHERE ticket_id = :ticket ORDER BY item_kind, item_id'
+    );
+    $statement->execute(['ticket' => $ticketId]);
+    return $ticket + ['lines' => $statement->fetchAll()];
+}
+
+function bookili_cash_tickets(PDO $pdo, int $salonId): never
+{
+    $statement = $pdo->prepare(
+        "SELECT t.id, t.revision, t.total_dzd, t.created_at, t.updated_at, COUNT(l.ticket_id) AS line_count
+         FROM cash_tickets t LEFT JOIN cash_ticket_lines l ON l.ticket_id = t.id
+         WHERE t.salon_id = :salon AND t.status = 'pending'
+         GROUP BY t.id ORDER BY t.updated_at DESC, t.id DESC"
+    );
+    $statement->execute(['salon' => $salonId]);
+    $tickets = $statement->fetchAll();
+    foreach ($tickets as &$ticket) {
+        foreach (['id', 'revision', 'total_dzd', 'line_count'] as $field) $ticket[$field] = (int) $ticket[$field];
+    }
+    unset($ticket);
+    bookili_json_response(200, ['tickets' => $tickets]);
+}
+
 function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
 {
     $payment = $data['paymentMethod'] ?? null;
@@ -37,10 +246,14 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
     $lines = $data['lines'] ?? null;
     $giftCode = $data['giftCardCode'] ?? '';
     $appointmentId = isset($data['appointmentId']) ? bookili_id($data['appointmentId']) : null;
+    $ticketId = isset($data['ticketId']) ? bookili_id($data['ticketId']) : null;
+    $ticketRevision = $data['ticketRevision'] ?? null;
     if (!is_string($payment) || !in_array($payment, ['cash', 'card', 'transfer', 'other'], true)
         || !is_string($key) || !preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/D', $key)
         || !is_string($giftCode) || strlen($giftCode) > 64
-        || !is_array($lines) || !array_is_list($lines) || count($lines) < 1 || count($lines) > 20) {
+        || !is_array($lines) || !array_is_list($lines) || count($lines) < 1 || count($lines) > 20
+        || ($ticketId !== null && (!is_int($ticketRevision) || $ticketRevision < 1 || $appointmentId !== null))
+        || ($ticketId === null && array_key_exists('ticketRevision', $data))) {
         bookili_json_response(422, ['error' => 'Vérifiez le mode de règlement et le panier (1 à 20 lignes).']);
     }
     $giftCode = strtoupper(str_replace(' ', '', trim($giftCode)));
@@ -58,7 +271,9 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
         $cart[$index] = ['kind' => $kind, 'id' => $id, 'quantity' => $quantity, 'price' => $price];
     }
     ksort($cart);
-    $fingerprint = hash('sha256', json_encode([$payment, $cart, $giftCode, $appointmentId], JSON_THROW_ON_ERROR));
+    $fingerprintData = [$payment, $cart, $giftCode, $appointmentId];
+    if ($ticketId !== null) $fingerprintData[] = ['ticketId' => $ticketId, 'revision' => $ticketRevision];
+    $fingerprint = hash('sha256', json_encode($fingerprintData, JSON_THROW_ON_ERROR));
     $pdo->beginTransaction();
     $salonId = (int) bookili_own_salon($pdo, $actorId, true)['id'];
     $statement = $pdo->prepare(    'SELECT id, request_hash, gift_card_id FROM cash_sales WHERE salon_id = :salon AND request_key = :key');
@@ -67,6 +282,37 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
         if ($previous['request_hash'] !== $fingerprint) bookili_cash_conflict($pdo, 'Cette demande correspond déjà à une autre vente.');
         $pdo->commit();
         bookili_json_response(200, ['saleId' => (int) $previous['id'], 'duplicate' => true]);
+    }
+    $ticket = null;
+    $ticketLines = [];
+    if ($ticketId !== null) {
+        $statement = $pdo->prepare(
+            'SELECT status, revision, sale_id FROM cash_tickets WHERE id = :id AND salon_id = :salon FOR UPDATE'
+        );
+        $statement->execute(['id' => $ticketId, 'salon' => $salonId]);
+        $ticket = $statement->fetch();
+        if (!$ticket) bookili_cash_conflict($pdo, 'Ticket introuvable dans ce salon.');
+        if ($ticket['status'] !== 'pending') bookili_cash_conflict($pdo, 'Ce ticket n’est plus en attente.');
+        if ((int) $ticket['revision'] !== $ticketRevision) {
+            bookili_cash_conflict($pdo, 'Ce ticket a été modifié ailleurs. Rechargez-le avant de l’encaisser.');
+        }
+        $statement = $pdo->prepare(
+            'SELECT item_kind, item_id, item_name, quantity, unit_price_dzd
+             FROM cash_ticket_lines WHERE ticket_id = :ticket'
+        );
+        $statement->execute(['ticket' => $ticketId]);
+        foreach ($statement->fetchAll() as $row) {
+            $ticketLines[$row['item_kind'] . ':' . $row['item_id']] = $row;
+        }
+        if (count($ticketLines) !== count($cart)) {
+            bookili_cash_conflict($pdo, 'Le panier ne correspond plus au ticket en attente.');
+        }
+        foreach ($cart as $index => $line) {
+            $saved = $ticketLines[$index] ?? null;
+            if (!$saved || (int) $saved['quantity'] !== $line['quantity'] || (int) $saved['unit_price_dzd'] !== $line['price']) {
+                bookili_cash_conflict($pdo, 'Le panier ne correspond plus au ticket en attente.');
+            }
+        }
     }
     $appointment = null;
     $appointmentServices = [];
@@ -132,7 +378,7 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
             bookili_cash_conflict($pdo, 'Carte cadeau introuvable, expirée ou sans solde.');
         }
     }
-    foreach ($cart as &$line) {
+    foreach ($cart as $index => &$line) {
         $product = $line['kind'] === 'product';
         $item = $appointmentId !== null
             ? ['name' => $line['name'], 'price_dzd' => $line['price']]
@@ -145,7 +391,7 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
         if ($product && (!(int) $item['is_active'] || (int) $item['quantity'] < $line['quantity'])) {
             bookili_cash_conflict($pdo, 'Produit archivé ou stock insuffisant : vérifiez votre panier.');
         }
-        $line['name'] = $item['name'];
+        $line['name'] = $ticketLines[$index]['item_name'] ?? $item['name'];
         if ($product) $line['after'] = (int) $item['quantity'] - $line['quantity'];
         $total += $line['quantity'] * $line['price'];
     }
@@ -179,6 +425,10 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
         if ($line['kind'] === 'product') {
             bookili_write_stock_movement($pdo, $line['id'], $actorId, bin2hex(random_bytes(16)), -$line['quantity'], $line['after'], "Vente n° $saleId", $now);
         }
+    }
+    if ($ticketId !== null) {
+        $pdo->prepare("UPDATE cash_tickets SET status = 'paid', sale_id = :sale, revision = revision + 1, updated_at = :now WHERE id = :id")
+            ->execute(['sale' => $saleId, 'now' => $now, 'id' => $ticketId]);
     }
     if ($giftCard && $applied > 0) {
         $balance = (int) $giftCard['balance_dzd'] - $applied;
@@ -415,6 +665,9 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === 'professional-cas
         $actorId = (int) $account['id'];
         if ($method === 'POST') {
             if (($data['action'] ?? '') === 'record') bookili_cash_record($pdo, $actorId, $data);
+            if (($data['action'] ?? '') === 'save_ticket') bookili_cash_ticket_save($pdo, $actorId, $data);
+            if (($data['action'] ?? '') === 'update_ticket') bookili_cash_ticket_update($pdo, $actorId, $data);
+            if (($data['action'] ?? '') === 'cancel_ticket') bookili_cash_ticket_cancel($pdo, $actorId, $data);
             if (($data['action'] ?? '') === 'void') bookili_cash_void($pdo, $actorId, $data);
             bookili_json_response(422, ['error' => 'Action de caisse invalide.']);
         }
@@ -422,6 +675,8 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === 'professional-cas
         $view = $_GET['view'] ?? 'journal';
         if ($view === 'catalog') bookili_cash_catalog($pdo, $salonId);
         if ($view === 'sale') bookili_json_response(200, bookili_cash_sale($pdo, $salonId, bookili_id($_GET['saleId'] ?? null)));
+        if ($view === 'tickets') bookili_cash_tickets($pdo, $salonId);
+        if ($view === 'ticket') bookili_json_response(200, bookili_cash_ticket($pdo, $salonId, bookili_id($_GET['ticketId'] ?? null)));
         if ($view === 'overview') bookili_cash_overview($pdo, $salonId);
         if ($view === 'cards') {
             $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;

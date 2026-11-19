@@ -135,8 +135,9 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/013_marketing_campaigns.sql`,
 `database/migrations/014_staff_hours.sql`,
 `database/migrations/015_password_reset.sql`, puis
-`database/migrations/016_appointment_notes.sql` et
-`database/migrations/017_appointment_services.sql` dans phpMyAdmin,
+`database/migrations/016_appointment_notes.sql`,
+`database/migrations/017_appointment_services.sql` et
+`database/migrations/018_cash_pending_tickets.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -342,6 +343,13 @@ règlements et une ventilation par jour. Les rendez-vous comptés ont un horaire
 passé et sont confirmés ; BOOKILI ne suit pas encore la présence effective du
 client.
 
+**Caisse → Tickets en attente** permet de sauvegarder un panier, de le reprendre
+ou de l’abandonner. Les tickets sont isolés par salon, versionnés pour éviter
+les écrasements concurrents et réessayables sans créer de doublon après une
+réponse réseau incertaine. Le stock n’est pas réservé lors de la mise en
+attente ; prix, disponibilité et quantité sont revérifiés à l’encaissement, qui
+marque le ticket payé dans la même transaction que la vente.
+
 Le test `tests/cash.py` utilise les mêmes variables que `tests/bookings.py` et
 nécessite sa propre base jetable et plusieurs workers PHP.
 
@@ -434,7 +442,8 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/012_multi_staff.sql`,
 `database/migrations/013_marketing_campaigns.sql`,
 `database/migrations/014_staff_hours.sql`,
-`database/migrations/015_password_reset.sql` et
-`database/migrations/016_appointment_notes.sql` et
-`database/migrations/017_appointment_services.sql`, dans cet ordre,
+`database/migrations/015_password_reset.sql`,
+`database/migrations/016_appointment_notes.sql`,
+`database/migrations/017_appointment_services.sql` et
+`database/migrations/018_cash_pending_tickets.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.
