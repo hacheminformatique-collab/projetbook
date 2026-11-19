@@ -55,7 +55,7 @@ BOOKILI_TEST_URL=http://localhost:8765 BOOKILI_TEST_SETUP_TOKEN=cle_de_test pyth
 ```
 
 Le test `tests/bookings.py` couvre l'inscription et la validation pro, la
-publication, la recherche, les disponibilités, les droits d'accès, les
+publication, la recherche des salons et des villes, les disponibilités, les droits d'accès, les
 modifications, les annulations et deux réservations concurrentes. Utiliser
 une **nouvelle base jetable**, une clé de configuration valide et plusieurs
 workers PHP pour exercer la concurrence réelle :
@@ -275,7 +275,9 @@ active et un jour d'ouverture. Une prestation peut être modifiée ou masquée
 sans supprimer l'historique.
 
 L'annuaire `/recherche` filtre les salons publiés par nom de salon,
-prestation, ville, wilaya et catégorie, avec pagination. Depuis les résultats,
+prestation, ville, wilaya et catégorie, avec pagination. La saisie de ville
+propose les villes d'Algérie où des établissements publics sont répertoriés ;
+elle reste libre et n'exige pas de géolocalisation. Depuis les résultats,
 le formulaire permet de modifier le salon ou la prestation recherchée, la
 ville et la wilaya sans revenir à l’accueil. Les nouveaux filtres conservent
 la catégorie sélectionnée et repartent à la première page. La fiche

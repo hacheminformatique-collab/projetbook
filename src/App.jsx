@@ -6,6 +6,7 @@ import ProfessionalSpace from "./Professional.jsx";
 import PasswordReset from "./PasswordReset.jsx";
 import { apiRequest, apiUrl, serviceCategories } from "./api-client.js";
 import HomeSearch from "./HomeSearch.jsx";
+import AlgerianCityInput from "./AlgerianCityInput.jsx";
 import { AdminAccounts, AdminBilling, AdminCampaigns, AdminProfileReviews } from "./AdminOperations.jsx";
 import { InstallLink, InstallPage } from "./PwaInstall.jsx";
 
@@ -175,7 +176,7 @@ function SearchResults() {
           </p>
           <form key={search} className="booking-toolbar results-filters" role="search" aria-label="Affiner la recherche" onSubmit={applyFilters}>
             <label>Salon ou prestation<input name="q" maxLength={100} defaultValue={query} /></label>
-            <label>Ville en Algérie<input name="ville" maxLength={100} defaultValue={city} /></label>
+            <label>Ville en Algérie<AlgerianCityInput key={search} name="ville" defaultValue={city} /></label>
             <label>Wilaya<select name="wilaya" defaultValue={wilayaName ? requestedWilaya : ""}>
               <option value="">Toutes les wilayas</option>
               {algerianWilayas.map(({ code, name }) => <option key={code} value={code}>{name}</option>)}

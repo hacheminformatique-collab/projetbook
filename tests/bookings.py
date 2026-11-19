@@ -114,6 +114,11 @@ def main():
     assert expect(other_pro.request("professional-salon.php"), 200)["salon"]["booking_message"] == ""
     search = expect(guest.request(f"salons.php?q={SUFFIX}&wilaya=19&categorie=coiffeur"), 200)
     assert [int(row["id"]) for row in search["salons"]] == [salon_id]
+    cities = expect(guest.request("salons.php?view=cities&q=Set"), 200)["cities"]
+    assert "Setif" in cities
+    assert expect(guest.request("salons.php?view=cities&q=%25"), 200)["cities"] == []
+    assert expect(guest.request("salons.php?view=cities&q=S"), 200)["cities"] == []
+    expect(guest.request("salons.php?view=cities&q[]=Set"), 422)
     assert [int(row["id"]) for row in expect(guest.request(f"salons.php?ville=Setif&q={SUFFIX}&categorie=coiffeur"), 200)["salons"]] == [salon_id]
     assert not expect(guest.request(f"salons.php?ville=Set&q={SUFFIX}"), 200)["salons"]
     assert not expect(guest.request(f"salons.php?ville=Paris&q={SUFFIX}"), 200)["salons"]

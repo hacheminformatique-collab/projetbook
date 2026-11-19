@@ -155,6 +155,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .results-filters { margin-bottom: 20px; }
 .results-filters label { flex: 1 1 180px; min-width: 0; }
 .results-filters .search-button { min-height: 42px; }
+.city-suggestion-error { display: block; max-width: 24rem; color: #8a3448; font-size: 12px; }
 .results-categories { display: flex; flex-wrap: wrap; gap: 8px; scroll-margin-top: 92px; }
 .results-categories a { padding: 9px 13px; border-radius: 99px; border: 1px solid #edc9da; background: #fff; }
 .results-categories a:hover, .results-categories a[aria-current] { background: var(--rose-soft); color: var(--rose-ink); }

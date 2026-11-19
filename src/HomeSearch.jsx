@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import AlgerianCityInput from "./AlgerianCityInput.jsx";
 
 const icons = {
   location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></>,
@@ -43,7 +44,7 @@ export default function HomeSearch() {
       <label className="search-field location-field">
         <Icon name="location" />
         <span className="visually-hidden">Ville en Algérie</span>
-        <input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Votre ville" maxLength={100} />
+        <AlgerianCityInput value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Votre ville" />
       </label>
       <label className="search-field service-field">
         <Icon name="search" />

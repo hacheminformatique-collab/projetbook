@@ -5,6 +5,27 @@ bookili_require_method('GET');
 
 try {
     $pdo = bookili_database();
+    if (($_GET['view'] ?? '') === 'cities') {
+        $query = $_GET['q'] ?? '';
+        if (!is_string($query) || strlen($query) > 400) {
+            bookili_json_response(422, ['error' => 'La recherche de ville est invalide.']);
+        }
+        $query = trim($query);
+        if (strlen($query) < 2) bookili_json_response(200, ['cities' => []]);
+        $pattern = strtr($query, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
+        $statement = $pdo->prepare(
+            "SELECT DISTINCT s.city FROM salons s
+             INNER JOIN professional_profiles p ON p.id = s.professional_profile_id
+             INNER JOIN accounts a ON a.id = p.account_id
+             WHERE s.is_public = 1 AND a.status = 'active' AND a.role = 'professional'
+             AND EXISTS (SELECT 1 FROM salon_hours h WHERE h.salon_id = s.id)
+             AND EXISTS (SELECT 1 FROM services v WHERE v.salon_id = s.id AND v.is_active = 1)
+             AND s.city LIKE :query ESCAPE '!'
+             ORDER BY s.city LIMIT 10"
+        );
+        $statement->execute(['query' => $pattern]);
+        bookili_json_response(200, ['cities' => array_column($statement->fetchAll(), 'city')]);
+    }
     if (isset($_GET['id'])) {
         $salon = bookili_public_salon($pdo, bookili_id($_GET['id']));
         $statement = $pdo->prepare(

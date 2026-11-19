@@ -85,8 +85,13 @@ try {
       if (url.pathname.endsWith("/api/session.php")) {
         data = { authenticated: true, account: { role: "professional" }, csrfToken: "test" };
       } else if (url.pathname.endsWith("/api/salons.php")) {
-        window.directoryQuery = Object.fromEntries(url.searchParams);
-        data = { salons: [], hasMore: false };
+        if (url.searchParams.get("view") === "cities") {
+          window.citySuggestionQuery = url.searchParams.get("q");
+          data = { cities: ["Sétif", "Setif", "Oran"].filter((city) => city.toLowerCase().startsWith(window.citySuggestionQuery.toLowerCase())) };
+        } else {
+          window.directoryQuery = Object.fromEntries(url.searchParams);
+          data = { salons: [], hasMore: false };
+        }
       } else if (url.pathname.endsWith("/api/professional-salon.php")) {
         data = { salon: { id: 1, name: "Salon test", is_public: 1 }, hours: [] };
       } else if (url.pathname.endsWith("/api/professional-agenda.php")) {
@@ -341,6 +346,13 @@ try {
   await waitFor("window.directoryQuery?.page === '2'");
   const filterValues = () => evaluate("Object.fromEntries(new FormData(document.querySelector('.results-filters')))");
   assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19" });
+  await evaluate(`(() => {
+    const input = document.querySelector('.results-filters input[name=ville]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Sé');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor("window.citySuggestionQuery === 'Sé'");
+  assert.equal(await evaluate("document.querySelector('.results-filters input[name=ville]').list.options[0]?.value"), "Sétif");
   assert.match(await evaluate("document.querySelector('.results-summary').textContent"), /Sétif · Wilaya : Sétif/);
   assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);
   await evaluate(`(() => {
@@ -357,6 +369,18 @@ try {
   await waitFor("window.directoryQuery?.page === '2'");
   assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19" });
   console.log("Public directory filters passed.");
+
+  await send("Page.navigate", { url: `${origin}/masalledereception/` });
+  await waitFor("!!document.querySelector('.search-panel .location-field input')");
+  await evaluate(`(() => {
+    const input = document.querySelector('.search-panel .location-field input');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Ora');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor("window.citySuggestionQuery === 'Ora'");
+  assert.equal(await evaluate("document.querySelector('.search-panel .location-field input').list.options[0]?.value"), "Oran");
+  assert.equal(await evaluate("document.querySelector('.search-panel .location-field input').value"), "Ora", "suggestions must not replace the manually entered value");
+  console.log("Algerian city suggestions passed.");
 } finally {
   const closed = once(chrome, "exit");
   chrome.kill("SIGTERM");
