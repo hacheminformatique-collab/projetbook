@@ -275,7 +275,10 @@ active et un jour d'ouverture. Une prestation peut être modifiée ou masquée
 sans supprimer l'historique.
 
 L'annuaire `/recherche` filtre les salons publiés par nom de salon,
-prestation, ville, wilaya et catégorie, avec pagination. La fiche
+prestation, ville, wilaya et catégorie, avec pagination. Depuis les résultats,
+le formulaire permet de modifier le salon ou la prestation recherchée, la
+ville et la wilaya sans revenir à l’accueil. Les nouveaux filtres conservent
+la catégorie sélectionnée et repartent à la première page. La fiche
 `/salons/ID` présente les prestations, l'adresse, le téléphone et les
 disponibilités. Les comptes suspendus et les salons masqués ne sont pas
 réservables.

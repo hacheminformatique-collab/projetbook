@@ -129,6 +129,7 @@ function HomePage() {
 
 function SearchResults() {
   const { search, hash } = useLocation();
+  const navigate = useNavigate();
   useEffect(() => {
     if (hash === "#categories") document.getElementById("categories")?.scrollIntoView();
     else window.scrollTo({ top: 0, behavior: "instant" });
@@ -139,6 +140,17 @@ function SearchResults() {
   const wilayaName = isWilayaCode(requestedWilaya) ? getWilayaName(requestedWilaya) : null;
   const city = (params.get("ville") || "").trim();
   const category = serviceCategories.find(([value]) => value === params.get("categorie"));
+  function applyFilters(event) {
+    event.preventDefault();
+    const fields = new FormData(event.currentTarget);
+    const next = new URLSearchParams();
+    for (const filter of ["q", "ville", "wilaya"]) {
+      const value = fields.get(filter).trim();
+      if (value) next.set(filter, value);
+    }
+    if (category) next.set("categorie", category[0]);
+    navigate(`/recherche${next.size ? `?${next}` : ""}`);
+  }
   function categoryLink(value) {
     const next = new URLSearchParams(params);
     next.delete("page");
@@ -158,15 +170,24 @@ function SearchResults() {
           <p className="results-summary">
             {category ? `${category[1]} · ` : ""}
             {query ? <>Recherche : <strong>« {query} »</strong></> : "Toutes les prestations"}
-            {city ? <> · {city}</> : wilayaName ? <> · {wilayaName}</> : " · Toutes les wilayas"}
+            {city && <> · {city}</>}
+            {wilayaName ? <> · Wilaya : {wilayaName}</> : !city && " · Toutes les wilayas"}
           </p>
+          <form key={search} className="booking-toolbar results-filters" role="search" aria-label="Affiner la recherche" onSubmit={applyFilters}>
+            <label>Salon ou prestation<input name="q" maxLength={100} defaultValue={query} /></label>
+            <label>Ville en Algérie<input name="ville" maxLength={100} defaultValue={city} /></label>
+            <label>Wilaya<select name="wilaya" defaultValue={wilayaName ? requestedWilaya : ""}>
+              <option value="">Toutes les wilayas</option>
+              {algerianWilayas.map(({ code, name }) => <option key={code} value={code}>{name}</option>)}
+            </select></label>
+            <button type="submit" className="search-button">Rechercher</button>
+          </form>
           <nav className="results-categories" aria-label="Catégories de prestation" id="categories">
             {[["", "Toutes"], ...serviceCategories].map(([value, label]) =>
               <Link key={value} aria-current={(category?.[0] || "") === value ? "true" : undefined} to={categoryLink(value)}>{label}</Link>
             )}
           </nav>
           <DirectoryResults search={search} />
-          <Link className="back-link" to="/">Modifier ma recherche</Link>
         </section>
       </main>
       <Footer />

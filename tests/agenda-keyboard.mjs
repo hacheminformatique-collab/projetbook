@@ -84,6 +84,9 @@ try {
       let data;
       if (url.pathname.endsWith("/api/session.php")) {
         data = { authenticated: true, account: { role: "professional" }, csrfToken: "test" };
+      } else if (url.pathname.endsWith("/api/salons.php")) {
+        window.directoryQuery = Object.fromEntries(url.searchParams);
+        data = { salons: [], hasMore: false };
       } else if (url.pathname.endsWith("/api/professional-salon.php")) {
         data = { salon: { id: 1, name: "Salon test", is_public: 1 }, hours: [] };
       } else if (url.pathname.endsWith("/api/professional-agenda.php")) {
@@ -333,6 +336,27 @@ try {
   await waitFor("document.querySelector('.workspace-tabs [aria-current=page]')?.textContent === 'Vente'");
   assert.equal(await evaluate("!!document.querySelector('.appointment-card')"), false, "normal cash navigation must not reopen an old sale");
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
+
+  await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&page=2` });
+  await waitFor("window.directoryQuery?.page === '2'");
+  const filterValues = () => evaluate("Object.fromEntries(new FormData(document.querySelector('.results-filters')))");
+  assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19" });
+  assert.match(await evaluate("document.querySelector('.results-summary').textContent"), /Sétif · Wilaya : Sétif/);
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);
+  await evaluate(`(() => {
+    const form = document.querySelector('.results-filters');
+    form.elements.q.value = '  Brushing  ';
+    form.elements.ville.value = ' ';
+    form.elements.wilaya.value = '31';
+    form.requestSubmit();
+  })()`);
+  await waitFor("window.directoryQuery?.wilaya === '31'");
+  assert.deepEqual(await evaluate("window.directoryQuery"), { q: "Brushing", wilaya: "31", categorie: "coiffeur" });
+  assert.match(await evaluate("document.querySelector('.results-summary').textContent"), /Brushing.*Wilaya : Oran/);
+  await evaluate("history.back()");
+  await waitFor("window.directoryQuery?.page === '2'");
+  assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19" });
+  console.log("Public directory filters passed.");
 } finally {
   const closed = once(chrome, "exit");
   chrome.kill("SIGTERM");
