@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { algerianDate, apiRequest, appointmentDate, priceLabel } from "./api-client.js";
 import { currentTimePosition } from "./lib/agenda-time.js";
+import { ClientProfile } from "./ProfessionalClients.jsx";
 
 const minutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
 const timeLabel = (value) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
@@ -161,15 +162,11 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
       </p>
       <ul className="agenda-service-lines">{(appointment.services || [{ name: appointment.service_name, duration_minutes: (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000, price_dzd: appointment.price_dzd }]).map((item) =>
         <li key={item.id || item.name}>{item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</li>)}</ul>
-      <button type="button" className="agenda-client-link" onClick={() => setShowClient(!showClient)} aria-expanded={showClient}>
+      <button type="button" className="agenda-client-link" onClick={() => setShowClient(!showClient)} aria-expanded={showClient} aria-controls={`agenda-client-${appointment.id}`}>
         {appointment.first_name} {appointment.last_name}
       </button>
-      {showClient && <section className="agenda-client-info">
-        <h3>Fiche client</h3>
-        <p>Téléphone : <a href={`tel:${appointment.phone_number}`}>{appointment.phone_number}</a><br />
-          E-mail : <a href={`mailto:${appointment.email}`}>{appointment.email}</a><br />
-          Date de naissance : {appointment.date_of_birth.split("-").reverse().join("/")}
-        </p>
+      {showClient && <section className="agenda-client-info" id={`agenda-client-${appointment.id}`}>
+        <ClientProfile key={appointment.client_id} clientId={appointment.client_id} csrfToken={csrfToken} />
       </section>}
       {notice && <p className={`form-message ${notice.error ? "form-error" : "form-success"}`} role={notice.error ? "alert" : "status"}>{notice.text}</p>}
       <form className="auth-form" onSubmit={saveNote}>

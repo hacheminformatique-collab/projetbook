@@ -310,7 +310,10 @@ La fiche affiche ses coordonnées, ses statistiques de rendez-vous, les ventes
 liées aux rendez-vous et l’historique paginé, avec les notes privées déjà
 laissées sur chaque rendez-vous. Une note privée permanente peut aussi être
 ajoutée au client ; elle est isolée par salon et invisible au client et aux
-autres établissements. La suppression et la fusion de comptes doublons ne sont
+autres établissements. Dans la fiche rendez-vous de l’agenda, cliquez sur le nom
+du client pour ouvrir cette même fiche complète, consulter l’historique paginé
+et modifier sa note permanente sans quitter l’agenda.
+La suppression et la fusion de comptes doublons ne sont
 pas encore proposées afin d’éviter des changements irréversibles sur les
 comptes ou les rendez-vous d’autres salons.
 

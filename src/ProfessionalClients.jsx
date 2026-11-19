@@ -17,10 +17,6 @@ export default function ProfessionalClients({ csrfToken }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
-  const [historyPage, setHistoryPage] = useState(1);
-  const [detailRevision, setDetailRevision] = useState(0);
-  const [detail, setDetail] = useState(null);
-  const [detailError, setDetailError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -32,24 +28,6 @@ export default function ProfessionalClients({ csrfToken }) {
       .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
     return () => controller.abort();
   }, [page, query]);
-
-  useEffect(() => {
-    if (selectedId === null) {
-      setDetail(null);
-      setDetailError("");
-      return undefined;
-    }
-    const controller = new AbortController();
-    const params = new URLSearchParams({
-      clientId: String(selectedId), historyPage: String(historyPage),
-    });
-    setDetail(null);
-    setDetailError("");
-    apiRequest(`professional-clients.php?${params}`, { signal: controller.signal })
-      .then(setDetail)
-      .catch((cause) => { if (!controller.signal.aborted) setDetailError(cause.message); });
-    return () => controller.abort();
-  }, [selectedId, historyPage, detailRevision]);
 
   function submitSearch(event) {
     event.preventDefault();
@@ -91,7 +69,6 @@ export default function ProfessionalClients({ csrfToken }) {
         <div className="client-directory-actions">
           <a className="admin-nav-link" href={`tel:${client.phone_number}`}>Appeler</a>
           <button className="admin-nav-link" type="button" aria-expanded={Number(selectedId) === client.id} onClick={() => {
-            setHistoryPage(1);
             setSelectedId(Number(selectedId) === client.id ? null : client.id);
           }}>{Number(selectedId) === client.id ? "Fermer la fiche" : "Ouvrir la fiche"}</button>
         </div>
@@ -102,18 +79,40 @@ export default function ProfessionalClients({ csrfToken }) {
       {result.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
     </nav>}
     {selectedId !== null && <div className="client-profile-panel">
-      {detailError && <Feedback notice={{ kind: "error", text: detailError }} />}
-      {!detail && !detailError && <p role="status">Chargement de la fiche client…</p>}
-      {detail && <ClientDetail
-        key={detail.client.id}
-        csrfToken={csrfToken}
-        detail={detail}
-        historyPage={historyPage}
-        onHistoryPage={setHistoryPage}
-        onNoteSaved={() => setDetailRevision((value) => value + 1)}
-      />}
+      <ClientProfile key={selectedId} clientId={selectedId} csrfToken={csrfToken} />
     </div>}
   </section>;
+}
+
+export function ClientProfile({ clientId, csrfToken }) {
+  const [historyPage, setHistoryPage] = useState(1);
+  const [revision, setRevision] = useState(0);
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({ clientId: String(clientId), historyPage: String(historyPage) });
+    setDetail(null);
+    setError("");
+    apiRequest(`professional-clients.php?${params}`, { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) setDetail(result); })
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
+    return () => controller.abort();
+  }, [clientId, historyPage, revision]);
+
+  return <>
+    {error && <Feedback notice={{ kind: "error", text: error }} />}
+    {!detail && !error && <p role="status">Chargement de la fiche client…</p>}
+    {detail && <ClientDetail
+      key={detail.client.id}
+      csrfToken={csrfToken}
+      detail={detail}
+      historyPage={historyPage}
+      onHistoryPage={setHistoryPage}
+      onNoteSaved={() => setRevision((value) => value + 1)}
+    />}
+  </>;
 }
 
 function ClientDetail({ csrfToken, detail, historyPage, onHistoryPage, onNoteSaved }) {

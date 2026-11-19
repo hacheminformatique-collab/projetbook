@@ -75,6 +75,7 @@ try {
       static now() { return new OriginalDate("2026-11-19T09:30:45Z").valueOf(); }
     };
     const originalFetch = window.fetch;
+    let clientNote = "Préférence salon";
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === "string" ? input : input.url, location.href);
       let data;
@@ -92,12 +93,42 @@ try {
           ],
           staffAbsences: [{ staff_id: 2 }],
           appointments: date === "2026-11-19" ? [{
-            id: 3, staff_id: 1, starts_at: date + " 11:00:00", ends_at: date + " 11:30:00",
+            id: 3, client_id: 7, staff_id: 1, starts_at: date + " 11:00:00", ends_at: date + " 11:30:00",
             first_name: "Test", last_name: "Client", service_name: "Coupe", private_note: "",
           }] : [],
           services: [{ id: 1, name: "Coupe", duration_minutes: 30, price_dzd: 1000 }],
           displaySettings: { showTime: true, showClient: true, showServices: true, showNote: true, showAddButton: true },
         };
+      } else if (url.pathname.endsWith("/api/professional-clients.php")) {
+        if (options?.method === "POST") {
+          const body = JSON.parse(options.body);
+          if (body.clientId !== 7 || body.action !== "save_note") throw Error("Unexpected client mutation");
+          clientNote = body.note;
+          data = { message: "Note enregistrée." };
+        } else if (!url.searchParams.has("clientId")) {
+          data = { total: 1, hasMore: false, clients: [{
+            id: 7, first_name: "Test", last_name: "Client", email: "client@example.test",
+            phone_number: "0550123456", appointment_count: 2, latest_visit: null,
+          }] };
+        } else {
+          if (url.searchParams.get("clientId") !== "7") throw Error("Unexpected client");
+          const secondPage = url.searchParams.get("historyPage") === "2";
+          data = {
+            client: {
+              id: 7, first_name: "Test", last_name: "Client", email: "client@example.test",
+              phone_number: "0550123456", date_of_birth: "1990-01-01",
+              appointment_count: 2, confirmed_count: 2, cancelled_count: 0,
+              latest_visit: null, next_appointment: null, total_spent_dzd: 0,
+              private_note: clientNote, private_note_updated_at: null,
+            },
+            appointments: [{
+              id: secondPage ? 1 : 3, starts_at: secondPage ? "2026-10-10 09:00:00" : "2026-11-19 11:00:00",
+              service_name: secondPage ? "Ancien soin" : "Coupe", status: "confirmed",
+              price_dzd: 1000, private_note: "", sale_total_dzd: null,
+            }],
+            hasMoreHistory: !secondPage,
+          };
+        }
       } else if (url.pathname.endsWith("/api/availability.php")) {
         data = { slots: ["11:30", "11:45"], staff: [
           { id: 1, name: "Sonia", is_absent: false }, { id: 2, name: "Lina", is_absent: true },
@@ -129,6 +160,22 @@ try {
   await key("Escape");
   await waitFor("!document.querySelector('.agenda-create')");
   assert.match(await evaluate("document.activeElement.getAttribute('aria-label')"), /Sonia.*11:30/);
+  await evaluate("document.querySelector('.agenda-booking').click()");
+  await waitFor("!!document.querySelector('.agenda-client-link')");
+  await evaluate("document.querySelector('.agenda-client-link').click()");
+  await waitFor("!!document.querySelector('.agenda-client-info textarea')");
+  assert.equal(await evaluate("document.querySelector('.agenda-client-info textarea').value"), "Préférence salon");
+  await evaluate(`(() => {
+    const textarea = document.querySelector('.agenda-client-info textarea');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'Nouvelle préférence');
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await evaluate("document.querySelector('.client-private-note button').click()");
+  await waitFor("document.querySelector('.agenda-client-info textarea')?.value === 'Nouvelle préférence'");
+  await evaluate("Array.from(document.querySelectorAll('.agenda-client-info button')).find(b => b.textContent.includes('plus anciens')).click()");
+  await waitFor("document.querySelector('.agenda-client-info')?.textContent.includes('Ancien soin')");
+  await key("Escape");
+  await waitFor("!document.querySelector('[role=dialog]')");
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await waitFor("document.querySelectorAll('.agenda-day-column').length === 1");
   assert.equal(await evaluate("document.querySelector('.agenda-scroll').scrollWidth <= document.querySelector('.agenda-scroll').clientWidth"), true);
@@ -145,6 +192,12 @@ try {
   await evaluate("document.querySelector('.agenda-slot-free[tabindex=\"0\"]').click()");
   await waitFor("!!document.querySelector('.agenda-create')");
   assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);
+  await key("Escape");
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Clients').click()");
+  await waitFor("!!document.querySelector('.client-directory-row')");
+  await evaluate("Array.from(document.querySelectorAll('.client-directory-actions button')).find(b => b.textContent === 'Ouvrir la fiche').click()");
+  await waitFor("!!document.querySelector('.client-profile-panel textarea')");
+  assert.equal(await evaluate("document.querySelector('.client-profile-panel textarea').value"), "Nouvelle préférence");
   console.log("Agenda keyboard navigation and focus checks passed.");
 } finally {
   const closed = once(chrome, "exit");
