@@ -85,6 +85,9 @@ Le test `tests/professional-agenda.py` vérifie les notes privées, les droits
 par salon, la recherche et la création de clients, le cumul de prestations,
 les créneaux, et l’encaissement unique lié au rendez-vous ; il exige également
 une base jetable neuve et les mêmes variables.
+Le test `tests/professional-clients.py` couvre la recherche, la fiche et
+l’historique des rendez-vous, les notes privées permanentes et l’isolation
+des données entre salons.
 
 La clé de test doit correspondre à `setup_token` et contenir au moins
 64 caractères. Les tests qui créent le super-admin ne doivent pas partager
@@ -137,7 +140,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/015_password_reset.sql`, puis
 `database/migrations/016_appointment_notes.sql`,
 `database/migrations/017_appointment_services.sql` et
-`database/migrations/018_cash_pending_tickets.sql` dans phpMyAdmin,
+`database/migrations/018_cash_pending_tickets.sql` et
+`database/migrations/019_professional_client_notes.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -250,8 +254,15 @@ La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
 un glisser-déposer vers un créneau visible en vue jour ou semaine prépare le
 déplacement, à confirmer depuis la fiche ; sur mobile, la fiche permet de
 choisir le nouvel horaire.
-Les notes permanentes sur la fiche client restent à développer. L'onglet Clients ne montre
-que les clients ayant un rendez-vous non annulé dans son propre salon.
+L’onglet **Clients** permet de rechercher par nom, téléphone ou e-mail, puis
+d’ouvrir la fiche d’un client ayant un rendez-vous confirmé dans le salon.
+La fiche affiche ses coordonnées, ses statistiques de rendez-vous, les ventes
+liées aux rendez-vous et l’historique paginé, avec les notes privées déjà
+laissées sur chaque rendez-vous. Une note privée permanente peut aussi être
+ajoutée au client ; elle est isolée par salon et invisible au client et aux
+autres établissements. La suppression et la fusion de comptes doublons ne sont
+pas encore proposées afin d’éviter des changements irréversibles sur les
+comptes ou les rendez-vous d’autres salons.
 
 **Périmètre de cette version :**
 - Un agenda par établissement, avec plusieurs rendez-vous simultanés possibles
@@ -445,5 +456,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/015_password_reset.sql`,
 `database/migrations/016_appointment_notes.sql`,
 `database/migrations/017_appointment_services.sql` et
-`database/migrations/018_cash_pending_tickets.sql`, dans cet ordre,
+`database/migrations/018_cash_pending_tickets.sql` et
+`database/migrations/019_professional_client_notes.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import ProfessionalAgenda from "./ProfessionalAgenda.jsx";
 import AgendaCalendar from "./AgendaCalendar.jsx";
 import CashRegister from "./CashRegister.jsx";
+import ProfessionalClients from "./ProfessionalClients.jsx";
 import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
 
@@ -98,7 +99,7 @@ export default function ProfessionalSpace() {
             }} />}
             {view === "closures" && <ClosureSettings csrfToken={session.csrfToken} />}
             {view === "cash" && <CashRegister csrfToken={session.csrfToken} appointment={cashAppointment} onAppointmentHandled={() => setCashAppointment(null)} />}
-            {view === "directory" && <ProfessionalClients />}
+            {view === "directory" && <ProfessionalClients csrfToken={session.csrfToken} />}
             {view === "services" && <ServiceSettings csrfToken={session.csrfToken} />}
             {view === "staff" && <StaffSettings csrfToken={session.csrfToken} salonHours={configuration.hours} />}
             {view === "salon" && <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} />}
@@ -108,7 +109,6 @@ export default function ProfessionalSpace() {
     </div>
   );
 }
-
 function staffHoursForm(staffHours = []) {
   return weekDays.map((_, index) => {
     const weekday = index + 1;
@@ -253,7 +253,6 @@ function ClosureSettings({ csrfToken }) {
     </section>
   );
 }
-
 function SalonSettings({ configuration, csrfToken, onSaved }) {
   const [hours, setHours] = useState(() => weekDays.map((_, index) => {
     const row = configuration.hours.find((hour) => Number(hour.weekday) === index + 1);
@@ -370,42 +369,6 @@ function ServiceSettings({ csrfToken }) {
           </div>
         </fieldset>
       </form>}
-    </section>
-  );
-}
-
-function ProfessionalClients() {
-  const [page, setPage] = useState(1);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    const controller = new AbortController();
-    setResult(null);
-    setError("");
-    apiRequest(`professional-clients.php?page=${page}`, { signal: controller.signal })
-      .then(setResult)
-      .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
-    return () => controller.abort();
-  }, [page]);
-  return (
-    <section className="client-card">
-      <h2>Mes clients</h2>
-      <p className="field-hint">Clients ayant au moins un rendez-vous non annulé dans votre établissement.</p>
-      {error && <p className="form-message form-error" role="alert">{error}</p>}
-      {!result && !error && <p>Chargement…</p>}
-      {result?.clients.length === 0 && <p>Aucun client pour le moment.</p>}
-      <div className="service-list">
-        {result?.clients.map((client, index) => (
-          <article className="service-row" key={index}>
-            <span><strong>{client.first_name} {client.last_name}</strong><br />{client.appointment_count} rendez-vous non annulé(s)</span>
-            <a className="inline-link" href={`tel:${client.phone_number}`}>{client.phone_number}</a>
-          </article>
-        ))}
-      </div>
-      {result && <nav className="pagination" aria-label="Pages des clients">
-        {page > 1 && <button className="admin-nav-link" type="button" onClick={() => setPage(page - 1)}>Précédent</button>}
-        {result.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
-      </nav>}
     </section>
   );
 }

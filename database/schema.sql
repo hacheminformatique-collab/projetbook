@@ -216,6 +216,18 @@ CREATE TABLE IF NOT EXISTS appointment_private_notes (
     FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS professional_client_notes (
+  salon_id BIGINT UNSIGNED NOT NULL,
+  client_id BIGINT UNSIGNED NOT NULL,
+  note TEXT NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (salon_id, client_id),
+  CONSTRAINT professional_client_notes_salon_fk
+    FOREIGN KEY (salon_id) REFERENCES salons (id) ON DELETE CASCADE,
+  CONSTRAINT professional_client_notes_client_fk
+    FOREIGN KEY (client_id) REFERENCES accounts (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS appointment_services (
   appointment_id BIGINT UNSIGNED NOT NULL,
   position TINYINT UNSIGNED NOT NULL,
