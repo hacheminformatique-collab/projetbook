@@ -103,6 +103,10 @@ Après `tests/professional-agenda.py`, `BOOKILI_DISPOSABLE_TEST=1 php tests/noti
 teste les livraisons, reprises et traitements concurrents avec une boîte aux
 lettres simulée. Il modifie la file d'attente et nécessite impérativement la
 même base jetable, PDO MySQL et `BOOKILI_CONFIG_PATH` configuré pour le test.
+Sur une autre base jetable préparée par `tests/professional-agenda.py`,
+`BOOKILI_DISPOSABLE_TEST=1 BOOKILI_TEST_URL=http://localhost:8765 php tests/notification-admin.php`
+vérifie les cinq échecs, les délais de reprise, les droits et le suivi
+super-admin ; il nécessite également PHP cURL et la configuration de test.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
@@ -256,6 +260,11 @@ livraison en boîte de réception. Tant que le cron n'est pas activé, les
 notifications restent en attente et les rappels peuvent arriver en retard.
 Une interruption après acceptation par le transport mais avant confirmation en
 base peut entraîner un nouvel envoi lors d'une reprise.
+Dans **Super-admin → Accueil → E-mails de rendez-vous**, les échecs et reprises
+automatiques sont listés par page, sans adresse ni contenu du message. Les
+échecs définitifs peuvent être remis en attente individuellement ou en bloc ;
+le cron effectue ensuite la reprise. Un message devenu obsolète est signalé et
+sera ignoré au traitement. Pour diagnostiquer la cause, consulter le journal PHP.
 Les courriels de confirmation et de modification comprennent désormais
 l’invitation `.ics` du rendez-vous ; les rappels et annulations restent des
 messages texte. Pour plusieurs prestations, les nouveaux e-mails indiquent la

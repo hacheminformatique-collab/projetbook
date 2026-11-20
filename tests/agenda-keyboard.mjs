@@ -80,6 +80,12 @@ try {
     window.cashRequests = [];
     window.staffSaveBody = null;
     window.agendaPauses = false;
+    window.adminNotificationTest = location.pathname === "/masalledereception/super-admin";
+    window.notificationItems = [
+      { id: 11, appointmentId: 55, kind: "confirmation", status: "failed", attempts: 5, reason: "delivery", obsolete: false, nextAttempt: null, appointmentStartsAt: "2026-11-20 10:30:00", salonName: "Salon test" },
+      { id: 12, appointmentId: 56, kind: "reminder_1d", status: "retry", attempts: 1, reason: "delivery", obsolete: false, nextAttempt: "2026-11-19 12:00:00", appointmentStartsAt: "2026-11-20 12:00:00", salonName: "Salon test" },
+      { id: 13, appointmentId: 57, kind: "cancelled", status: "failed", attempts: 5, reason: "interrupted", obsolete: true, nextAttempt: null, appointmentStartsAt: "2026-11-21 12:00:00", salonName: "Salon test" },
+    ];
     window.clientBookingTest = location.pathname.startsWith("/masalledereception/salons/");
     window.clientBookingGuest = new URLSearchParams(location.search).get("bookingTest") === "guest";
     window.multiGuestTest = new URLSearchParams(location.search).get("multiTest") === "1";
@@ -120,7 +126,25 @@ try {
       } else if (url.pathname.endsWith("/api/session.php")) {
         data = window.clientBookingGuest
           ? { authenticated: false }
-          : { authenticated: true, account: { role: window.clientBookingTest ? "client" : "professional" }, csrfToken: "test" };
+          : { authenticated: true, account: { role: window.adminNotificationTest ? "super_admin" : window.clientBookingTest ? "client" : "professional", email: "admin@example.test" }, csrfToken: "test" };
+      } else if (url.pathname.endsWith("/api/admin-homepage-image.php")) {
+        data = { hasImage: false };
+      } else if (url.pathname.endsWith("/api/admin-notifications.php")) {
+        if (options?.method === "POST") {
+          window.notificationPayload = JSON.parse(options.body);
+          if (window.notificationFail) return new Response(JSON.stringify({ error: "Cet e-mail n’est plus en erreur définitive." }), { status: 409, headers: { "Content-Type": "application/json" } });
+          const targets = window.notificationItems.filter(item => item.status === "failed" && (window.notificationPayload.action === "retry-failed" || item.id === window.notificationPayload.notificationId));
+          targets.forEach(item => { item.status = "retry"; item.attempts = 0; item.nextAttempt = "2026-11-19 12:00:00"; item.reason = "unknown"; });
+          data = { retried: targets.length };
+        } else {
+          if (window.notificationLoadFails) return new Response(JSON.stringify({ error: "Chargement indisponible." }), { status: 503, headers: { "Content-Type": "application/json" } });
+          const page = Number(url.searchParams.get("page") || 1);
+          data = {
+            counts: { queued: 0, retry: window.notificationItems.filter(item => item.status === "retry").length, failed: window.notificationItems.filter(item => item.status === "failed").length },
+            nextSend: null, lastSent: null, problems: window.notificationItems.slice((page - 1) * 2, page * 2),
+            hasMoreProblems: page * 2 < window.notificationItems.length,
+          };
+        }
       } else if (url.pathname.endsWith("/api/client-profile.php")) {
         data = { email: "client@example.test", profile: { first_name: "Test", last_name: "Client", phone_number: "0550123456", date_of_birth: "1990-01-01", marketing_consent: 0 } };
       } else if (url.pathname.endsWith("/api/salons.php")) {
@@ -1191,6 +1215,29 @@ try {
   await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
   await waitFor("window.location.pathname === '/masalledereception/espace-client'");
   assert.equal(await evaluate("window.location.origin"), origin);
+
+  await send("Page.navigate", { url: `${origin}/masalledereception/super-admin` });
+  await waitFor("document.querySelector('#notification-settings-title')?.parentElement.textContent.includes('E-mail n° 11')");
+  assert.match(await evaluate("document.querySelector('#notification-settings-title').parentElement.textContent"), /Erreur définitive.*Tentatives : 5\/5.*Reprise automatique.*Reprise possible à partir de/s);
+  await evaluate("document.querySelector('[aria-label=\"Pages des e-mails en échec\"] button').click()");
+  await waitFor("document.querySelector('#notification-settings-title').parentElement.textContent.includes('E-mail n° 13')");
+  assert.match(await evaluate("document.querySelector('#notification-settings-title').parentElement.textContent"), /Message obsolète/);
+  await evaluate("document.querySelector('[aria-label=\"Pages des e-mails en échec\"] button').click()");
+  await waitFor("document.querySelector('#notification-settings-title').parentElement.textContent.includes('E-mail n° 11')");
+  await evaluate("window.notificationFail = true; document.querySelector('#notification-settings-title').parentElement.querySelector('.service-row button').click()");
+  await waitFor("document.querySelector('#notification-settings-title').parentElement.querySelector('[role=alert]')?.textContent.includes('plus en erreur')");
+  assert.deepEqual(await evaluate("window.notificationPayload"), { action: "retry-one", notificationId: 11 });
+  await evaluate("window.notificationFail = false; document.querySelector('#notification-settings-title').parentElement.querySelector('.service-row button').click()");
+  await waitFor("document.querySelector('#notification-settings-title').parentElement.querySelector('[role=status]')?.textContent.includes('1 e-mail')");
+  await waitFor("document.querySelector('#notification-settings-title').parentElement.textContent.includes('Tentatives : 0/5')");
+  await evaluate("Array.from(document.querySelectorAll('#notification-settings-title ~ .review-buttons button')).find(b => b.textContent.includes('tous')).click()");
+  await waitFor("window.notificationPayload?.action === 'retry-failed'");
+  await waitFor("document.querySelector('#notification-settings-title').parentElement.textContent.includes('Tentatives : 0/5')");
+  await evaluate("window.notificationLoadFails = true; Array.from(document.querySelectorAll('#notification-settings-title ~ button')).find(b => b.textContent.includes('Actualiser')).click()");
+  await waitFor("document.querySelector('#notification-settings-title').parentElement.querySelector('[role=alert]')?.textContent.includes('indisponible')");
+  await evaluate("window.notificationLoadFails = false; Array.from(document.querySelectorAll('#notification-settings-title ~ button')).find(b => b.textContent.includes('Actualiser')).click()");
+  await waitFor("document.querySelector('#notification-settings-title').parentElement.textContent.includes('E-mail n° 11')");
+  console.log("Super-admin notification tracking and retries passed.");
 } finally {
   const closed = once(chrome, "exit");
   chrome.kill("SIGTERM");

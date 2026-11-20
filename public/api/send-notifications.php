@@ -126,7 +126,7 @@ try {
             )->execute([
                 'status' => $status,
                 'send_after' => $retryAt,
-                'last_error' => 'Échec du transport e-mail (tentative ' . $attempt . '/5).',
+                'last_error' => 'Échec de préparation ou d’envoi de l’e-mail (tentative ' . $attempt . '/5).',
                 'id' => $email['id'],
                 'attempts' => $attempt,
                 'locked_at' => $nowText,

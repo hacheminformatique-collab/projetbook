@@ -4,7 +4,7 @@ import { algerianWilayas, beautyCategories, getWilayaName, isWilayaCode } from "
 import { Appointments, DirectoryResults, SalonPage } from "./Booking.jsx";
 import ProfessionalSpace from "./Professional.jsx";
 import PasswordReset from "./PasswordReset.jsx";
-import { apiRequest, apiUrl, serviceCategories } from "./api-client.js";
+import { apiRequest, apiUrl, appointmentDate, serviceCategories } from "./api-client.js";
 import HomeSearch from "./HomeSearch.jsx";
 import AlgerianCityInput from "./AlgerianCityInput.jsx";
 import { AdminAccounts, AdminBilling, AdminCampaigns, AdminProfileReviews } from "./AdminOperations.jsx";
@@ -940,43 +940,79 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
 
 function NotificationSettings({ csrfToken }) {
   const [status, setStatus] = useState(null);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(null);
   const [working, setWorking] = useState(false);
-  async function load() {
-    try {
-      setStatus(await apiRequest("admin-notifications.php"));
-      setNotice("");
-    } catch (cause) {
-      setNotice(cause.message);
-    }
-  }
-  useEffect(() => { load(); }, []);
-  async function retryFailed() {
+  const [page, setPage] = useState(1);
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setStatus(null);
+    apiRequest(`admin-notifications.php?page=${page}`, { signal: controller.signal })
+      .then(setStatus)
+      .catch((cause) => { if (!controller.signal.aborted) setNotice({ kind: "error", text: cause.message }); });
+    return () => controller.abort();
+  }, [page, refresh]);
+  async function retryFailed(id = null) {
     setWorking(true);
+    setNotice(null);
     try {
-      const result = await apiRequest("admin-notifications.php", { csrfToken, body: { action: "retry-failed" } });
-      setNotice(`${result.retried} e-mail(s) remis en attente.`);
-      await load();
+      const body = id === null ? { action: "retry-failed" } : { action: "retry-one", notificationId: id };
+      const result = await apiRequest("admin-notifications.php", { csrfToken, body });
+      setNotice({ kind: "success", text: `${result.retried} e-mail(s) remis en attente. Le cron effectuera la reprise.` });
+      setPage(1);
+      setRefresh((value) => value + 1);
     } catch (cause) {
-      setNotice(cause.message);
+      setNotice({ kind: "error", text: cause.message });
     } finally {
       setWorking(false);
     }
   }
+  const kinds = {
+    confirmation: "Confirmation", rescheduled: "Modification", cancelled: "Annulation",
+    reminder_7d: "Rappel à J−7", reminder_1d: "Rappel à J−1",
+  };
+  const reasons = {
+    interrupted: "Envoi interrompu cinq fois.",
+    delivery: "Échec de préparation ou d’envoi. Consultez le journal PHP.",
+    unknown: "Cause indisponible. Consultez le journal PHP.",
+  };
   return (
     <section className="client-card" aria-labelledby="notification-settings-title">
       <h2 id="notification-settings-title">E-mails de rendez-vous</h2>
-      {notice && <p className="form-message form-error" role="alert">{notice}</p>}
-      {!status ? <p>Chargement de la file d’envoi…</p> : (
+      {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+      {!status && !notice && <p role="status">Chargement de la file d’envoi…</p>}
+      <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setRefresh((value) => value + 1); }}>Actualiser les e-mails</button>
+      {status && (
         <>
           <dl className="client-details notification-stats">
             <div><dt>En attente / reprise</dt><dd>{status.counts.queued + status.counts.retry}</dd></div>
             <div><dt>En erreur définitive</dt><dd>{status.counts.failed}</dd></div>
             <div><dt>Dernier envoi accepté</dt><dd>{status.lastSent || "Aucun"}</dd></div>
-            <div><dt>Prochain envoi prévu</dt><dd>{status.nextSend || "Aucun"}</dd></div>
+            <div><dt>Prochain envoi possible</dt><dd>{status.nextSend || "Aucun"}</dd></div>
           </dl>
           <p>Le cron cPanel doit exécuter <code>php /home/UTILISATEUR_CPANEL/public_html/api/send-notifications.php</code> régulièrement. Les rendez-vous créés, modifiés ou annulés produisent un e-mail ; les rappels sont programmés une semaine et un jour avant si la date le permet.</p>
-          {status.counts.failed > 0 && <button className="auth-submit" type="button" disabled={working} onClick={retryFailed}>{working ? "Remise en attente…" : "Réessayer les e-mails en erreur"}</button>}
+          <div className="review-buttons">
+            {status.counts.failed > 0 && <button className="auth-submit" type="button" disabled={working} onClick={() => retryFailed()}>{working ? "Remise en attente…" : "Réessayer tous les e-mails en erreur"}</button>}
+          </div>
+          <h3>Échecs et reprises</h3>
+          <p>Les reprises automatiques respectent un délai. Un message devenu obsolète sera ignoré par le cron ; un envoi accepté ne garantit pas sa réception.</p>
+          {status.problems.length === 0 && <p>Aucun échec ou reprise sur cette page.</p>}
+          <div className="service-list">
+            {status.problems.map((item) => <article className="service-row" key={item.id}>
+              <span><strong>{kinds[item.kind]} · {item.status === "failed" ? "Erreur définitive" : item.attempts === 0 ? "Reprise demandée" : "Reprise automatique"}</strong><br />
+                E-mail n° {item.id} · Rendez-vous n° {item.appointmentId} · {item.salonName}<br />
+                Rendez-vous actuel : {appointmentDate(item.appointmentStartsAt)} (heure d’Algérie)<br />
+                Tentatives : {item.attempts}/5 · {item.attempts === 0 ? "En attente d’une nouvelle tentative." : reasons[item.reason]}<br />
+                {item.nextAttempt && <>Reprise possible à partir de : {appointmentDate(item.nextAttempt)} (heure d’Algérie)<br /></>}
+                {item.obsolete && <strong>Message obsolète : il sera ignoré lors du traitement.</strong>}
+              </span>
+              {item.status === "failed" && <button className="admin-nav-link" type="button" disabled={working} onClick={() => retryFailed(item.id)}>Remettre en attente</button>}
+            </article>)}
+          </div>
+          <nav className="pagination" aria-label="Pages des e-mails en échec">
+            {page > 1 && <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setPage(page - 1); }}>Précédent</button>}
+            {status.hasMoreProblems && <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setPage(page + 1); }}>Suivant</button>}
+          </nav>
         </>
       )}
     </section>
