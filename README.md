@@ -89,6 +89,8 @@ rendez-vous ; il exige également une base jetable neuve et les mêmes variables
 Pour vérifier la navigation au clavier avec des réponses API simulées, exécutez
 `npm run build -- --base=/masalledereception/` puis `node tests/agenda-keyboard.mjs`
 sur une machine disposant de Google Chrome. Le test n'accède à aucune base réelle.
+`node tests/booking-calendar.mjs` vérifie le format et les horaires du fichier
+calendrier, sans accès à une base de données.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
@@ -313,8 +315,9 @@ boutons radio accessibles et faciles à toucher, avec le nombre d'options
 affiché. Si le client doit se connecter avant de confirmer, son choix de
 prestation, date, collaborateur et horaire est restauré à son retour. Un client
 connecté voit un récapitulatif de l’établissement, de la prestation, de la date,
-de l’horaire, du collaborateur et du tarif après confirmation. Il peut retrouver
-ses rendez-vous à venir ou passés dans `/espace-client`, puis modifier la prestation et le
+de l’horaire, du collaborateur et du tarif après confirmation, et télécharger
+une invitation `.ics` pour l’ajouter à son calendrier. Il peut retrouver ses
+rendez-vous à venir ou passés dans `/espace-client`, puis modifier la prestation et le
 créneau ou annuler avant le début. Le professionnel consulte la grille de la
 journée, ouvre les détails et les coordonnées du client, enregistre une note
 privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.

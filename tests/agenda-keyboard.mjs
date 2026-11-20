@@ -85,6 +85,12 @@ try {
     window.loginPayload = null;
     window.bookingConfirmationTest = false;
     window.bookingPayload = null;
+    window.calendarFiles = [];
+    URL.createObjectURL = (blob) => {
+      blob.text().then((text) => window.calendarFiles.push({ type: blob.type, text }));
+      return "blob:bookili-test";
+    };
+    URL.revokeObjectURL = () => {};
     let appointmentSaleId = null;
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === "string" ? input : input.url, location.href);
@@ -578,6 +584,13 @@ try {
   assert.match(confirmation, /Sonia/);
   assert.match(confirmation, /30 min/);
   assert.match(confirmation, /1.?000 DA/);
+  await evaluate("Array.from(document.querySelectorAll('.booking-confirmation + button')).find(button => button.textContent.includes('calendrier')).click()");
+  await waitFor("window.calendarFiles.length === 1");
+  const calendarFile = await evaluate("window.calendarFiles[0]");
+  assert.equal(calendarFile.type, "text/calendar;charset=utf-8");
+  assert.match(calendarFile.text, /DTSTART:20261119T093000Z/);
+  assert.match(calendarFile.text, /DTEND:20261119T100000Z/);
+  assert.match(calendarFile.text, /LOCATION:10 rue de test\\, Sétif/);
   assert.deepEqual(await evaluate("window.bookingPayload"), {
     action: "book", salonId: "1", serviceId: "1", date: "2026-11-19", time: "10:30",
     expectedPrice: 1000, expectedDuration: 30, staffId: 1,

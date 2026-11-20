@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, apiUrl, algerianDate, appointmentDate, priceLabel, weekDays } from "./api-client.js";
+import { createBookingCalendarEvent } from "./lib/booking-calendar.js";
 import { getWilayaName } from "./data/algerian-wilayas.js";
 
 export function DirectoryResults({ search }) {
@@ -125,6 +126,7 @@ export function SalonPage() {
                 session={session}
                 appointmentId={appointmentId}
                 salonName={result.salon.name}
+                salonAddress={`${result.salon.address}, ${result.salon.city}`}
                 bookingMessage={result.salon.booking_message}
                 initialSelection={{
                   serviceId: result.services.some((service) => String(service.id) === params.get("serviceId")) ? params.get("serviceId") : "",
@@ -170,7 +172,7 @@ export function SalonPage() {
 
 const categories = [["access", "Accès"], ["training", "Formations"], ["experience", "Expériences"]];
 
-function BookingForm({ salonId, salonName, services, session, appointmentId, bookingMessage, initialSelection }) {
+function BookingForm({ salonId, salonName, salonAddress, services, session, appointmentId, bookingMessage, initialSelection }) {
   const [serviceId, setServiceId] = useState(initialSelection.serviceId);
   const [staffId, setStaffId] = useState(initialSelection.staffId);
   const [staffMembers, setStaffMembers] = useState([]);
@@ -184,6 +186,7 @@ function BookingForm({ salonId, salonName, services, session, appointmentId, boo
   const [refresh, setRefresh] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
   const [timeRestoreNotice, setTimeRestoreNotice] = useState("");
+  const [confirmedAppointmentId, setConfirmedAppointmentId] = useState(null);
   const timeToRestore = useRef(initialSelection.time);
   const selected = services.find((service) => String(service.id) === serviceId);
   const selectedStaff = staffMembers.find((member) => String(member.id) === staffId);
@@ -243,6 +246,7 @@ function BookingForm({ salonId, salonName, services, session, appointmentId, boo
           ...(appointmentId ? { appointmentId } : {}),
         },
       });
+      setConfirmedAppointmentId(result.appointmentId);
       setConfirmed(true);
       setNotice({ kind: "success", text: result.message });
     } catch (cause) {
@@ -251,6 +255,28 @@ function BookingForm({ salonId, salonName, services, session, appointmentId, boo
     } finally {
       setSaving(false);
     }
+  }
+  function downloadCalendarEvent() {
+    const calendar = createBookingCalendarEvent({
+      appointmentId: confirmedAppointmentId,
+      salonId,
+      salonName,
+      salonAddress,
+      serviceName: selected.name,
+      date,
+      time,
+      durationMinutes: Number(selected.duration_minutes),
+      staffName: selectedStaff?.name || "Non attribué",
+      priceLabel: priceLabel(selected.price_dzd),
+    });
+    const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `BOOKILI-rendez-vous-${date}.ics`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   if (confirmed) {
     return <>
@@ -270,6 +296,7 @@ function BookingForm({ salonId, salonName, services, session, appointmentId, boo
           Les rappels sont programmés à J−7 et J−1 lorsque la date le permet.
         </p>
       </div>
+      {confirmedAppointmentId && <button className="admin-nav-link" type="button" onClick={downloadCalendarEvent}>Ajouter au calendrier (.ics)</button>}
       <Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link>
     </>;
   }
