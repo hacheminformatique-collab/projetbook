@@ -174,10 +174,18 @@ try {
     $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;
     $query = $_GET['q'] ?? '';
     $status = $_GET['status'] ?? 'all';
+    $from = $_GET['from'] ?? '';
+    $to = $_GET['to'] ?? '';
     if ($page > 10000 || !is_string($query) || strlen($query) > 800 || preg_match('//u', $query) !== 1
         || preg_match('/[\x00-\x1f\x7f]/', $query)
+        || !is_string($from) || !is_string($to)
         || !in_array($status, ['all', 'queued', 'sending', 'completed', 'cancelled'], true)) {
         bookili_json_response(422, ['error' => 'Filtres de campagnes invalides.']);
+    }
+    $fromDate = $from === '' ? null : bookili_calendar_date($from);
+    $toDate = $to === '' ? null : bookili_calendar_date($to);
+    if ($fromDate && $toDate && $toDate < $fromDate) {
+        bookili_json_response(422, ['error' => 'La date de fin doit être égale ou postérieure à la date de début.']);
     }
     $where = [];
     $params = [];
@@ -188,6 +196,14 @@ try {
     if ($status !== 'all') {
         $where[] = 'c.status = :status';
         $params['status'] = $status;
+    }
+    if ($fromDate) {
+        $where[] = 'c.created_at >= :created_from';
+        $params['created_from'] = $fromDate->format('Y-m-d 00:00:00');
+    }
+    if ($toDate) {
+        $where[] = 'c.created_at < :created_before';
+        $params['created_before'] = $toDate->modify('+1 day')->format('Y-m-d 00:00:00');
     }
     $statement = $pdo->prepare(
         'SELECT c.id, c.subject, c.status, c.created_at, c.completed_at,

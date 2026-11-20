@@ -317,12 +317,13 @@ export function AdminCampaigns({ csrfToken, accountId }) {
   const [cleanupOutcome, setCleanupOutcome] = useState(recovery.resolution || null);
   const creating = useRef(false);
   const [page, setPage] = useState(1);
-  const [filter, setFilter] = useState({ q: "", status: "all" });
-  const [filterDraft, setFilterDraft] = useState({ q: "", status: "all" });
+  const [filter, setFilter] = useState({ q: "", status: "all", from: "", to: "" });
+  const [filterDraft, setFilterDraft] = useState({ q: "", status: "all", from: "", to: "" });
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState(() => recovery.resolution
     ? { kind: "error", text: `${recovery.resolution.message} La demande locale reste à effacer.` } : null);
   const [working, setWorking] = useState(false);
+  const invalidCampaignPeriod = Boolean(filterDraft.from && filterDraft.to && filterDraft.to < filterDraft.from);
   const campaignParams = new URLSearchParams({ ...filter, page }).toString();
   useEffect(() => {
     const controller = new AbortController();
@@ -479,6 +480,7 @@ export function AdminCampaigns({ csrfToken, accountId }) {
     <p>Les envois acceptés par le serveur ne garantissent pas la réception. Le cron traite les reprises possibles ; une reprise vérifie à nouveau le consentement et ne renvoie pas les messages déjà acceptés.</p>
     <form className="booking-toolbar" aria-label="Filtrer l’historique des campagnes" onSubmit={(event) => {
       event.preventDefault();
+      if (invalidCampaignPeriod) return;
       setFilter({ ...filterDraft, q: filterDraft.q.trim() });
       setPage(1);
       setNotice(null);
@@ -489,16 +491,20 @@ export function AdminCampaigns({ csrfToken, accountId }) {
         <option value="all">Tous les statuts</option><option value="queued">En attente</option><option value="sending">En cours</option>
         <option value="completed">Terminée</option><option value="cancelled">Annulée</option>
       </select></label>
-      <button className="admin-nav-link" type="submit" disabled={working}>Filtrer</button>
+      <label>Créée à partir du<input name="from" type="date" value={filterDraft.from} aria-invalid={invalidCampaignPeriod} max={filterDraft.to || undefined} onChange={(event) => setFilterDraft((current) => ({ ...current, from: event.target.value }))} /></label>
+      <label>Créée jusqu’au<input name="to" type="date" value={filterDraft.to} aria-invalid={invalidCampaignPeriod} min={filterDraft.from || undefined} onChange={(event) => setFilterDraft((current) => ({ ...current, to: event.target.value }))} /></label>
+      <button className="admin-nav-link" type="submit" disabled={working || invalidCampaignPeriod}>Filtrer</button>
       <button className="admin-nav-link" type="button" disabled={working} onClick={() => {
-        setFilterDraft({ q: "", status: "all" });
-        setFilter({ q: "", status: "all" });
+        const emptyFilter = { q: "", status: "all", from: "", to: "" };
+        setFilterDraft(emptyFilter);
+        setFilter(emptyFilter);
         setPage(1);
         setNotice(null);
         setRevision((value) => value + 1);
       }}>Effacer les filtres</button>
     </form>
-    {(filter.q || filter.status !== "all") && <p className="field-hint">L’historique est filtré : certaines campagnes peuvent être masquées.</p>}
+    {invalidCampaignPeriod && <p className="form-message form-error" role="alert">La date de fin doit être égale ou postérieure à la date de début.</p>}
+    {(filter.q || filter.status !== "all" || filter.from || filter.to) && <p className="field-hint">L’historique est filtré : certaines campagnes peuvent être masquées.</p>}
     <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setRevision((value) => value + 1); }}>Actualiser les campagnes</button>
     {!result && !notice && <p role="status">Chargement…</p>}
     {result?.campaigns.length === 0 && <p>Aucune campagne ne correspond aux filtres sur cette page.</p>}

@@ -318,8 +318,10 @@ try {
     verify(!array_intersect(array_column($filteredFirst['campaigns'], 'id'), array_column($filteredSecond['campaigns'], 'id')), 'Filtered pagination repeated rows.');
     verify($filteredFirst['consentingClients'] === $first['consentingClients'], 'Campaign filters changed the global consent count.');
     $fixture = $pdo->prepare("INSERT INTO marketing_campaigns (created_by, subject, message_body, status, created_at) VALUES (?, ?, 'Test', ?, ?)");
-    foreach (['queued', 'sending', 'completed', 'cancelled'] as $fixtureStatus) {
-        $fixture->execute([$adminId, 'Filtre spécial 50%_! ' . $fixtureStatus, $fixtureStatus, bookili_now()->format('Y-m-d H:i:s')]);
+    $fixtureDates = ['queued' => '2001-02-28 23:59:59', 'sending' => '2001-03-01 00:00:00',
+        'completed' => '2001-03-01 23:59:59', 'cancelled' => '2001-03-02 00:00:00'];
+    foreach ($fixtureDates as $fixtureStatus => $createdAt) {
+        $fixture->execute([$adminId, 'Filtre spécial 50%_! ' . $fixtureStatus, $fixtureStatus, $createdAt]);
     }
     foreach (['queued', 'sending', 'completed', 'cancelled'] as $fixtureStatus) {
         [$code, $data] = request($admin, 'admin-campaigns.php?' . http_build_query(['q' => ' SPÉCIAL 50%_! ', 'status' => $fixtureStatus]));
@@ -332,6 +334,18 @@ try {
     [$code, $data] = request($admin, 'admin-campaigns.php?q=partielle&status=completed');
     verify($code === 200 && count($data['campaigns']) === 1 && (int) $data['campaigns'][0]['id'] === $mixedId
         && (int) $data['campaigns'][0]['recipients'] === 2 && (int) $data['campaigns'][0]['sent'] === 2, 'Filtered campaign totals were incorrect.');
+    [$code, $data] = request($admin, 'admin-campaigns.php?q=' . rawurlencode('Filtre spécial') . '&from=2001-03-01&to=2001-03-01');
+    verify($code === 200 && count($data['campaigns']) === 2
+        && array_column($data['campaigns'], 'status') === ['completed', 'sending'], 'Inclusive campaign date bounds failed.');
+    [$code, $data] = request($admin, 'admin-campaigns.php?q=' . rawurlencode('Filtre spécial') . '&from=2001-03-02');
+    verify($code === 200 && count($data['campaigns']) === 1 && $data['campaigns'][0]['status'] === 'cancelled', 'Campaign start-date filter failed.');
+    [$code, $data] = request($admin, 'admin-campaigns.php?q=' . rawurlencode('Filtre spécial') . '&to=2001-02-28');
+    verify($code === 200 && count($data['campaigns']) === 1 && $data['campaigns'][0]['status'] === 'queued', 'Campaign end-date filter failed.');
+    [$code, $data] = request($admin, 'admin-campaigns.php?q=' . rawurlencode('Filtre spécial') . '&from=2001-03-01&to=2001-03-01&status=sending');
+    verify($code === 200 && count($data['campaigns']) === 1 && $data['campaigns'][0]['status'] === 'sending', 'Campaign dates did not compose with status.');
+    verify(request($admin, 'admin-campaigns.php?from=2001-03-02&to=2001-03-01')[0] === 422, 'Reversed campaign date range was accepted.');
+    verify(request($admin, 'admin-campaigns.php?from=2001-02-29')[0] === 422, 'Invalid campaign date was accepted.');
+    verify(request($admin, 'admin-campaigns.php?from%5B%5D=2001-03-01')[0] === 422, 'Array campaign date was accepted.');
     [$code, $data] = request($admin, 'admin-campaigns.php?q=' . rawurlencode("' OR 1=1 --"));
     verify($code === 200 && $data['campaigns'] === [], 'Campaign search interpreted SQL as a query.');
     verify(request($client, 'admin-campaigns.php?q=Filtre&status=queued')[0] === 403, 'Client can search campaigns.');
