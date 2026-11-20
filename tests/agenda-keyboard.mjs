@@ -85,6 +85,10 @@ try {
     window.loginPayload = null;
     window.bookingConfirmationTest = false;
     window.bookingPayload = null;
+    window.clientAppointments = [
+      { id: 55, salon_id: 1, status: "confirmed", starts_at: "2026-11-20 10:30:00", ends_at: "2026-11-20 11:15:00", service_name: "Coupe et soin", price_dzd: 2500, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: "Sonia" },
+      { id: 56, salon_id: 1, status: "cancelled", starts_at: "2026-11-20 12:00:00", ends_at: "2026-11-20 12:30:00", service_name: "Annulé", price_dzd: 1000, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: null },
+    ];
     window.calendarFiles = [];
     URL.createObjectURL = (blob) => {
       blob.text().then((text) => window.calendarFiles.push({ type: blob.type, text }));
@@ -106,6 +110,8 @@ try {
         data = window.clientBookingGuest
           ? { authenticated: false }
           : { authenticated: true, account: { role: window.clientBookingTest ? "client" : "professional" }, csrfToken: "test" };
+      } else if (url.pathname.endsWith("/api/client-profile.php")) {
+        data = { email: "client@example.test", profile: { first_name: "Test", last_name: "Client", phone_number: "0550123456", date_of_birth: "1990-01-01", marketing_consent: 0 } };
       } else if (url.pathname.endsWith("/api/salons.php")) {
         if (url.searchParams.has("id")) {
           data = {
@@ -239,6 +245,12 @@ try {
           ],
         };
       } else if (url.pathname.endsWith("/api/appointments.php")) {
+        if (window.clientBookingTest && options?.method !== "POST") {
+          data = { appointments: url.searchParams.get("filter") === "past"
+            ? [{ ...window.clientAppointments[0], id: 57, starts_at: "2026-11-18 10:30:00", ends_at: "2026-11-18 11:15:00" }]
+            : window.clientAppointments, hasMore: false };
+          return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
         window.appointmentMutations++;
         if (window.bookingConfirmationTest) {
           window.bookingPayload = JSON.parse(options.body);
@@ -596,6 +608,47 @@ try {
     expectedPrice: 1000, expectedDuration: 30, staffId: 1,
   });
   console.log("Booking choices preserved through client login.");
+
+  await evaluate("Array.from(document.querySelectorAll('.booking-content a')).find(link => link.textContent === 'Voir mes rendez-vous').click()");
+  await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
+  assert.equal(await evaluate("document.querySelectorAll('.appointment-list button').length"), 2, "only the future confirmed appointment offers calendar and cancellation");
+  await evaluate("Array.from(document.querySelectorAll('.appointment-list button')).find(button => button.textContent.includes('calendrier')).click()");
+  await waitFor("window.calendarFiles.length === 2");
+  const accountCalendar = await evaluate("window.calendarFiles[1].text.replace(/\\r\\n[ \\t]/g, '')");
+  assert.match(accountCalendar, /UID:appointment-55-salon-1@bookili\.com/);
+  assert.match(accountCalendar, /DTSTART:20261120T093000Z/);
+  assert.match(accountCalendar, /DTEND:20261120T101500Z/);
+  assert.match(accountCalendar, /SUMMARY:Coupe et soin - Salon test/);
+  assert.match(accountCalendar, /LOCATION:10 rue de test\\, Sétif/);
+  assert.match(accountCalendar, /Collaborateur : Sonia/);
+  assert.match(accountCalendar, /Tarif : 2.?500 DA/);
+  await evaluate(`(() => {
+    window.clientAppointments[0].starts_at = '2026-11-21 14:00:00';
+    window.clientAppointments[0].ends_at = '2026-11-21 15:00:00';
+    Array.from(document.querySelectorAll('.booking-toolbar button')).find(button => button.textContent === 'Actualiser').click();
+  })()`);
+  await waitFor("document.querySelector('.appointment-list .appointment-card')?.textContent.includes('21 novembre')");
+  await evaluate("Array.from(document.querySelectorAll('.appointment-list button')).find(button => button.textContent.includes('calendrier')).click()");
+  await waitFor("window.calendarFiles.length === 3");
+  assert.match(await evaluate("window.calendarFiles[2].text"), /DTSTART:20261121T130000Z/);
+  assert.match(await evaluate("window.calendarFiles[2].text"), /DTEND:20261121T140000Z/);
+  await evaluate(`(() => {
+    window.clientAppointments[0].starts_at = '2026-11-22 14:00:00';
+    window.clientAppointments[0].ends_at = '2026-11-22 13:00:00';
+    document.querySelector('.booking-toolbar button').click();
+  })()`);
+  await waitFor("document.querySelector('.appointment-list .appointment-card')?.textContent.includes('22 novembre')");
+  await evaluate("document.querySelector('.appointment-list button').click()");
+  await waitFor("document.querySelector('.appointment-list [role=alert]')?.textContent.includes('Impossible de préparer')");
+  assert.equal(await evaluate("window.calendarFiles.length"), 3, "invalid appointment data must not create a calendar file");
+  await evaluate(`(() => {
+    const filter = document.querySelector('[aria-label="Filtre des rendez-vous"]');
+    filter.value = 'past';
+    filter.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 1");
+  assert.equal(await evaluate("document.querySelectorAll('.appointment-list button').length"), 0, "past appointments do not offer calendar downloads");
+  console.log("Client appointment calendar downloads passed.");
 
   await send("Page.navigate", {
     url: `${origin}/masalledereception/salons/1?serviceId=1&date=2026-11-19&time=17%3A00`,

@@ -172,6 +172,32 @@ export function SalonPage() {
 
 const categories = [["access", "Accès"], ["training", "Formations"], ["experience", "Expériences"]];
 
+function CalendarDownloadButton({ details }) {
+  const [error, setError] = useState("");
+
+  function download() {
+    setError("");
+    try {
+      const calendar = createBookingCalendarEvent(details);
+      const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `BOOKILI-rendez-vous-${details.date}.ics`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      setError("Impossible de préparer le fichier calendrier. Réessayez ou consultez votre e-mail de confirmation.");
+    }
+  }
+
+  return <>
+    <button className="admin-nav-link" type="button" onClick={download}>Ajouter au calendrier (.ics)</button>
+    {error && <p className="form-message form-error" role="alert">{error}</p>}
+  </>;
+}
+
 function BookingForm({ salonId, salonName, salonAddress, services, session, appointmentId, bookingMessage, initialSelection }) {
   const [serviceId, setServiceId] = useState(initialSelection.serviceId);
   const [staffId, setStaffId] = useState(initialSelection.staffId);
@@ -256,28 +282,6 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
       setSaving(false);
     }
   }
-  function downloadCalendarEvent() {
-    const calendar = createBookingCalendarEvent({
-      appointmentId: confirmedAppointmentId,
-      salonId,
-      salonName,
-      salonAddress,
-      serviceName: selected.name,
-      date,
-      time,
-      durationMinutes: Number(selected.duration_minutes),
-      staffName: selectedStaff?.name || "Non attribué",
-      priceLabel: priceLabel(selected.price_dzd),
-    });
-    const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `BOOKILI-rendez-vous-${date}.ics`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
   if (confirmed) {
     return <>
       <div className="booking-confirmation">
@@ -296,7 +300,11 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
           Les rappels sont programmés à J−7 et J−1 lorsque la date le permet.
         </p>
       </div>
-      {confirmedAppointmentId && <button className="admin-nav-link" type="button" onClick={downloadCalendarEvent}>Ajouter au calendrier (.ics)</button>}
+      {confirmedAppointmentId && <CalendarDownloadButton details={{
+        appointmentId: confirmedAppointmentId, salonId, salonName, salonAddress,
+        serviceName: selected.name, date, time, durationMinutes: Number(selected.duration_minutes),
+        staffName: selectedStaff?.name || "Non attribué", priceLabel: priceLabel(selected.price_dzd),
+      }} />}
       <Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link>
     </>;
   }
@@ -427,6 +435,13 @@ export function Appointments({ csrfToken, professional = false }) {
               )}
               {editable && <div className="review-buttons">
                 {!professional && <Link className="admin-nav-link" to={`/salons/${appointment.salon_id}?appointmentId=${appointment.id}`}>Modifier</Link>}
+                {!professional && <CalendarDownloadButton details={{
+                  appointmentId: appointment.id, salonId: appointment.salon_id, salonName: appointment.salon_name,
+                  salonAddress: `${appointment.address}, ${appointment.city}`, serviceName: appointment.service_name,
+                  date: appointment.starts_at.slice(0, 10), time: appointment.starts_at.slice(11, 16),
+                  durationMinutes: (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000,
+                  staffName: appointment.staff_name || "Non attribué", priceLabel: priceLabel(appointment.price_dzd),
+                }} />}
                 <button className="review-reject" type="button" disabled={working} onClick={() => cancel(appointment.id)}>Annuler</button>
               </div>}
             </article>

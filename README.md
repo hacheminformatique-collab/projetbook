@@ -320,10 +320,13 @@ boutons radio accessibles et faciles à toucher, avec le nombre d'options
 affiché. Si le client doit se connecter avant de confirmer, son choix de
 prestation, date, collaborateur et horaire est restauré à son retour. Un client
 connecté voit un récapitulatif de l’établissement, de la prestation, de la date,
-de l’horaire, du collaborateur et du tarif après confirmation, et télécharger
-une invitation `.ics` pour l’ajouter à son calendrier. Il peut retrouver ses
-rendez-vous à venir ou passés dans `/espace-client`, puis modifier la prestation et le
-créneau ou annuler avant le début. Le professionnel consulte la grille de la
+de l’horaire, du collaborateur et du tarif après confirmation et peut télécharger
+une invitation `.ics` pour l’ajouter à son calendrier. Il peut aussi télécharger
+l’invitation d’un rendez-vous confirmé à venir depuis `/espace-client`. Les
+fichiers téléchargés ne se mettent pas à jour automatiquement après modification
+ou annulation : le client doit actualiser son calendrier lui-même.
+Il peut retrouver ses rendez-vous à venir ou passés dans `/espace-client`, puis
+modifier la prestation et le créneau ou annuler avant le début. Le professionnel consulte la grille de la
 journée, ouvre les détails et les coordonnées du client, enregistre une note
 privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.
 La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
