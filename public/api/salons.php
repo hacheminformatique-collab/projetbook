@@ -46,7 +46,7 @@ try {
         );
         $statement->execute(['id' => $salon['id']]);
         $photos = $statement->fetchAll();
-        $statement = $pdo->prepare('SELECT weekday, opens_at, closes_at FROM salon_hours WHERE salon_id = :id ORDER BY weekday');
+        $statement = $pdo->prepare('SELECT weekday, opens_at, closes_at, pause_starts_at, pause_ends_at FROM salon_hours WHERE salon_id = :id ORDER BY weekday');
         $statement->execute(['id' => $salon['id']]);
         bookili_json_response(200, [
             'salon' => $salon, 'services' => $services, 'hours' => $statement->fetchAll(),

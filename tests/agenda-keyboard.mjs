@@ -78,6 +78,8 @@ try {
     let clientNote = "Préférence salon";
     window.appointmentMutations = 0;
     window.cashRequests = [];
+    window.staffSaveBody = null;
+    window.agendaPauses = false;
     let appointmentSaleId = null;
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === "string" ? input : input.url, location.href);
@@ -94,12 +96,26 @@ try {
         }
       } else if (url.pathname.endsWith("/api/professional-salon.php")) {
         data = { salon: { id: 1, name: "Salon test", is_public: 1 }, hours: [] };
+      } else if (url.pathname.endsWith("/api/professional-staff.php")) {
+        const hours = Array.from({ length: 7 }, (_, index) => ({
+          weekday: index + 1, opens_at: "09:00:00", closes_at: "18:00:00",
+          pause_starts_at: index === 0 ? "12:00:00" : null,
+          pause_ends_at: index === 0 ? "13:00:00" : null,
+        }));
+        if (options?.method === "POST") {
+          window.staffSaveBody = JSON.parse(options.body);
+          data = { staff: [{ id: 1, name: "Sonia", is_active: 1, hours }], message: "Horaires enregistrés." };
+        } else data = { staff: [{ id: 1, name: "Sonia", is_active: 1, hours }] };
       } else if (url.pathname.endsWith("/api/professional-agenda.php")) {
         const date = url.searchParams.get("date");
         data = {
-          salonId: 1, date, hours: { opens_at: "09:00:00", closes_at: "18:00:00" }, closed: false,
+          salonId: 1, date, hours: {
+            opens_at: "09:00:00", closes_at: "18:00:00",
+            pause_starts_at: window.agendaPauses ? "13:00:00" : null,
+            pause_ends_at: window.agendaPauses ? "13:45:00" : null,
+          }, closed: false,
           staff: [
-            { id: 1, name: "Sonia", is_active: 1, opens_at: "09:00:00", closes_at: "18:00:00" },
+            { id: 1, name: "Sonia", is_active: 1, opens_at: "09:00:00", closes_at: "18:00:00", pause_starts_at: window.agendaPauses ? "14:00:00" : null, pause_ends_at: window.agendaPauses ? "14:30:00" : null },
             { id: 2, name: "Lina", is_active: 1, opens_at: "09:00:00", closes_at: "18:00:00" },
           ],
           staffAbsences: [{ staff_id: 2 }],
@@ -260,6 +276,44 @@ try {
   await key("Escape");
   await waitFor("!document.querySelector('[role=dialog]')");
   assert.match(await evaluate("document.querySelector('.agenda-booking').textContent"), /11:00–11:30/);
+  await evaluate("window.agendaPauses = true; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
+  await waitFor("document.querySelectorAll('.agenda-slot-pause').length > 0");
+  assert.equal(await evaluate("document.querySelectorAll('.agenda-day-column')[0].querySelectorAll('.agenda-slot')[16].classList.contains('agenda-slot-pause')"), true);
+  assert.equal(await evaluate("document.querySelectorAll('.agenda-day-column')[0].querySelectorAll('.agenda-slot')[20].classList.contains('agenda-slot-pause')"), true);
+  assert.equal(await evaluate("document.querySelectorAll('.agenda-day-column')[0].querySelectorAll('.agenda-slot')[22].classList.contains('agenda-slot-pause')"), false);
+  await evaluate(`(() => {
+    window.agendaDrag = new DataTransfer();
+    document.querySelector('.agenda-booking').dispatchEvent(new DragEvent('dragstart', {
+      bubbles: true, cancelable: true, dataTransfer: window.agendaDrag,
+    }));
+  })()`);
+  assert.equal(await dragOver(0, 15), false, "a move overlapping a salon pause must be rejected");
+  assert.equal(await dragOver(0, 20), false, "a move overlapping the collaborator pause must be rejected");
+  assert.equal(await dragOver(0, 22), true, "a move after both pauses remains possible");
+  await evaluate("document.querySelector('.agenda-booking').dispatchEvent(new DragEvent('dragend', { bubbles: true }))");
+  await evaluate("window.agendaPauses = false; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
+  await waitFor("document.querySelectorAll('.agenda-slot-pause').length === 0");
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Admin').click()");
+  await evaluate("document.querySelector('.pro-mobile-menu').click()");
+  await evaluate("Array.from(document.querySelectorAll('.pro-sidebar nav button')).find(b => b.textContent === 'Collaborateurs').click()");
+  await waitFor("document.querySelector('.pro-panel h2')?.textContent === 'Collaborateurs'");
+  await evaluate("Array.from(document.querySelectorAll('.service-list button')).find(b => b.textContent === 'Modifier').click()");
+  assert.equal(await evaluate("document.querySelector('input[aria-label=\"Début pause Lundi\"]').value"), "12:00");
+  assert.equal(await evaluate("document.querySelector('input[aria-label=\"Fin pause Lundi\"]').value"), "13:00");
+  await evaluate(`(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    const start = document.querySelector('input[aria-label="Début pause Lundi"]');
+    const end = document.querySelector('input[aria-label="Fin pause Lundi"]');
+    setValue.call(start, '12:15');
+    start.dispatchEvent(new Event('input', { bubbles: true }));
+    setValue.call(end, '13:15');
+    end.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await evaluate("document.querySelector('.pro-panel .auth-form button[type=submit]').click()");
+  await waitFor("window.staffSaveBody?.hours[0]?.pause_starts_at === '12:15'");
+  assert.equal(await evaluate("window.staffSaveBody.hours[0].pause_ends_at"), "13:15");
+  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
+  await waitFor("!!document.querySelector('.agenda-day-column')");
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await waitFor("document.querySelectorAll('.agenda-day-column').length === 1");
   assert.equal(await evaluate("document.querySelector('.agenda-scroll').scrollWidth <= document.querySelector('.agenda-scroll').clientWidth"), true);

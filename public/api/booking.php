@@ -153,6 +153,19 @@ function bookili_salon_staff(PDO $pdo, int $salonId): array
     return $statement->fetchAll();
 }
 
+function bookili_schedule_pause(array $row, string $opensAt, string $closesAt): array|false
+{
+    $start = $row['pause_starts_at'] ?? '';
+    $end = $row['pause_ends_at'] ?? '';
+    if ($start === '' && $end === '') return ['pause_starts_at' => null, 'pause_ends_at' => null];
+    if (!is_string($start) || !preg_match('/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/D', $start)
+        || !is_string($end) || !preg_match('/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/D', $end)
+        || $opensAt >= $start || $start >= $end || $end >= $closesAt) {
+        return false;
+    }
+    return ['pause_starts_at' => $start, 'pause_ends_at' => $end];
+}
+
 function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable $day, int $excludeId = 0, int $staffId = 0): array
 {
     if ($staffId > 0) {
@@ -164,18 +177,21 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
     $statement->execute(['id' => $salonId, 'day' => $day->format('Y-m-d')]);
     if ($statement->fetchColumn()) return [];
 
-    $statement = $pdo->prepare('SELECT opens_at, closes_at FROM salon_hours WHERE salon_id = :id AND weekday = :weekday');
+    $statement = $pdo->prepare('SELECT opens_at, closes_at, pause_starts_at, pause_ends_at FROM salon_hours WHERE salon_id = :id AND weekday = :weekday');
     $statement->execute(['id' => $salonId, 'weekday' => (int) $day->format('N')]);
     $hours = $statement->fetch();
     if (!$hours) return [];
+    $pauses = [];
+    if ($hours['pause_starts_at'] !== null) $pauses[] = [$hours['pause_starts_at'], $hours['pause_ends_at']];
     if ($staffId > 0) {
-        $statement = $pdo->prepare('SELECT opens_at, closes_at FROM staff_hours WHERE staff_id = :staff_id AND weekday = :weekday');
+        $statement = $pdo->prepare('SELECT opens_at, closes_at, pause_starts_at, pause_ends_at FROM staff_hours WHERE staff_id = :staff_id AND weekday = :weekday');
         $statement->execute(['staff_id' => $staffId, 'weekday' => (int) $day->format('N')]);
         $staffHours = $statement->fetch();
         if (!$staffHours) return [];
         $hours['opens_at'] = max($hours['opens_at'], $staffHours['opens_at']);
         $hours['closes_at'] = min($hours['closes_at'], $staffHours['closes_at']);
         if ($hours['opens_at'] >= $hours['closes_at']) return [];
+        if ($staffHours['pause_starts_at'] !== null) $pauses[] = [$staffHours['pause_starts_at'], $staffHours['pause_ends_at']];
         $statement = $pdo->prepare(
             'SELECT 1 FROM staff_absences
              WHERE staff_id = :staff_id AND start_date <= :absence_end_day AND end_date >= :absence_start_day'
@@ -208,6 +224,9 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
     for (; $start < $close; $start = $start->modify('+15 minutes')) {
         $end = $start->modify('+' . (int) $service['duration_minutes'] . ' minutes');
         if ($start <= $now || $end > $close) continue;
+        foreach ($pauses as [$pauseStart, $pauseEnd]) {
+            if ($start->format('H:i:s') < $pauseEnd && $end->format('H:i:s') > $pauseStart) continue 2;
+        }
         foreach ($busy as $appointment) {
             if ($start->format('Y-m-d H:i:s') < $appointment['ends_at']
                 && $end->format('Y-m-d H:i:s') > $appointment['starts_at']) {

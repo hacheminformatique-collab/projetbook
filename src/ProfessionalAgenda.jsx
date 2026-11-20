@@ -525,14 +525,20 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
         {columns.map(({ day, member }) => {
           const bookings = day.appointments.filter((item) => String(item.staff_id || "") === String(member.id));
           const blocked = day.appointments.filter((item) => member.id ? !item.staff_id : !hasActiveStaff && item.staff_id);
-          const busyRanges = [...bookings, ...blocked].map((item) => bounds(item, day.date));
+          const hours = member.id ? day.staff.find((item) => item.id === member.id) : day.hours;
+          const pauseRanges = [
+            ...(day.hours?.pause_starts_at && day.hours?.pause_ends_at
+              ? [[minutes(day.hours.pause_starts_at.slice(0, 5)), minutes(day.hours.pause_ends_at.slice(0, 5))]] : []),
+            ...(member.id && hours?.pause_starts_at && hours?.pause_ends_at
+              ? [[minutes(hours.pause_starts_at.slice(0, 5)), minutes(hours.pause_ends_at.slice(0, 5))]] : []),
+          ];
+          const busyRanges = [...[...bookings, ...blocked].map((item) => bounds(item, day.date)), ...pauseRanges];
           const moveBusyRanges = [...bookings, ...blocked]
             .filter((item) => String(item.id) !== String(dragged?.id))
-            .map((item) => bounds(item, day.date));
+            .map((item) => bounds(item, day.date)).concat(pauseRanges);
           const moveDuration = dragged
             ? (new Date(dragged.ends_at.replace(" ", "T") + "+01:00") - new Date(dragged.starts_at.replace(" ", "T") + "+01:00")) / 60000
             : 0;
-          const hours = member.id ? day.staff.find((item) => item.id === member.id) : day.hours;
           const absent = member.id && day.staffAbsences?.some((absence) => Number(absence.staff_id) === Number(member.id));
           const open = !day.closed && !absent && day.hours && hours?.opens_at && (member.id ? Number(hours.is_active) : !hasActiveStaff);
           const opens = open ? Math.max(minutes(day.hours.opens_at), minutes(hours.opens_at)) : 0;
@@ -544,19 +550,21 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
             const canDrop = open && day.date <= maxBookingDate && targetTime >= opens && targetTime + 15 <= closes
               && new Date(`${day.date}T${timeLabel(targetTime)}:00+01:00`) > now;
             const busy = busyRanges.some(([from, to]) => targetTime < to && targetTime + 15 > from);
+            const pause = pauseRanges.some(([from, to]) => targetTime < to && targetTime + 15 > from);
             const movable = canDrop && dragged && moveDuration > 0 && targetTime + moveDuration <= closes
               && !moveBusyRanges.some(([from, to]) => targetTime < to && targetTime + moveDuration > from);
-            return { row, targetTime, free: canDrop && !busy, movable };
+            return { row, targetTime, free: canDrop && !busy, movable, pause };
           });
           const freeRows = rowInfo.filter((item) => item.free);
           const focusedRow = freeRows.some((item) => item.row === focusedSlots[columnKey])
             ? focusedSlots[columnKey] : freeRows[0]?.row;
           return <div className={`agenda-day-column${absent ? " agenda-day-column-absent" : ""}`} key={`${day.date}:${member.id}`}>
-            {rowInfo.map(({ row, targetTime, free, movable }) => {
+            {rowInfo.map(({ row, targetTime, free, movable, pause }) => {
               const targetKey = `${day.date}:${member.id}:${row}`;
               const Slot = free ? "button" : "div";
               return <Slot key={row} type={free ? "button" : undefined}
-                className={`agenda-slot ${free ? "agenda-slot-free" : "agenda-slot-unavailable"}${dropTarget === targetKey ? " agenda-drop-target" : ""}`}
+                className={`agenda-slot ${free ? "agenda-slot-free" : "agenda-slot-unavailable"}${pause ? " agenda-slot-pause" : ""}${dropTarget === targetKey ? " agenda-drop-target" : ""}`}
+                title={pause ? "Pause : aucun rendez-vous sur cette période" : undefined}
                 aria-label={free ? `Créer un rendez-vous : ${member.name}, ${shortDay.format(utcDate(day.date))}, ${timeLabel(targetTime)}` : undefined}
                 aria-hidden={free ? undefined : true}
                 tabIndex={free ? (row === focusedRow ? 0 : -1) : undefined}

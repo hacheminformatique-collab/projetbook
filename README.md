@@ -55,7 +55,8 @@ BOOKILI_TEST_URL=http://localhost:8765 BOOKILI_TEST_SETUP_TOKEN=cle_de_test pyth
 ```
 
 Le test `tests/bookings.py` couvre l'inscription et la validation pro, la
-publication, la recherche des salons et des villes, les disponibilités, les droits d'accès, les
+publication, la recherche des salons et des villes, les disponibilités et les
+pauses horaires, les droits d'accès, les
 modifications, les annulations et deux réservations concurrentes. Utiliser
 une **nouvelle base jetable**, une clé de configuration valide et plusieurs
 workers PHP pour exercer la concurrence réelle :
@@ -156,7 +157,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/021_salon_booking_message.sql` et
 `database/migrations/022_salon_public_profile.sql` et
 `database/migrations/023_salon_photos.sql` et
-`database/migrations/024_staff_absences.sql` dans phpMyAdmin,
+`database/migrations/024_staff_absences.sql` et
+`database/migrations/025_daily_schedule_pauses.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -332,9 +334,12 @@ comptes ou les rendez-vous d’autres salons.
   si les collaborateurs sont différents. Un rendez-vous historique sans
   collaborateur assigné bloque temporairement tous les collaborateurs sur
   son créneau.
-- Une plage continue par jour pour le salon et pour chaque collaborateur,
-  sans passage à minuit. Les horaires du collaborateur sont limités à
-  l'intersection avec ceux du salon. Les créneaux commencent toutes les
+- Une plage continue et une pause facultative par jour pour le salon et chaque
+  collaborateur, sans passage à minuit. La pause doit être complète et située
+  strictement à l'intérieur de la plage de travail. Les horaires du
+  collaborateur sont limités à l'intersection avec ceux du salon. Les pauses
+  du salon bloquent toute l'équipe ; celles d'un collaborateur ne bloquent que
+  sa colonne. Les créneaux commencent toutes les
   15 minutes depuis l'ouverture et doivent contenir toute la prestation.
 - Les fermetures exceptionnelles du salon s'appliquent à toute l'équipe ;
   les absences individuelles couvrent des journées entières.
@@ -358,7 +363,9 @@ comptes ou les rendez-vous d’autres salons.
   affichées de la prestation choisie ; un changement de tarif ou de durée
   entre affichage et confirmation oblige à recharger la fiche.
 - Modifier des horaires ou masquer un salon ne supprime pas ses rendez-vous
-  déjà confirmés. Leur annulation reste possible même si le salon est masqué.
+  déjà confirmés. Les pauses nouvellement définies ne les annulent pas non plus ;
+  les conflits existants restent visibles et doivent être gérés par le salon.
+  Leur annulation reste possible même si le salon est masqué.
 - Dans **Agenda**, le professionnel peut fermer une journée entière jusqu'à
   365 jours à l'avance, puis supprimer cette fermeture. Les nouvelles réservations
   et modifications vers cette journée sont bloquées. Une fermeture est refusée

@@ -127,7 +127,7 @@ try {
         unset($appointment);
     }
     $statement = $pdo->prepare(
-        'SELECT m.id, m.name, m.is_active, h.opens_at, h.closes_at
+        'SELECT m.id, m.name, m.is_active, h.opens_at, h.closes_at, h.pause_starts_at, h.pause_ends_at
          FROM staff_members m LEFT JOIN staff_hours h ON h.staff_id = m.id AND h.weekday = :weekday
          WHERE m.salon_id = :salon ORDER BY m.is_active DESC, m.name, m.id'
     );
@@ -145,7 +145,7 @@ try {
     $staffAbsences = $statement->fetchAll();
     foreach ($staffAbsences as &$absence) $absence['staff_id'] = (int) $absence['staff_id'];
     unset($absence);
-    $statement = $pdo->prepare('SELECT opens_at, closes_at FROM salon_hours WHERE salon_id = :salon AND weekday = :weekday');
+    $statement = $pdo->prepare('SELECT opens_at, closes_at, pause_starts_at, pause_ends_at FROM salon_hours WHERE salon_id = :salon AND weekday = :weekday');
     $statement->execute(['salon' => $salon['id'], 'weekday' => (int) $day->format('N')]);
     $hours = $statement->fetch();
     $statement = $pdo->prepare('SELECT 1 FROM salon_closures WHERE salon_id = :salon AND closure_date = :day');

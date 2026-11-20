@@ -20,9 +20,13 @@ function bookili_professional_staff_hours(mixed $value): ?array
             || $row['opens_at'] >= $row['closes_at'] || isset($result[$row['weekday']])) {
             bookili_json_response(422, ['error' => 'Chaque jour ouvert doit avoir un horaire valide et unique.']);
         }
+        $pause = bookili_schedule_pause($row, $row['opens_at'], $row['closes_at']);
+        if ($pause === false) {
+            bookili_json_response(422, ['error' => 'La pause doit être complète, durer au moins une minute et rester dans les horaires du collaborateur.']);
+        }
         $result[$row['weekday']] = [
             'weekday' => $row['weekday'], 'opens_at' => $row['opens_at'], 'closes_at' => $row['closes_at'],
-        ];
+        ] + $pause;
     }
     return array_values($result);
 }
@@ -30,7 +34,7 @@ function bookili_professional_staff_hours(mixed $value): ?array
 function bookili_professional_staff_rows(PDO $pdo, int $salonId): array
 {
     $statement = $pdo->prepare(
-        'SELECT m.id, m.name, m.is_active, h.weekday, h.opens_at, h.closes_at
+        'SELECT m.id, m.name, m.is_active, h.weekday, h.opens_at, h.closes_at, h.pause_starts_at, h.pause_ends_at
          FROM staff_members m
          LEFT JOIN staff_hours h ON h.staff_id = m.id
          WHERE m.salon_id = :salon_id
@@ -48,6 +52,7 @@ function bookili_professional_staff_rows(PDO $pdo, int $salonId): array
         if ($row['weekday'] !== null) {
             $staff[$id]['hours'][] = [
                 'weekday' => (int) $row['weekday'], 'opens_at' => $row['opens_at'], 'closes_at' => $row['closes_at'],
+                'pause_starts_at' => $row['pause_starts_at'], 'pause_ends_at' => $row['pause_ends_at'],
             ];
         }
     }
@@ -110,19 +115,21 @@ try {
             $staffId = (int) $pdo->lastInsertId();
             $pdo->prepare(
                 'INSERT INTO staff_hours (staff_id, weekday, opens_at, closes_at)
-                 SELECT :staff_id, weekday, opens_at, closes_at FROM salon_hours WHERE salon_id = :salon_id'
+                 SELECT :staff_id, weekday, opens_at, closes_at
+                 FROM salon_hours WHERE salon_id = :salon_id'
             )->execute(['staff_id' => $staffId, 'salon_id' => $salon['id']]);
         }
         if ($hours !== null) {
             $pdo->prepare('DELETE FROM staff_hours WHERE staff_id = :staff_id')->execute(['staff_id' => $staffId]);
             $insert = $pdo->prepare(
-                'INSERT INTO staff_hours (staff_id, weekday, opens_at, closes_at)
-                 VALUES (:staff_id, :weekday, :opens_at, :closes_at)'
+                'INSERT INTO staff_hours (staff_id, weekday, opens_at, closes_at, pause_starts_at, pause_ends_at)
+                 VALUES (:staff_id, :weekday, :opens_at, :closes_at, :pause_starts_at, :pause_ends_at)'
             );
             foreach ($hours as $hour) {
                 $insert->execute([
                     'staff_id' => $staffId, 'weekday' => $hour['weekday'],
                     'opens_at' => $hour['opens_at'], 'closes_at' => $hour['closes_at'],
+                    'pause_starts_at' => $hour['pause_starts_at'], 'pause_ends_at' => $hour['pause_ends_at'],
                 ]);
             }
         }

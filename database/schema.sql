@@ -189,6 +189,8 @@ CREATE TABLE IF NOT EXISTS salon_hours (
   weekday TINYINT UNSIGNED NOT NULL,
   opens_at TIME NOT NULL,
   closes_at TIME NOT NULL,
+  pause_starts_at TIME NULL,
+  pause_ends_at TIME NULL,
   PRIMARY KEY (salon_id, weekday),
   CONSTRAINT salon_hours_salon_fk FOREIGN KEY (salon_id) REFERENCES salons (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -219,6 +221,8 @@ CREATE TABLE IF NOT EXISTS staff_hours (
   weekday TINYINT UNSIGNED NOT NULL,
   opens_at TIME NOT NULL,
   closes_at TIME NOT NULL,
+  pause_starts_at TIME NULL,
+  pause_ends_at TIME NULL,
   PRIMARY KEY (staff_id, weekday),
   CONSTRAINT staff_hours_staff_fk FOREIGN KEY (staff_id) REFERENCES staff_members (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

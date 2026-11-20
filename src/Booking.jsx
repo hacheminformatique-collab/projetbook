@@ -109,7 +109,12 @@ export function SalonPage() {
               <dl className="client-details">
                 {weekDays.map((name, index) => {
                   const hours = result.hours.find((hour) => Number(hour.weekday) === index + 1);
-                  return <div key={name}><dt>{name}</dt><dd>{hours ? `${hours.opens_at.slice(0, 5)} – ${hours.closes_at.slice(0, 5)}` : "Fermé"}</dd></div>;
+                  const pause = hours?.pause_starts_at && hours?.pause_ends_at;
+                  return <div key={name}><dt>{name}</dt><dd>{hours
+                    ? pause
+                      ? `${hours.opens_at.slice(0, 5)} – ${hours.pause_starts_at.slice(0, 5)} · Pause ${hours.pause_starts_at.slice(0, 5)} – ${hours.pause_ends_at.slice(0, 5)} · ${hours.pause_ends_at.slice(0, 5)} – ${hours.closes_at.slice(0, 5)}`
+                      : `${hours.opens_at.slice(0, 5)} – ${hours.closes_at.slice(0, 5)}`
+                    : "Fermé"}</dd></div>;
                 })}
               </dl>
             </section>

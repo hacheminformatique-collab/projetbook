@@ -32,7 +32,7 @@ try {
             bookili_json_response(422, ['error' => 'Les horaires sont invalides.']);
         }
         $seen = [];
-        foreach ($hours as $hour) {
+        foreach ($hours as &$hour) {
             if (!is_array($hour) || !is_int($hour['weekday'] ?? null) || $hour['weekday'] < 1 || $hour['weekday'] > 7
                 || isset($seen[$hour['weekday']]) || !is_string($hour['opens_at'] ?? null) || !is_string($hour['closes_at'] ?? null)
                 || !preg_match('/^([01][0-9]|2[0-3]):[0-5][0-9]$/D', $hour['opens_at'])
@@ -40,8 +40,15 @@ try {
                 || $hour['opens_at'] >= $hour['closes_at']) {
                 bookili_json_response(422, ['error' => 'Chaque jour doit avoir une plage horaire valide et unique, sans passage à minuit.']);
             }
+            $pause = bookili_schedule_pause($hour, $hour['opens_at'], $hour['closes_at']);
+            if ($pause === false) {
+                bookili_json_response(422, ['error' => 'La pause doit être complète, durer au moins une minute et rester dans les horaires d’ouverture.']);
+            }
+            $hour['pause_starts_at'] = $pause['pause_starts_at'];
+            $hour['pause_ends_at'] = $pause['pause_ends_at'];
             $seen[$hour['weekday']] = true;
         }
+        unset($hour);
         $pdo->beginTransaction();
         $salon = bookili_own_salon($pdo, (int) $account['id'], true);
         if ($isPublic) {
@@ -63,12 +70,15 @@ try {
         ]);
         $statement = $pdo->prepare('DELETE FROM salon_hours WHERE salon_id = :id');
         $statement->execute(['id' => $salon['id']]);
-        $statement = $pdo->prepare('INSERT INTO salon_hours (salon_id, weekday, opens_at, closes_at) VALUES (:id, :weekday, :opens_at, :closes_at)');
+        $statement = $pdo->prepare(
+            'INSERT INTO salon_hours (salon_id, weekday, opens_at, closes_at, pause_starts_at, pause_ends_at)
+             VALUES (:id, :weekday, :opens_at, :closes_at, :pause_starts_at, :pause_ends_at)'
+        );
         foreach ($hours as $hour) $statement->execute(['id' => $salon['id']] + $hour);
         $pdo->commit();
     }
     $salon = bookili_own_salon($pdo, (int) $account['id']);
-    $statement = $pdo->prepare('SELECT weekday, opens_at, closes_at FROM salon_hours WHERE salon_id = :id ORDER BY weekday');
+    $statement = $pdo->prepare('SELECT weekday, opens_at, closes_at, pause_starts_at, pause_ends_at FROM salon_hours WHERE salon_id = :id ORDER BY weekday');
     $statement->execute(['id' => $salon['id']]);
     bookili_json_response(200, ['salon' => $salon, 'hours' => $statement->fetchAll()]);
 } catch (Throwable $error) {

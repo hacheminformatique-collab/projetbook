@@ -136,6 +136,33 @@ def main():
     available = f"availability.php?salonId={salon_id}&serviceId={service_id}&date={booking_day}"
     slots = expect(guest.request(available), 200)["slots"]
     assert slots[0] == "09:00" and slots[-1] == "16:30" and len(slots) == 31
+    weekday = datetime.date.fromisoformat(booking_day).isoweekday()
+    pause_schedule = salon_payload(salon)
+    target_pause = next(hour for hour in pause_schedule["hours"] if hour["weekday"] == weekday)
+    target_pause.update(pause_starts_at="11:00", pause_ends_at="11:45")
+    saved_hours = expect(professional.request("professional-salon.php", pause_schedule), 200)["hours"]
+    saved_pause = next(hour for hour in saved_hours if int(hour["weekday"]) == weekday)
+    assert saved_pause["pause_starts_at"].startswith("11:00") and saved_pause["pause_ends_at"].startswith("11:45")
+    agenda_pause = expect(professional.request(f"professional-agenda.php?date={booking_day}"), 200)
+    assert agenda_pause["hours"]["pause_starts_at"].startswith("11:00")
+    public_hours = expect(guest.request(f"salons.php?id={salon_id}"), 200)["hours"]
+    assert next(hour for hour in public_hours if int(hour["weekday"]) == weekday)["pause_starts_at"].startswith("11:00")
+    pause_slots = expect(guest.request(available), 200)["slots"]
+    assert "10:30" in pause_slots and "10:45" not in pause_slots and "11:00" not in pause_slots
+    assert "11:30" not in pause_slots and "11:45" in pause_slots
+    expect(first.request("appointments.php", {
+        "action": "book", "salonId": salon_id, "serviceId": service_id, "date": booking_day,
+        "time": "11:00", "expectedPrice": 1500, "expectedDuration": 30,
+    }), 409)
+    invalid_pause = salon_payload(salon)
+    invalid_hour = next(hour for hour in invalid_pause["hours"] if hour["weekday"] == weekday)
+    invalid_hour.update(pause_starts_at="08:30", pause_ends_at="09:00")
+    expect(professional.request("professional-salon.php", invalid_pause), 422)
+    invalid_pause = salon_payload(salon)
+    invalid_hour = next(hour for hour in invalid_pause["hours"] if hour["weekday"] == weekday)
+    invalid_hour.update(pause_starts_at="12:00", pause_ends_at="")
+    expect(professional.request("professional-salon.php", invalid_pause), 422)
+    expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
     expect(guest.request(available.replace(booking_day, "2020-01-01")), 422)
     expect(guest.request(available.replace(booking_day, "2026-02-30")), 422)
     expect(guest.request(available.replace(booking_day, "%00")), 422)
@@ -166,6 +193,12 @@ def main():
     second_id = expect(second.request("appointments.php", {**booking, "time": "10:00"}), 201)["appointmentId"]
     move = {**booking, "action": "reschedule", "appointmentId": appointment_id}
     expect(first.request("appointments.php", {**move, "time": "10:00"}), 409)
+    pause_schedule = salon_payload(salon)
+    target_pause = next(hour for hour in pause_schedule["hours"] if hour["weekday"] == weekday)
+    target_pause.update(pause_starts_at="11:00", pause_ends_at="11:45")
+    expect(professional.request("professional-salon.php", pause_schedule), 200)
+    expect(first.request("appointments.php", {**move, "time": "11:00"}), 409)
+    expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
     mine = expect(first.request("appointments.php"), 200)["appointments"]
     assert mine[0]["starts_at"].endswith("09:00:00")
     expect(first.request("appointments.php", {**move, "time": "09:30"}), 200)
@@ -221,28 +254,48 @@ def main():
     expect(first.request("admin-notifications.php"), 403)
     expect_empty_response(guest, "send-notifications.php", 404)
 
+    pause_schedule = salon_payload(salon)
+    next(hour for hour in pause_schedule["hours"] if hour["weekday"] == weekday).update(
+        pause_starts_at="11:00", pause_ends_at="11:45",
+    )
+    expect(professional.request("professional-salon.php", pause_schedule), 200)
     staff_a = expect(professional.request("professional-staff.php", {
         "action": "save", "name": "Collaboratrice A", "isActive": True,
     }), 200)["staff"][0]
+    assert next(hour for hour in staff_a["hours"] if int(hour["weekday"]) == weekday)["pause_starts_at"] is None
     staff_b = expect(professional.request("professional-staff.php", {
         "action": "save", "name": "Collaboratrice B", "isActive": True,
     }), 200)["staff"][1]
     assert len(staff_a["hours"]) == 7 and len(staff_b["hours"]) == 7
+    assert "11:00" not in expect(guest.request(available + f"&staffId={staff_b['id']}"), 200)["slots"]
+    expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
+    assert "11:00" in expect(guest.request(available + f"&staffId={staff_b['id']}"), 200)["slots"]
     team_slots = expect(guest.request(available), 200)
     assert len(team_slots["staff"]) == 2 and team_slots["slots"] == []
-    weekday = datetime.date.fromisoformat(booking_day).isoweekday()
     staff_a_hours = [{
         **hour, "opens_at": hour["opens_at"][:5], "closes_at": hour["closes_at"][:5],
+        "pause_starts_at": hour["pause_starts_at"][:5] if hour["pause_starts_at"] else "",
+        "pause_ends_at": hour["pause_ends_at"][:5] if hour["pause_ends_at"] else "",
     } for hour in staff_a["hours"]]
     target_hours = next(hour for hour in staff_a_hours if hour["weekday"] == weekday)
-    target_hours.update(opens_at="14:00", closes_at="17:00")
+    target_hours.update(opens_at="14:00", closes_at="17:00", pause_starts_at="15:00", pause_ends_at="15:30")
     updated_staff = expect(professional.request("professional-staff.php", {
         "action": "save", "staffId": int(staff_a["id"]), "name": "Collaboratrice A",
         "isActive": True, "hours": staff_a_hours,
     }), 200)["staff"]
     staff_a = next(member for member in updated_staff if int(member["id"]) == int(staff_a["id"]))
+    agenda_staff = expect(professional.request(f"professional-agenda.php?date={booking_day}"), 200)
+    staff_a_agenda = next(member for member in agenda_staff["staff"] if int(member["id"]) == int(staff_a["id"]))
+    assert staff_a_agenda["pause_starts_at"].startswith("15:00")
     invalid_hours = [dict(hour) for hour in staff_a_hours]
     invalid_hours[0]["closes_at"] = invalid_hours[0]["opens_at"]
+    expect(professional.request("professional-staff.php", {
+        "action": "save", "staffId": int(staff_a["id"]), "name": "Collaboratrice A",
+        "isActive": True, "hours": invalid_hours,
+    }), 422)
+    invalid_hours = [dict(hour) for hour in staff_a_hours]
+    target_invalid_pause = next(hour for hour in invalid_hours if hour["weekday"] == weekday)
+    target_invalid_pause["pause_ends_at"] = ""
     expect(professional.request("professional-staff.php", {
         "action": "save", "staffId": int(staff_a["id"]), "name": "Collaboratrice A",
         "isActive": True, "hours": invalid_hours,
@@ -251,6 +304,10 @@ def main():
     staff_b_url = available + f"&staffId={staff_b['id']}"
     assert "13:00" not in expect(guest.request(staff_a_url), 200)["slots"]
     assert "14:00" in expect(guest.request(staff_a_url), 200)["slots"]
+    assert "14:30" not in expect(guest.request(staff_a_url), 200)["slots"]
+    assert "14:45" not in expect(guest.request(staff_a_url), 200)["slots"]
+    assert "15:00" not in expect(guest.request(staff_a_url), 200)["slots"]
+    assert "15:30" in expect(guest.request(staff_a_url), 200)["slots"]
     assert "13:00" in expect(guest.request(staff_b_url), 200)["slots"]
     staff_booking = {**booking, "time": "14:00", "staffId": int(staff_a["id"])}
     staff_appointment_a = expect(first.request("appointments.php", staff_booking), 201)["appointmentId"]

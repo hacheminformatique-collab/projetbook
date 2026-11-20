@@ -138,13 +138,16 @@ function staffHoursForm(staffHours = []) {
       weekday, enabled: !!row,
       opens_at: row?.opens_at.slice(0, 5) || "09:00",
       closes_at: row?.closes_at.slice(0, 5) || "18:00",
+      pause_starts_at: row?.pause_starts_at?.slice(0, 5) || "",
+      pause_ends_at: row?.pause_ends_at?.slice(0, 5) || "",
     };
   });
 }
 
 function StaffSettings({ csrfToken, salonHours }) {
+  const defaultHours = () => staffHoursForm(salonHours).map((hour) => ({ ...hour, pause_starts_at: "", pause_ends_at: "" }));
   const [staff, setStaff] = useState(null);
-  const [editing, setEditing] = useState(() => ({ name: "", isActive: true, hours: staffHoursForm(salonHours) }));
+  const [editing, setEditing] = useState(() => ({ name: "", isActive: true, hours: defaultHours() }));
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   useEffect(() => {
@@ -169,18 +172,18 @@ function StaffSettings({ csrfToken, salonHours }) {
         csrfToken,
         body: {
           action: "save", ...editing,
-          hours: editing.hours.filter((hour) => hour.enabled).map(({ weekday, opens_at, closes_at }) => ({ weekday, opens_at, closes_at })),
+          hours: editing.hours.filter((hour) => hour.enabled).map(({ weekday, opens_at, closes_at, pause_starts_at, pause_ends_at }) => ({ weekday, opens_at, closes_at, pause_starts_at, pause_ends_at })),
         },
       });
       setStaff(result.staff);
-      setEditing({ name: "", isActive: true, hours: staffHoursForm(salonHours) });
+      setEditing({ name: "", isActive: true, hours: defaultHours() });
       setNotice({ kind: "success", text: result.message });
     } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
     finally { setSaving(false); }
   }
   return <section className="client-card">
     <h2>Collaborateurs</h2>
-    <p>Définissez les jours et plages propres à chaque collaborateur. Les créneaux proposés respecteront à la fois ses horaires et ceux du salon. Les rendez-vous déjà pris restent visibles si un collaborateur est désactivé.</p>
+    <p>Définissez les horaires et une pause facultative par jour pour chaque collaborateur. Les créneaux respecteront ses horaires, sa pause et ceux du salon. Les rendez-vous déjà pris restent visibles si un collaborateur est désactivé.</p>
     {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
     {staff === null && <p>Chargement…</p>}
     <div className="service-list">{staff?.map((member) => <div className="service-row" key={member.id}>
@@ -200,12 +203,14 @@ function StaffSettings({ csrfToken, salonHours }) {
               <label className="checkbox-label"><input type="checkbox" checked={hour.enabled} onChange={(event) => changeHour(index, { enabled: event.target.checked })} />{weekDays[index]}</label>
               <label>Ouverture<input aria-label={`Ouverture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.opens_at} onChange={(event) => changeHour(index, { opens_at: event.target.value })} /></label>
               <label>Fermeture<input aria-label={`Fermeture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.closes_at} onChange={(event) => changeHour(index, { closes_at: event.target.value })} /></label>
+              <label>Début pause<input aria-label={`Début pause ${weekDays[index]}`} type="time" min={hour.opens_at} max={hour.closes_at} required={hour.enabled && !!hour.pause_ends_at} disabled={!hour.enabled} value={hour.pause_starts_at} onChange={(event) => changeHour(index, { pause_starts_at: event.target.value })} /></label>
+              <label>Fin pause<input aria-label={`Fin pause ${weekDays[index]}`} type="time" min={hour.pause_starts_at || hour.opens_at} max={hour.closes_at} required={hour.enabled && !!hour.pause_starts_at} disabled={!hour.enabled} value={hour.pause_ends_at} onChange={(event) => changeHour(index, { pause_ends_at: event.target.value })} /></label>
             </div>
           ))}
         </div>
         <div className="review-buttons">
           <button type="submit" className="auth-submit">{saving ? "Enregistrement…" : "Enregistrer"}</button>
-          {editing.staffId && <button type="button" className="admin-nav-link" onClick={() => setEditing({ name: "", isActive: true, hours: staffHoursForm(salonHours) })}>Annuler</button>}
+          {editing.staffId && <button type="button" className="admin-nav-link" onClick={() => setEditing({ name: "", isActive: true, hours: defaultHours() })}>Annuler</button>}
         </div>
       </fieldset>
     </form>}
@@ -277,7 +282,13 @@ function ClosureSettings({ csrfToken }) {
 function SalonSettings({ configuration, csrfToken, onSaved }) {
   const [hours, setHours] = useState(() => weekDays.map((_, index) => {
     const row = configuration.hours.find((hour) => Number(hour.weekday) === index + 1);
-    return { weekday: index + 1, enabled: !!row, opens_at: row?.opens_at.slice(0, 5) || "09:00", closes_at: row?.closes_at.slice(0, 5) || "18:00" };
+    return {
+      weekday: index + 1, enabled: !!row,
+      opens_at: row?.opens_at.slice(0, 5) || "09:00",
+      closes_at: row?.closes_at.slice(0, 5) || "18:00",
+      pause_starts_at: row?.pause_starts_at?.slice(0, 5) || "",
+      pause_ends_at: row?.pause_ends_at?.slice(0, 5) || "",
+    };
   }));
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -292,7 +303,7 @@ function SalonSettings({ configuration, csrfToken, onSaved }) {
     try {
       const result = await apiRequest("professional-salon.php", {
         csrfToken,
-        body: { ...data, isPublic: data.isPublic === "on", hours: hours.filter((hour) => hour.enabled).map(({ weekday, opens_at, closes_at }) => ({ weekday, opens_at, closes_at })) },
+        body: { ...data, isPublic: data.isPublic === "on", hours: hours.filter((hour) => hour.enabled).map(({ weekday, opens_at, closes_at, pause_starts_at, pause_ends_at }) => ({ weekday, opens_at, closes_at, pause_starts_at, pause_ends_at })) },
       });
       onSaved(result);
       setNotice({ kind: "success", text: "Votre salon et ses horaires ont été enregistrés." });
@@ -302,7 +313,7 @@ function SalonSettings({ configuration, csrfToken, onSaved }) {
   return (
     <section className="client-card">
       <h2>Mon salon et mes horaires</h2>
-      <p className="field-hint">Une plage d’ouverture par jour, sans passage à minuit. Les rendez-vous déjà confirmés sont conservés si vous changez vos horaires.</p>
+      <p className="field-hint">Une plage d’ouverture et une pause facultative par jour. Renseignez les deux horaires de pause, à l’intérieur de l’ouverture. Les rendez-vous confirmés restent visibles si vous changez vos horaires.</p>
       {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
       <form className="auth-form" onSubmit={submit}>
         <fieldset disabled={saving} className="form-fieldset">
@@ -321,6 +332,8 @@ function SalonSettings({ configuration, csrfToken, onSaved }) {
                 <label className="checkbox-label"><input type="checkbox" checked={hour.enabled} onChange={(event) => changeHour(index, { enabled: event.target.checked })} />{weekDays[index]}</label>
                 <label>Ouverture<input aria-label={`Ouverture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.opens_at} onChange={(event) => changeHour(index, { opens_at: event.target.value })} /></label>
                 <label>Fermeture<input aria-label={`Fermeture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.closes_at} onChange={(event) => changeHour(index, { closes_at: event.target.value })} /></label>
+                <label>Début pause<input aria-label={`Début pause ${weekDays[index]}`} type="time" min={hour.opens_at} max={hour.closes_at} required={hour.enabled && !!hour.pause_ends_at} disabled={!hour.enabled} value={hour.pause_starts_at} onChange={(event) => changeHour(index, { pause_starts_at: event.target.value })} /></label>
+                <label>Fin pause<input aria-label={`Fin pause ${weekDays[index]}`} type="time" min={hour.pause_starts_at || hour.opens_at} max={hour.closes_at} required={hour.enabled && !!hour.pause_starts_at} disabled={!hour.enabled} value={hour.pause_ends_at} onChange={(event) => changeHour(index, { pause_ends_at: event.target.value })} /></label>
               </div>
             ))}
           </div>
