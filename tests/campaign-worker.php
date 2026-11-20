@@ -311,6 +311,36 @@ try {
     [$secondCode, $second] = request($admin, 'admin-campaigns.php?page=2');
     verify($code === 200 && $secondCode === 200 && count($first['campaigns']) === 50 && $first['hasMore'] && !$second['hasMore'], 'Campaign pagination failed.');
     verify(!array_intersect(array_column($first['campaigns'], 'id'), array_column($second['campaigns'], 'id')), 'Campaign pagination repeated rows.');
+    [$code, $filteredFirst] = request($admin, 'admin-campaigns.php?q=pagINation&status=cancelled&page=1');
+    [$secondCode, $filteredSecond] = request($admin, 'admin-campaigns.php?q=pagINation&status=cancelled&page=2');
+    verify($code === 200 && $secondCode === 200 && count($filteredFirst['campaigns']) === 50
+        && count($filteredSecond['campaigns']) === 1 && $filteredFirst['hasMore'] && !$filteredSecond['hasMore'], 'Filtered pagination failed.');
+    verify(!array_intersect(array_column($filteredFirst['campaigns'], 'id'), array_column($filteredSecond['campaigns'], 'id')), 'Filtered pagination repeated rows.');
+    verify($filteredFirst['consentingClients'] === $first['consentingClients'], 'Campaign filters changed the global consent count.');
+    $fixture = $pdo->prepare("INSERT INTO marketing_campaigns (created_by, subject, message_body, status, created_at) VALUES (?, ?, 'Test', ?, ?)");
+    foreach (['queued', 'sending', 'completed', 'cancelled'] as $fixtureStatus) {
+        $fixture->execute([$adminId, 'Filtre spécial 50%_! ' . $fixtureStatus, $fixtureStatus, bookili_now()->format('Y-m-d H:i:s')]);
+    }
+    foreach (['queued', 'sending', 'completed', 'cancelled'] as $fixtureStatus) {
+        [$code, $data] = request($admin, 'admin-campaigns.php?' . http_build_query(['q' => ' SPÉCIAL 50%_! ', 'status' => $fixtureStatus]));
+        verify($code === 200 && count($data['campaigns']) === 1 && $data['campaigns'][0]['status'] === $fixtureStatus, 'Combined campaign search and status filter failed.');
+    }
+    [$code, $data] = request($admin, 'admin-campaigns.php?q=' . rawurlencode('%_!'));
+    verify($code === 200 && count($data['campaigns']) === 4, 'Campaign search did not treat punctuation literally.');
+    [$code, $data] = request($admin, 'admin-campaigns.php?q=' . rawurlencode('%'));
+    verify($code === 200 && count($data['campaigns']) === 4, 'Campaign search treated percent as a wildcard.');
+    [$code, $data] = request($admin, 'admin-campaigns.php?q=partielle&status=completed');
+    verify($code === 200 && count($data['campaigns']) === 1 && (int) $data['campaigns'][0]['id'] === $mixedId
+        && (int) $data['campaigns'][0]['recipients'] === 2 && (int) $data['campaigns'][0]['sent'] === 2, 'Filtered campaign totals were incorrect.');
+    [$code, $data] = request($admin, 'admin-campaigns.php?q=' . rawurlencode("' OR 1=1 --"));
+    verify($code === 200 && $data['campaigns'] === [], 'Campaign search interpreted SQL as a query.');
+    verify(request($client, 'admin-campaigns.php?q=Filtre&status=queued')[0] === 403, 'Client can search campaigns.');
+    verify(request($admin, 'admin-campaigns.php?status=failed')[0] === 422, 'Invalid campaign status was accepted.');
+    verify(request($admin, 'admin-campaigns.php?status%5B%5D=queued')[0] === 422, 'Array campaign status was accepted.');
+    verify(request($admin, 'admin-campaigns.php?q%5B%5D=test')[0] === 422, 'Array campaign search was accepted.');
+    verify(request($admin, 'admin-campaigns.php?q=' . str_repeat('a', 801))[0] === 422, 'Overlong campaign search was accepted.');
+    verify(request($admin, 'admin-campaigns.php?q=%FF')[0] === 422, 'Invalid UTF-8 campaign search was accepted.');
+    verify(request($admin, 'admin-campaigns.php?q=' . rawurlencode("test\nx"))[0] === 422, 'Control character in campaign search was accepted.');
     echo "Campaign delivery, lease recovery, consent, retries and tracking passed.\n";
 } finally {
     if ($lockPdo->inTransaction()) $lockPdo->rollBack();

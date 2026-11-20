@@ -179,7 +179,11 @@ try {
         } else {
           if (window.campaignLoadFails) return new Response(JSON.stringify({ error: "Campagnes indisponibles." }), { status: 503, headers: { "Content-Type": "application/json" } });
           const page = Number(url.searchParams.get("page") || 1);
-          data = { consentingClients: 4, campaigns: window.campaignItems.slice((page - 1) * 2, page * 2), hasMore: page * 2 < window.campaignItems.length };
+          const query = (url.searchParams.get("q") || "").toLowerCase();
+          const status = url.searchParams.get("status") || "all";
+          window.campaignQuery = { page, q: query, status };
+          const filtered = window.campaignItems.filter(item => item.subject.toLowerCase().includes(query) && (status === "all" || item.status === status));
+          data = { consentingClients: 4, campaigns: filtered.slice((page - 1) * 2, page * 2), hasMore: page * 2 < filtered.length };
         }
       } else if (url.pathname.endsWith("/api/client-profile.php")) {
         data = { email: "client@example.test", profile: { first_name: "Test", last_name: "Client", phone_number: "0550123456", date_of_birth: "1990-01-01", marketing_consent: 0 } };
@@ -1292,6 +1296,57 @@ try {
   await evaluate("window.campaignLoadFails = false; Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent === 'Actualiser les campagnes').click()");
   await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités')");
   console.log("Super-admin campaign tracking and retries passed.");
+  await evaluate("document.querySelector('[aria-label=\"Pages des campagnes\"] button').click()");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Ancienne campagne')");
+  await evaluate(`(() => {
+    const form = document.querySelector('[aria-label="Filtrer l’historique des campagnes"]');
+    const query = form.querySelector('input[name=q]');
+    const status = form.querySelector('select[name=status]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(query, ' OFF ');
+    query.dispatchEvent(new Event('input', { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(status, 'sending');
+    status.dispatchEvent(new Event('change', { bubbles: true }));
+    form.querySelector('button[type=submit]').click();
+  })()`);
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Offres')");
+  assert.deepEqual(await evaluate("window.campaignQuery"), { q: "off", status: "sending", page: 1 });
+  assert.equal(await evaluate("document.querySelectorAll('.service-list .service-row').length"), 1);
+  assert.match(await evaluate("document.querySelector('.client-card').textContent"), /Clients actuellement consentants : 4/);
+  assert.match(await evaluate("document.querySelector('.client-card').textContent"), /L’historique est filtré/);
+  await evaluate("Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent === 'Actualiser les campagnes').click()");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Offres')");
+  assert.deepEqual(await evaluate("window.campaignQuery"), { q: "off", status: "sending", page: 1 });
+  await evaluate(`(() => {
+    const form = document.querySelector('[aria-label="Filtrer l’historique des campagnes"]');
+    const query = form.querySelector('input[name=q]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(query, 'introuvable');
+    query.dispatchEvent(new Event('input', { bubbles: true }));
+    form.querySelector('button[type=submit]').click();
+  })()`);
+  await waitFor("document.querySelector('.client-card')?.textContent.includes('Aucune campagne ne correspond')");
+  assert.equal(await evaluate("document.querySelectorAll('.service-list .service-row').length"), 0);
+  await evaluate("Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent === 'Effacer les filtres').click()");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités')");
+  assert.deepEqual(await evaluate("window.campaignQuery"), { q: "", status: "all", page: 1 });
+  assert.equal(await evaluate("document.querySelector('[aria-label=\"Filtrer l’historique des campagnes\"] input').value"), "");
+  await evaluate(`(() => {
+    window.campaignItems[0].status = 'completed';
+    window.campaignItems[0].failed = 1;
+    const form = document.querySelector('[aria-label="Filtrer l’historique des campagnes"]');
+    const query = form.querySelector('input[name=q]');
+    const status = form.querySelector('select[name=status]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(query, 'Actualités');
+    query.dispatchEvent(new Event('input', { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(status, 'completed');
+    status.dispatchEvent(new Event('change', { bubbles: true }));
+    form.querySelector('button[type=submit]').click();
+  })()`);
+  await waitFor("!!document.querySelector('.service-list button')");
+  await evaluate("document.querySelector('.service-list button').click()");
+  await waitFor("document.querySelector('.client-card')?.textContent.includes('Aucune campagne ne correspond')");
+  assert.deepEqual(await evaluate("window.campaignQuery"), { q: "actualités", status: "completed", page: 1 });
+  await evaluate("Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent === 'Effacer les filtres').click()");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités')");
   await evaluate(`(() => {
     const form = document.querySelector('.client-card .auth-form');
     const subject = form.querySelector('input[name=subject]');

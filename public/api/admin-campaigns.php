@@ -172,8 +172,24 @@ try {
     }
 
     $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;
-    if ($page > 10000) bookili_json_response(422, ['error' => 'Page invalide.']);
-    $campaigns = $pdo->query(
+    $query = $_GET['q'] ?? '';
+    $status = $_GET['status'] ?? 'all';
+    if ($page > 10000 || !is_string($query) || strlen($query) > 800 || preg_match('//u', $query) !== 1
+        || preg_match('/[\x00-\x1f\x7f]/', $query)
+        || !in_array($status, ['all', 'queued', 'sending', 'completed', 'cancelled'], true)) {
+        bookili_json_response(422, ['error' => 'Filtres de campagnes invalides.']);
+    }
+    $where = [];
+    $params = [];
+    if (trim($query) !== '') {
+        $where[] = 'LOCATE(:query, c.subject) > 0';
+        $params['query'] = trim($query);
+    }
+    if ($status !== 'all') {
+        $where[] = 'c.status = :status';
+        $params['status'] = $status;
+    }
+    $statement = $pdo->prepare(
         'SELECT c.id, c.subject, c.status, c.created_at, c.completed_at,
                 COUNT(r.id) AS recipients,
                 COALESCE(SUM(r.status = \'sent\'), 0) AS sent,
@@ -184,8 +200,11 @@ try {
                 MIN(CASE WHEN r.status = \'retry\' THEN r.send_after END) AS next_retry
          FROM marketing_campaigns c
          LEFT JOIN marketing_campaign_recipients r ON r.campaign_id = c.id
+         ' . ($where ? 'WHERE ' . implode(' AND ', $where) : '') . '
          GROUP BY c.id ORDER BY c.id DESC LIMIT 51 OFFSET ' . (($page - 1) * 50)
-    )->fetchAll();
+    );
+    $statement->execute($params);
+    $campaigns = $statement->fetchAll();
     $consentingClients = (int) $pdo->query(
         "SELECT COUNT(*) FROM client_marketing_preferences mp
          INNER JOIN accounts a ON a.id = mp.account_id

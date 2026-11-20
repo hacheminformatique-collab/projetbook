@@ -317,18 +317,21 @@ export function AdminCampaigns({ csrfToken, accountId }) {
   const [cleanupOutcome, setCleanupOutcome] = useState(recovery.resolution || null);
   const creating = useRef(false);
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState({ q: "", status: "all" });
+  const [filterDraft, setFilterDraft] = useState({ q: "", status: "all" });
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState(() => recovery.resolution
     ? { kind: "error", text: `${recovery.resolution.message} La demande locale reste à effacer.` } : null);
   const [working, setWorking] = useState(false);
+  const campaignParams = new URLSearchParams({ ...filter, page }).toString();
   useEffect(() => {
     const controller = new AbortController();
     setResult(null);
-    apiRequest(`admin-campaigns.php?page=${page}`, { signal: controller.signal })
+    apiRequest(`admin-campaigns.php?${campaignParams}`, { signal: controller.signal })
       .then((data) => { if (!controller.signal.aborted) setResult(data); })
       .catch((cause) => { if (!controller.signal.aborted) setNotice({ kind: "error", text: cause.message }); });
     return () => controller.abort();
-  }, [page, revision]);
+  }, [campaignParams, revision]);
   async function submit(action, payload) {
     setWorking(true);
     setNotice(null);
@@ -474,9 +477,31 @@ export function AdminCampaigns({ csrfToken, accountId }) {
     </form>
     <h3>Historique des campagnes</h3>
     <p>Les envois acceptés par le serveur ne garantissent pas la réception. Le cron traite les reprises possibles ; une reprise vérifie à nouveau le consentement et ne renvoie pas les messages déjà acceptés.</p>
+    <form className="booking-toolbar" aria-label="Filtrer l’historique des campagnes" onSubmit={(event) => {
+      event.preventDefault();
+      setFilter({ ...filterDraft, q: filterDraft.q.trim() });
+      setPage(1);
+      setNotice(null);
+      setRevision((value) => value + 1);
+    }}>
+      <label>Rechercher dans l’objet<input name="q" maxLength={200} value={filterDraft.q} onChange={(event) => setFilterDraft((current) => ({ ...current, q: event.target.value }))} /></label>
+      <label>Statut<select name="status" value={filterDraft.status} onChange={(event) => setFilterDraft((current) => ({ ...current, status: event.target.value }))}>
+        <option value="all">Tous les statuts</option><option value="queued">En attente</option><option value="sending">En cours</option>
+        <option value="completed">Terminée</option><option value="cancelled">Annulée</option>
+      </select></label>
+      <button className="admin-nav-link" type="submit" disabled={working}>Filtrer</button>
+      <button className="admin-nav-link" type="button" disabled={working} onClick={() => {
+        setFilterDraft({ q: "", status: "all" });
+        setFilter({ q: "", status: "all" });
+        setPage(1);
+        setNotice(null);
+        setRevision((value) => value + 1);
+      }}>Effacer les filtres</button>
+    </form>
+    {(filter.q || filter.status !== "all") && <p className="field-hint">L’historique est filtré : certaines campagnes peuvent être masquées.</p>}
     <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setRevision((value) => value + 1); }}>Actualiser les campagnes</button>
     {!result && !notice && <p role="status">Chargement…</p>}
-    {result?.campaigns.length === 0 && <p>Aucune campagne sur cette page.</p>}
+    {result?.campaigns.length === 0 && <p>Aucune campagne ne correspond aux filtres sur cette page.</p>}
     <div className="service-list">{result?.campaigns.map((campaign) => <article className="service-row" key={campaign.id}>
       <span><strong>{campaign.subject}</strong><br />{statuses[campaign.status]} · {campaign.sent}/{campaign.recipients} envois acceptés · {campaign.pending} en attente, dont {campaign.retrying} en reprise · {campaign.failed} en échec définitif · {campaign.cancelled} annulés<br />
         Créée le {appointmentDate(campaign.created_at)} (heure d’Algérie)

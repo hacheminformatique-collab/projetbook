@@ -245,7 +245,9 @@ envoyées par lots de 25.
 Dans **Super-admin → Campagnes**, l'historique paginé distingue les envois
 acceptés, les reprises, les échecs et les annulations. Les échecs définitifs
 d'une campagne peuvent être remis en attente sans renvoyer les messages déjà
-acceptés. Le consentement et l'état du compte sont revérifiés avant chaque
+acceptés. La recherche porte sur une partie de l'objet, et peut être combinée
+au filtre de statut de la campagne ; le compteur de clients consentants reste
+global. Le consentement et l'état du compte sont revérifiés avant chaque
 envoi ; le cron reste nécessaire pour effectuer la reprise. Une interruption
 après acceptation par le transport mais avant confirmation en base peut
 exceptionnellement provoquer un envoi en double.
