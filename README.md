@@ -326,8 +326,11 @@ l’invitation d’un rendez-vous confirmé à venir depuis `/espace-client`. Le
 fichiers téléchargés ne se mettent pas à jour automatiquement après modification
 ou annulation : le client doit actualiser son calendrier lui-même.
 Il peut retrouver ses rendez-vous à venir ou passés dans `/espace-client`, puis
-modifier la prestation et le créneau ou annuler avant le début. Le professionnel consulte la grille de la
-journée, ouvre les détails et les coordonnées du client, enregistre une note
+modifier la prestation et le créneau ou annuler avant le début. La modification
+indique les conditions et le tarif actuel ; l’annulation demande confirmation
+avec les détails du rendez-vous. Après confirmation, un message rappelle la
+mise à jour manuelle du calendrier et l’envoi différé de l’e-mail.
+Le professionnel consulte la grille de la journée, ouvre les détails et les coordonnées du client, enregistre une note
 privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.
 La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
 un glisser-déposer vers un créneau visible en vue jour ou semaine prépare le

@@ -252,6 +252,14 @@ try {
           return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
         }
         window.appointmentMutations++;
+        if (window.clientBookingTest && window.cancelTestMode && JSON.parse(options.body).action === "cancel") {
+          window.cancelPayload = JSON.parse(options.body);
+          if (window.cancelTestMode === "success") {
+            window.clientAppointments.find(appointment => appointment.id === window.cancelPayload.appointmentId).status = "cancelled";
+            return new Response(JSON.stringify({ message: "Rendez-vous annulé." }), { status: 200, headers: { "Content-Type": "application/json" } });
+          }
+          return new Response(JSON.stringify({ error: "Ce rendez-vous ne peut plus être modifié." }), { status: 409, headers: { "Content-Type": "application/json" } });
+        }
         if (window.bookingConfirmationTest) {
           window.bookingPayload = JSON.parse(options.body);
           data = { appointmentId: 55, message: "Votre rendez-vous est confirmé." };
@@ -649,6 +657,53 @@ try {
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 1");
   assert.equal(await evaluate("document.querySelectorAll('.appointment-list button').length"), 0, "past appointments do not offer calendar downloads");
   console.log("Client appointment calendar downloads passed.");
+
+  await evaluate(`(() => {
+    const filter = document.querySelector('[aria-label="Filtre des rendez-vous"]');
+    filter.value = 'upcoming';
+    filter.dispatchEvent(new Event('change', { bubbles: true }));
+    window.cancelTestMode = 'fail';
+    window.confirmAnswer = false;
+    window.confirm = message => { window.confirmMessage = message; return window.confirmAnswer; };
+  })()`);
+  await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
+  const mutationsBeforeCancellation = await evaluate("window.appointmentMutations");
+  await evaluate("document.querySelector('.appointment-list .review-reject').click()");
+  const cancelConfirmation = await evaluate("window.confirmMessage");
+  assert.match(cancelConfirmation, /Coupe et soin · Salon test/);
+  assert.match(cancelConfirmation, /22 novembre 2026.*(?:14:00|2:00 PM)/);
+  assert.match(cancelConfirmation, /calendrier.*supprimer manuellement/);
+  assert.equal(await evaluate("window.appointmentMutations"), mutationsBeforeCancellation);
+  await evaluate("window.confirmAnswer = true; document.querySelector('.appointment-list .review-reject').click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('ne peut plus être modifié')");
+  assert.equal(await evaluate("window.clientAppointments[0].status"), "confirmed");
+  assert.equal(await evaluate("document.querySelector('.client-card [role=status]')"), null);
+  await evaluate("window.cancelTestMode = 'success'; document.querySelector('.appointment-list .review-reject').click()");
+  await waitFor("document.querySelector('.client-card [role=status]')?.textContent.includes('Rendez-vous annulé')");
+  assert.deepEqual(await evaluate("window.cancelPayload"), { action: "cancel", appointmentId: 55 });
+  assert.match(await evaluate("document.querySelector('.client-card [role=status]').textContent"), /e-mail d’annulation.*attente d’envoi.*calendrier.*supprimez-le manuellement/);
+  await waitFor("document.querySelectorAll('.appointment-list .review-reject').length === 0");
+  console.log("Client cancellation confirmation and error handling passed.");
+
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/salons/1?appointmentId=55&serviceId=1&date=2026-11-19&time=10%3A30`,
+  });
+  await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
+  assert.match(await evaluate("document.querySelector('.booking-content .client-card').textContent"), /tarif et la durée affichés.*réservation actuelle reste inchangée/);
+  await evaluate("document.querySelector('.booking-content button[type=submit]').click()");
+  await waitFor("document.querySelector('.booking-content [role=alert]')?.textContent.includes('n’est plus disponible')");
+  assert.equal(await evaluate("!!document.querySelector('.booking-confirmation')"), false);
+  await waitFor("!!document.querySelector('.booking-time-option input[value=\"10:30\"]')");
+  await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').click()");
+  await evaluate("window.bookingConfirmationTest = true; document.querySelector('.booking-content button[type=submit]').click()");
+  await waitFor("!!document.querySelector('.booking-confirmation')");
+  const modification = await evaluate("document.querySelector('.booking-confirmation').textContent");
+  assert.match(modification, /Votre rendez-vous a bien été modifié/);
+  assert.match(modification, /e-mail de modification/);
+  assert.match(modification, /calendrier.*mettez-le à jour manuellement.*pas synchronisé automatiquement/);
+  assert.equal(await evaluate("window.bookingPayload.action"), "reschedule");
+  assert.equal(await evaluate("window.bookingPayload.appointmentId"), "55");
+  console.log("Client rescheduling guidance and confirmation passed.");
 
   await send("Page.navigate", {
     url: `${origin}/masalledereception/salons/1?serviceId=1&date=2026-11-19&time=17%3A00`,

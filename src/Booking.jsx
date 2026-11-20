@@ -274,7 +274,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
       });
       setConfirmedAppointmentId(result.appointmentId);
       setConfirmed(true);
-      setNotice({ kind: "success", text: result.message });
+      setNotice({ kind: "success", text: appointmentId ? "Votre rendez-vous a bien été modifié." : result.message });
     } catch (cause) {
       setNotice({ kind: "error", text: cause.message });
       setRefresh((value) => value + 1);
@@ -299,6 +299,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
           Un e-mail de {appointmentId ? "modification" : "confirmation"} sera envoyé selon la fréquence du cron.
           Les rappels sont programmés à J−7 et J−1 lorsque la date le permet.
         </p>
+        {appointmentId && <p className="field-hint">Si vous avez ajouté l’ancien rendez-vous à votre calendrier, mettez-le à jour manuellement : il n’est pas synchronisé automatiquement.</p>}
       </div>
       {confirmedAppointmentId && <CalendarDownloadButton details={{
         appointmentId: confirmedAppointmentId, salonId, salonName, salonAddress,
@@ -311,7 +312,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   return (
     <>
       {notice && <p className={`form-message form-${notice.kind}`} role="alert">{notice.text}</p>}
-      {appointmentId && <p className="field-hint">Choisissez une prestation et un nouveau créneau. Votre réservation actuelle est conservée si la modification échoue.</p>}
+      {appointmentId && <p className="field-hint">Choisissez une prestation et un nouveau créneau. Le tarif et la durée affichés sont ceux actuellement proposés. Votre réservation actuelle reste inchangée tant que la modification n’est pas confirmée ou si elle échoue.</p>}
       <form className="auth-form" onSubmit={submit}>
         <label>Prestation
           <select required value={serviceId} onChange={(event) => { timeToRestore.current = ""; setServiceId(event.target.value); setTime(""); setTimeRestoreNotice(""); }} disabled={saving}>
@@ -390,14 +391,17 @@ export function Appointments({ csrfToken, professional = false }) {
     return () => controller.abort();
   }, [professional, date, filter, page, staffId, refresh]);
 
-  async function cancel(id) {
-    if (!window.confirm("Confirmer l’annulation de ce rendez-vous ?")) return;
+  async function cancel(appointment) {
+    const confirmation = professional
+      ? "Confirmer l’annulation de ce rendez-vous ?"
+      : `Annuler ce rendez-vous ?\n\n${appointment.service_name} · ${appointment.salon_name}\n${appointmentDate(appointment.starts_at)} (heure d’Algérie)\n\nSi vous l’avez ajouté à votre calendrier, vous devrez le supprimer manuellement.`;
+    if (!window.confirm(confirmation)) return;
     setWorking(true);
     setError("");
     setNotice("");
     try {
-      const response = await apiRequest("appointments.php", { csrfToken, body: { action: "cancel", appointmentId: id } });
-      setNotice(response.message);
+      const response = await apiRequest("appointments.php", { csrfToken, body: { action: "cancel", appointmentId: appointment.id } });
+      setNotice(professional ? response.message : `${response.message} Un e-mail d’annulation est en attente d’envoi. Si vous avez ajouté ce rendez-vous à votre calendrier, supprimez-le manuellement.`);
       setRefresh((value) => value + 1);
     } catch (cause) { setError(cause.message); }
     finally { setWorking(false); }
@@ -442,7 +446,7 @@ export function Appointments({ csrfToken, professional = false }) {
                   durationMinutes: (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000,
                   staffName: appointment.staff_name || "Non attribué", priceLabel: priceLabel(appointment.price_dzd),
                 }} />}
-                <button className="review-reject" type="button" disabled={working} onClick={() => cancel(appointment.id)}>Annuler</button>
+                <button className="review-reject" type="button" disabled={working} onClick={() => cancel(appointment)}>Annuler</button>
               </div>}
             </article>
           );
