@@ -89,6 +89,11 @@ def main():
     client_multiple = next(item for item in client_appointments if int(item["id"]) == multiple)
     assert int(client_multiple["service_count"]) == 2
     assert [item["id"] for item in client_multiple["services"]] == [int(service["id"]), int(alternate["id"])]
+    expected_details = [
+        {"id": int(service["id"]), "name": "Coupe", "duration_minutes": 30, "price_dzd": 1500},
+        {"id": int(alternate["id"]), "name": "Soin", "duration_minutes": 45, "price_dzd": 2000},
+    ]
+    assert client_multiple["services"] == expected_details
     assert not any(int(item["id"]) == multiple for item in expect(other_client.request("appointments.php"), 200)["appointments"])
     move_client = {
         "action": "reschedule", "appointmentId": multiple,
@@ -102,7 +107,7 @@ def main():
     expect(client.request("appointments.php", {**move_client, "expectedPrice": 1}), 409)
     before_move = next(item for item in expect(client.request("appointments.php"), 200)["appointments"] if int(item["id"]) == multiple)
     assert before_move["starts_at"].endswith("13:00:00") and len(before_move["services"]) == 2
-    expect(client.request("appointments.php", move_client), 200)
+    assert expect(client.request("appointments.php", move_client), 200)["services"] == expected_details
     after_move = next(item for item in expect(client.request("appointments.php"), 200)["appointments"] if int(item["id"]) == multiple)
     assert after_move["starts_at"].endswith("13:15:00") and after_move["ends_at"].endswith("14:30:00")
     assert [item["id"] for item in after_move["services"]] == [int(service["id"]), int(alternate["id"])]
@@ -119,7 +124,9 @@ def main():
     expect(client.request("appointments.php", {**multi_booking, "expectedPrice": 1500}), 409)
     expect(client.request("appointments.php", {**multi_booking, "expectedDuration": 30}), 409)
     expect(client.request("appointments.php", {**multi_booking, "serviceIds": [int(service["id"]), int(service["id"])]}), 422)
-    booked_id = expect(client.request("appointments.php", multi_booking), 201)["appointmentId"]
+    booked_response = expect(client.request("appointments.php", multi_booking), 201)
+    assert booked_response["services"] == expected_details
+    booked_id = booked_response["appointmentId"]
     booked = next(item for item in expect(client.request("appointments.php"), 200)["appointments"] if int(item["id"]) == booked_id)
     assert booked["service_name"] == "Coupe + Soin" and int(booked["price_dzd"]) == 3500
     assert booked["starts_at"].endswith("11:00:00") and booked["ends_at"].endswith("12:15:00")
@@ -270,6 +277,11 @@ def main():
     expect(professional.request("professional-closures.php", {"action": "add", "date": closed_day}), 200)
     closed_agenda = expect(professional.request(f"professional-agenda.php?date={closed_day}"), 200)
     assert closed_agenda["closed"] is True and not closed_agenda["appointments"]
+    expect(professional.request("professional-services.php", {
+        **service_payload, "id": int(service["id"]), "name": "Coupe modifiée", "duration": 45, "price": 3000,
+    }), 200)
+    frozen_booking = next(item for item in expect(client.request("appointments.php"), 200)["appointments"] if int(item["id"]) == booked_id)
+    assert frozen_booking["services"] == expected_details
     print("Professional agenda integration checks passed.")
 
 

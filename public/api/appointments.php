@@ -51,13 +51,16 @@ try {
             $ids = array_column($appointments, 'id');
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             $serviceStatement = $pdo->prepare(
-                "SELECT appointment_id, service_id, service_name FROM appointment_services
+                "SELECT appointment_id, service_id, service_name, duration_minutes, price_dzd FROM appointment_services
                  WHERE appointment_id IN ($placeholders) ORDER BY appointment_id, position"
             );
             $serviceStatement->execute($ids);
             $services = [];
             foreach ($serviceStatement->fetchAll() as $row) {
-                $services[$row['appointment_id']][] = ['id' => (int) $row['service_id'], 'name' => $row['service_name']];
+                $services[$row['appointment_id']][] = [
+                    'id' => (int) $row['service_id'], 'name' => $row['service_name'],
+                    'duration_minutes' => (int) $row['duration_minutes'], 'price_dzd' => (int) $row['price_dzd'],
+                ];
             }
             foreach ($appointments as &$appointment) {
                 $appointment['services'] = $services[$appointment['id']] ?? [];
@@ -251,7 +254,14 @@ try {
         bookili_queue_appointment_emails($pdo, $appointmentId, $action === 'book' ? 'confirmation' : 'rescheduled');
     }
     $pdo->commit();
-    bookili_json_response($action === 'book' ? 201 : 200, ['appointmentId' => $appointmentId, 'message' => $action === 'cancel' ? 'Rendez-vous annulé.' : 'Votre rendez-vous est confirmé.']);
+    $response = ['appointmentId' => $appointmentId, 'message' => $action === 'cancel' ? 'Rendez-vous annulé.' : 'Votre rendez-vous est confirmé.'];
+    if ($action !== 'cancel') {
+        $response['services'] = array_map(static fn(array $item): array => [
+            'id' => (int) $item['id'], 'name' => $item['name'],
+            'duration_minutes' => (int) $item['duration_minutes'], 'price_dzd' => (int) $item['price_dzd'],
+        ], $service['services']);
+    }
+    bookili_json_response($action === 'book' ? 201 : 200, $response);
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     if ($error instanceof PDOException && $error->getCode() === '23000') {

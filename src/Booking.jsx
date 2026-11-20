@@ -180,6 +180,23 @@ export function SalonPage() {
 
 const categories = [["access", "Accès"], ["training", "Formations"], ["experience", "Expériences"]];
 
+function validServiceDetails(services, count, duration, price) {
+  return Array.isArray(services) && services.length === count && count > 0
+    && services.every((service) => service && Number.isSafeInteger(service.id) && service.id > 0
+      && typeof service.name === "string" && service.name.trim()
+      && Number.isSafeInteger(service.duration_minutes) && service.duration_minutes > 0
+      && Number.isSafeInteger(service.price_dzd) && service.price_dzd >= 0)
+    && new Set(services.map((service) => service.id)).size === services.length
+    && services.reduce((total, service) => total + service.duration_minutes, 0) === duration
+    && services.reduce((total, service) => total + service.price_dzd, 0) === price;
+}
+
+function ServiceBreakdown({ services }) {
+  return <ul className="booking-service-breakdown" aria-label="Détail des prestations">
+    {services.map((service) => <li key={service.id}>{service.name} · {service.duration_minutes} min · {priceLabel(service.price_dzd)}</li>)}
+  </ul>;
+}
+
 function CalendarDownloadButton({ details }) {
   const [error, setError] = useState("");
 
@@ -221,6 +238,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   const [confirmed, setConfirmed] = useState(false);
   const [timeRestoreNotice, setTimeRestoreNotice] = useState("");
   const [confirmedAppointmentId, setConfirmedAppointmentId] = useState(null);
+  const [confirmedServices, setConfirmedServices] = useState(null);
   const timeToRestore = useRef(initialSelection.time);
   const selectedServices = serviceIds.map((id) => services.find((service) => String(service.id) === id)).filter(Boolean);
   const selected = selectedServices.length > 0 && selectedServices.length === serviceIds.length ? {
@@ -301,6 +319,8 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         },
       });
       setConfirmedAppointmentId(result.appointmentId);
+      setConfirmedServices(validServiceDetails(result.services, serviceIds.length, selected.duration_minutes, selected.price_dzd)
+        && result.services.every((service, index) => String(service.id) === serviceIds[index]) ? result.services : null);
       setConfirmed(true);
       setNotice({ kind: "success", text: appointmentId ? "Votre rendez-vous a bien été modifié." : result.message });
     } catch (cause) {
@@ -311,13 +331,16 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
     }
   }
   if (confirmed) {
+    const confirmedName = confirmedServices?.map((service) => service.name).join(" + ");
     return <>
       <div className="booking-confirmation">
         <p className="form-message form-success" role="status">{notice.text}</p>
         <h3>Récapitulatif du rendez-vous</h3>
+        {!confirmedServices && <p className="form-message form-error" role="alert">Le rendez-vous est confirmé, mais le détail des prestations est indisponible. Consultez vos rendez-vous dans l’espace client.</p>}
         <dl className="client-details">
           <div><dt>Établissement</dt><dd>{salonName}</dd></div>
-          <div><dt>Prestation</dt><dd>{selected.name}</dd></div>
+          {confirmedServices && <div><dt>{confirmedServices.length > 1 ? "Prestations" : "Prestation"}</dt><dd>{confirmedServices.length > 1
+            ? <ServiceBreakdown services={confirmedServices} /> : confirmedName}</dd></div>}
           <div><dt>Date et heure</dt><dd>{appointmentDate(`${date} ${time}:00`)}</dd></div>
           <div><dt>Collaborateur</dt><dd>{selectedStaff?.name || "Non attribué"}</dd></div>
           <div><dt>Durée</dt><dd>{selected.duration_minutes} min</dd></div>
@@ -329,9 +352,9 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         </p>
         {appointmentId && <p className="field-hint">Si vous avez ajouté l’ancien rendez-vous à votre calendrier, mettez-le à jour manuellement : il n’est pas synchronisé automatiquement.</p>}
       </div>
-      {confirmedAppointmentId && <CalendarDownloadButton details={{
+      {confirmedAppointmentId && confirmedServices && <CalendarDownloadButton details={{
         appointmentId: confirmedAppointmentId, salonId, salonName, salonAddress,
-        serviceName: selected.name, date, time, durationMinutes: Number(selected.duration_minutes),
+        serviceName: confirmedName, date, time, durationMinutes: Number(selected.duration_minutes),
         staffName: selectedStaff?.name || "Non attribué", priceLabel: priceLabel(selected.price_dzd),
       }} />}
       <Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link>
@@ -484,11 +507,16 @@ export function Appointments({ csrfToken, professional = false }) {
       <div className="appointment-list">
         {result?.appointments.map((appointment) => {
           const editable = appointment.status === "confirmed" && new Date(appointment.starts_at.replace(" ", "T") + "+01:00") > new Date();
+          const duration = (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000;
+          const hasDetails = validServiceDetails(appointment.services, Number(appointment.service_count), duration, Number(appointment.price_dzd));
           return (
             <article className="appointment-card" key={appointment.id}>
               <p className={`application-status ${appointment.status === "cancelled" ? "status-rejected" : "status-approved"}`}>{appointment.status === "cancelled" ? "Annulé" : "Confirmé"}</p>
               <h3>{appointment.service_name}</h3>
-              <p>{appointmentDate(appointment.starts_at)} · {priceLabel(appointment.price_dzd)}{appointment.staff_name && <> · {appointment.staff_name}</>}</p>
+              <p>{appointmentDate(appointment.starts_at)}{Number.isSafeInteger(duration) && duration > 0 && <> · {duration} min</>} · {priceLabel(appointment.price_dzd)}{appointment.staff_name && <> · {appointment.staff_name}</>}</p>
+              {!professional && Number(appointment.service_count) > 1 && (hasDetails
+                ? <ServiceBreakdown services={appointment.services} />
+                : <p className="form-message form-error" role="alert">Le détail des prestations est indisponible. Actualisez la liste ou contactez l’établissement.</p>)}
               {professional ? <p>{appointment.first_name} {appointment.last_name} · <a className="inline-link" href={`tel:${appointment.client_phone}`}>{appointment.client_phone}</a></p> : (
                 <p>{appointment.salon_name} · {appointment.address}, {appointment.city}<br /><a className="inline-link" href={`tel:${appointment.salon_phone}`}>{appointment.salon_phone}</a></p>
               )}
@@ -498,7 +526,7 @@ export function Appointments({ csrfToken, professional = false }) {
                   appointmentId: appointment.id, salonId: appointment.salon_id, salonName: appointment.salon_name,
                   salonAddress: `${appointment.address}, ${appointment.city}`, serviceName: appointment.service_name,
                   date: appointment.starts_at.slice(0, 10), time: appointment.starts_at.slice(11, 16),
-                  durationMinutes: (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000,
+                  durationMinutes: duration,
                   staffName: appointment.staff_name || "Non attribué", priceLabel: priceLabel(appointment.price_dzd),
                 }} />}
                 <button className="review-reject" type="button" disabled={working} onClick={() => cancel(appointment)}>Annuler</button>

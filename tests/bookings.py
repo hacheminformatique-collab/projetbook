@@ -257,6 +257,7 @@ def main():
     expect(professional.request("professional-services.php", {**service_payload, "id": service_id, "price": 2500, "duration": 60}), 200)
     mine = expect(first.request("appointments.php"), 200)["appointments"]
     assert int(mine[0]["price_dzd"]) == 1500 and mine[0]["ends_at"].endswith("10:00:00")
+    assert mine[0]["services"] == [{"id": service_id, "name": "Coupe test", "duration_minutes": 30, "price_dzd": 1500}]
     expect(first.request("appointments.php", {**booking, "time": "15:00"}), 409)
     booking.update(expectedPrice=2500, expectedDuration=60)
 
