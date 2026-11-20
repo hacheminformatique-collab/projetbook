@@ -312,8 +312,9 @@ Sur la fiche d'un salon, les créneaux disponibles sont proposés sous forme de
 boutons radio accessibles et faciles à toucher, avec le nombre d'options
 affiché. Si le client doit se connecter avant de confirmer, son choix de
 prestation, date, collaborateur et horaire est restauré à son retour. Un client
-connecté peut confirmer un créneau, retrouver ses rendez-vous à venir ou passés
-dans `/espace-client`, puis modifier la prestation et le
+connecté voit un récapitulatif de l’établissement, de la prestation, de la date,
+de l’horaire, du collaborateur et du tarif après confirmation. Il peut retrouver
+ses rendez-vous à venir ou passés dans `/espace-client`, puis modifier la prestation et le
 créneau ou annuler avant le début. Le professionnel consulte la grille de la
 journée, ouvre les détails et les coordonnées du client, enregistre une note
 privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.

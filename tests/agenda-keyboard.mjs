@@ -83,6 +83,8 @@ try {
     window.clientBookingTest = location.pathname.startsWith("/masalledereception/salons/");
     window.clientBookingGuest = new URLSearchParams(location.search).get("bookingTest") === "guest";
     window.loginPayload = null;
+    window.bookingConfirmationTest = false;
+    window.bookingPayload = null;
     let appointmentSaleId = null;
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === "string" ? input : input.url, location.href);
@@ -232,6 +234,11 @@ try {
         };
       } else if (url.pathname.endsWith("/api/appointments.php")) {
         window.appointmentMutations++;
+        if (window.bookingConfirmationTest) {
+          window.bookingPayload = JSON.parse(options.body);
+          data = { appointmentId: 55, message: "Votre rendez-vous est confirmé." };
+          return new Response(JSON.stringify(data), { status: 201, headers: { "Content-Type": "application/json" } });
+        }
         return new Response(JSON.stringify({ error: "Ce créneau n’est plus disponible." }), {
           status: 409, headers: { "Content-Type": "application/json" },
         });
@@ -561,6 +568,20 @@ try {
   assert.equal(await evaluate("document.querySelector('.booking-content input[type=date]').value"), "2026-11-19");
   assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), false);
   assert.deepEqual(await evaluate("window.loginPayload"), { email: "client@example.test", password: "test-password" });
+  await evaluate("window.bookingConfirmationTest = true; document.querySelector('.booking-content button[type=submit]').click()");
+  await waitFor("!!document.querySelector('.booking-confirmation')");
+  const confirmation = await evaluate("document.querySelector('.booking-confirmation').textContent");
+  assert.match(confirmation, /Votre rendez-vous est confirmé/);
+  assert.match(confirmation, /Salon test/);
+  assert.match(confirmation, /Coupe test/);
+  assert.match(confirmation, /19 novembre 2026.*10:30/);
+  assert.match(confirmation, /Sonia/);
+  assert.match(confirmation, /30 min/);
+  assert.match(confirmation, /1.?000 DA/);
+  assert.deepEqual(await evaluate("window.bookingPayload"), {
+    action: "book", salonId: "1", serviceId: "1", date: "2026-11-19", time: "10:30",
+    expectedPrice: 1000, expectedDuration: 30, staffId: 1,
+  });
   console.log("Booking choices preserved through client login.");
 
   await send("Page.navigate", {

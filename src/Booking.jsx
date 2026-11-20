@@ -124,6 +124,7 @@ export function SalonPage() {
                 services={result.services}
                 session={session}
                 appointmentId={appointmentId}
+                salonName={result.salon.name}
                 bookingMessage={result.salon.booking_message}
                 initialSelection={{
                   serviceId: result.services.some((service) => String(service.id) === params.get("serviceId")) ? params.get("serviceId") : "",
@@ -169,7 +170,7 @@ export function SalonPage() {
 
 const categories = [["access", "Accès"], ["training", "Formations"], ["experience", "Expériences"]];
 
-function BookingForm({ salonId, services, session, appointmentId, bookingMessage, initialSelection }) {
+function BookingForm({ salonId, salonName, services, session, appointmentId, bookingMessage, initialSelection }) {
   const [serviceId, setServiceId] = useState(initialSelection.serviceId);
   const [staffId, setStaffId] = useState(initialSelection.staffId);
   const [staffMembers, setStaffMembers] = useState([]);
@@ -185,6 +186,7 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
   const [timeRestoreNotice, setTimeRestoreNotice] = useState("");
   const timeToRestore = useRef(initialSelection.time);
   const selected = services.find((service) => String(service.id) === serviceId);
+  const selectedStaff = staffMembers.find((member) => String(member.id) === staffId);
   const client = session?.authenticated && session.account?.role === "client";
   const returnParams = new URLSearchParams();
   if (appointmentId) returnParams.set("appointmentId", appointmentId);
@@ -251,7 +253,25 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
     }
   }
   if (confirmed) {
-    return <><p className="form-message form-success" role="status">{notice.text} Un e-mail de confirmation sera envoyé selon la fréquence du cron. Les rappels sont programmés à J−7 et J−1 lorsque la date le permet.</p><Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link></>;
+    return <>
+      <div className="booking-confirmation">
+        <p className="form-message form-success" role="status">{notice.text}</p>
+        <h3>Récapitulatif du rendez-vous</h3>
+        <dl className="client-details">
+          <div><dt>Établissement</dt><dd>{salonName}</dd></div>
+          <div><dt>Prestation</dt><dd>{selected.name}</dd></div>
+          <div><dt>Date et heure</dt><dd>{appointmentDate(`${date} ${time}:00`)}</dd></div>
+          <div><dt>Collaborateur</dt><dd>{selectedStaff?.name || "Non attribué"}</dd></div>
+          <div><dt>Durée</dt><dd>{selected.duration_minutes} min</dd></div>
+          <div><dt>Tarif</dt><dd>{priceLabel(selected.price_dzd)} · paiement sur place</dd></div>
+        </dl>
+        <p className="field-hint">
+          Un e-mail de {appointmentId ? "modification" : "confirmation"} sera envoyé selon la fréquence du cron.
+          Les rappels sont programmés à J−7 et J−1 lorsque la date le permet.
+        </p>
+      </div>
+      <Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link>
+    </>;
   }
   return (
     <>
