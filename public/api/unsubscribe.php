@@ -44,7 +44,7 @@ try {
     $statement = $pdo->prepare(
         'SELECT r.account_id FROM marketing_unsubscribe_tokens t
          INNER JOIN marketing_campaign_recipients r ON r.id = t.recipient_id
-         WHERE t.token_hash = :hash FOR UPDATE'
+         WHERE t.token_hash = :hash'
     );
     $statement->execute(['hash' => $hash]);
     $accountId = $statement->fetchColumn();
@@ -58,6 +58,16 @@ try {
          VALUES (:account, 0, :updated)
          ON DUPLICATE KEY UPDATE consent = 0, updated_at = VALUES(updated_at)'
     )->execute(['account' => $accountId, 'updated' => $now]);
+    $statement = $pdo->prepare(
+        'SELECT r.account_id FROM marketing_unsubscribe_tokens t
+         INNER JOIN marketing_campaign_recipients r ON r.id = t.recipient_id
+         WHERE t.token_hash = :hash FOR UPDATE'
+    );
+    $statement->execute(['hash' => $hash]);
+    if ((int) $statement->fetchColumn() !== (int) $accountId) {
+        $pdo->rollBack();
+        bookili_unsubscribe_page('Lien de désinscription invalide ou expiré.');
+    }
     $pdo->prepare(
         "UPDATE marketing_campaign_recipients SET status = 'cancelled'
          WHERE account_id = :account AND status IN ('queued', 'retry')"

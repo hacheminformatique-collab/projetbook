@@ -86,6 +86,11 @@ try {
       { id: 12, appointmentId: 56, kind: "reminder_1d", status: "retry", attempts: 1, reason: "delivery", obsolete: false, nextAttempt: "2026-11-19 12:00:00", appointmentStartsAt: "2026-11-20 12:00:00", salonName: "Salon test" },
       { id: 13, appointmentId: 57, kind: "cancelled", status: "failed", attempts: 5, reason: "interrupted", obsolete: true, nextAttempt: null, appointmentStartsAt: "2026-11-21 12:00:00", salonName: "Salon test" },
     ];
+    window.campaignItems = [
+      { id: 21, subject: "Actualités", status: "completed", created_at: "2026-11-18 10:00:00", completed_at: "2026-11-19 10:00:00", recipients: 4, sent: 2, pending: 0, retrying: 0, failed: 1, cancelled: 1, next_retry: null },
+      { id: 22, subject: "Offres", status: "sending", created_at: "2026-11-19 10:00:00", completed_at: null, recipients: 1, sent: 0, pending: 1, retrying: 1, failed: 0, cancelled: 0, next_retry: "2026-11-19 12:00:00" },
+      { id: 23, subject: "Ancienne campagne", status: "cancelled", created_at: "2026-11-17 10:00:00", completed_at: null, recipients: 1, sent: 0, pending: 0, retrying: 0, failed: 0, cancelled: 1, next_retry: null },
+    ];
     window.clientBookingTest = location.pathname.startsWith("/masalledereception/salons/");
     window.clientBookingGuest = new URLSearchParams(location.search).get("bookingTest") === "guest";
     window.multiGuestTest = new URLSearchParams(location.search).get("multiTest") === "1";
@@ -144,6 +149,18 @@ try {
             nextSend: null, lastSent: null, problems: window.notificationItems.slice((page - 1) * 2, page * 2),
             hasMoreProblems: page * 2 < window.notificationItems.length,
           };
+        }
+      } else if (url.pathname.endsWith("/api/admin-campaigns.php")) {
+        if (options?.method === "POST") {
+          window.campaignPayload = JSON.parse(options.body);
+          if (window.campaignFail) return new Response(JSON.stringify({ error: "Cette campagne ne comporte plus d’e-mails en échec." }), { status: 409, headers: { "Content-Type": "application/json" } });
+          const item = window.campaignItems.find(entry => entry.id === window.campaignPayload.campaignId);
+          item.status = "sending"; item.completed_at = null; item.failed = 0; item.pending = 1; item.retrying = 1; item.next_retry = "2026-11-19 12:00:00";
+          data = { retried: 1, message: "1 e-mail(s) remis en attente. Le consentement sera vérifié avant l’envoi." };
+        } else {
+          if (window.campaignLoadFails) return new Response(JSON.stringify({ error: "Campagnes indisponibles." }), { status: 503, headers: { "Content-Type": "application/json" } });
+          const page = Number(url.searchParams.get("page") || 1);
+          data = { consentingClients: 4, campaigns: window.campaignItems.slice((page - 1) * 2, page * 2), hasMore: page * 2 < window.campaignItems.length };
         }
       } else if (url.pathname.endsWith("/api/client-profile.php")) {
         data = { email: "client@example.test", profile: { first_name: "Test", last_name: "Client", phone_number: "0550123456", date_of_birth: "1990-01-01", marketing_consent: 0 } };
@@ -1238,6 +1255,24 @@ try {
   await evaluate("window.notificationLoadFails = false; Array.from(document.querySelectorAll('#notification-settings-title ~ button')).find(b => b.textContent.includes('Actualiser')).click()");
   await waitFor("document.querySelector('#notification-settings-title').parentElement.textContent.includes('E-mail n° 11')");
   console.log("Super-admin notification tracking and retries passed.");
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités')");
+  assert.match(await evaluate("document.querySelector('.service-list').textContent"), /Terminée.*2\/4 envois acceptés.*1 en échec définitif.*En cours.*1 en reprise.*Reprise possible/s);
+  await evaluate("document.querySelector('[aria-label=\"Pages des campagnes\"] button').click()");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Ancienne campagne')");
+  await evaluate("document.querySelector('[aria-label=\"Pages des campagnes\"] button').click()");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités')");
+  await evaluate("window.confirm = () => true; window.campaignFail = true; document.querySelector('.service-list button').click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('plus d’e-mails')");
+  assert.deepEqual(await evaluate("window.campaignPayload"), { action: "retry-failed", campaignId: 21 });
+  await evaluate("window.campaignFail = false; document.querySelector('.service-list button').click()");
+  await waitFor("document.querySelector('.client-card [role=status]')?.textContent.includes('consentement')");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités') && !document.querySelector('.service-list button')");
+  await evaluate("window.campaignLoadFails = true; Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent === 'Actualiser les campagnes').click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('indisponibles')");
+  await evaluate("window.campaignLoadFails = false; Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent === 'Actualiser les campagnes').click()");
+  await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités')");
+  console.log("Super-admin campaign tracking and retries passed.");
 } finally {
   const closed = once(chrome, "exit");
   chrome.kill("SIGTERM");

@@ -107,6 +107,11 @@ Sur une autre base jetable préparée par `tests/professional-agenda.py`,
 `BOOKILI_DISPOSABLE_TEST=1 BOOKILI_TEST_URL=http://localhost:8765 php tests/notification-admin.php`
 vérifie les cinq échecs, les délais de reprise, les droits et le suivi
 super-admin ; il nécessite également PHP cURL et la configuration de test.
+Sur une base jetable distincte préparée par `tests/professional-agenda.py`,
+`BOOKILI_DISPOSABLE_TEST=1 BOOKILI_TEST_URL=http://localhost:8765 php tests/campaign-worker.php`
+vérifie l'envoi simulé des campagnes, la désinscription, les reprises et les
+traitements concurrents. Il nécessite PDO MySQL, PHP cURL et la configuration
+de test ; il modifie les consentements et campagnes de cette base.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
@@ -236,6 +241,13 @@ que les clients actifs ayant explicitement coché leur consentement ; celui-ci
 peut être retiré depuis le compte ou via le lien de désinscription de chaque
 courriel. Les campagnes sont du texte brut, limitées à 5 000 destinataires et
 envoyées par lots de 25.
+Dans **Super-admin → Campagnes**, l'historique paginé distingue les envois
+acceptés, les reprises, les échecs et les annulations. Les échecs définitifs
+d'une campagne peuvent être remis en attente sans renvoyer les messages déjà
+acceptés. Le consentement et l'état du compte sont revérifiés avant chaque
+envoi ; le cron reste nécessaire pour effectuer la reprise. Une interruption
+après acceptation par le transport mais avant confirmation en base peut
+exceptionnellement provoquer un envoi en double.
 
 Ajoutez des tâches cron cPanel, par exemple :
 

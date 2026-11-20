@@ -78,6 +78,17 @@ try {
             );
             $statement->execute(['account' => $recipient['account_id']]);
             $preference = $statement->fetch();
+            // A lease can be recovered while this worker waits for the preference lock.
+            $statement = $pdo->prepare(
+                "SELECT id FROM marketing_campaign_recipients
+                 WHERE id = :id AND status = 'sending' AND attempts = :attempts AND locked_at = :locked_at FOR UPDATE"
+            );
+            $statement->execute(['id' => $recipient['id'], 'attempts' => $recipient['attempts'], 'locked_at' => $nowText]);
+            if (!$statement->fetch()) {
+                $pdo->commit();
+                $skipped++;
+                continue;
+            }
             if (!$preference || (int) $preference['consent'] !== 1 || $preference['status'] !== 'active') {
                 $pdo->prepare("UPDATE marketing_campaign_recipients SET status = 'cancelled', locked_at = NULL WHERE id = :id")
                     ->execute(['id' => $recipient['id']]);
@@ -118,12 +129,14 @@ try {
             $pdo->prepare(
                 'UPDATE marketing_campaign_recipients
                  SET status = :status, send_after = :send_after, locked_at = NULL, last_error = :error
-                 WHERE id = :id AND status = \'sending\''
+                 WHERE id = :id AND status = \'sending\' AND attempts = :attempts AND locked_at = :locked_at'
             )->execute([
                 'status' => $status,
                 'send_after' => $now->modify('+' . $backoff . ' minutes')->format('Y-m-d H:i:s'),
-                'error' => 'Échec du transport e-mail (tentative ' . $attempt . '/5).',
+                'error' => 'Échec de préparation ou d’envoi de l’e-mail (tentative ' . $attempt . '/5).',
                 'id' => $recipient['id'],
+                'attempts' => $attempt,
+                'locked_at' => $nowText,
             ]);
             if ($status === 'retry') $retried++;
         }
@@ -138,7 +151,7 @@ try {
              WHERE r.campaign_id = campaign.id AND r.status IN ('queued', 'sending', 'retry')
            )"
     )->execute(['completed' => $nowText]);
-    fwrite(STDOUT, "BOOKILI : {$sent} message(s) envoyé(s), {$retried} en attente de reprise, {$skipped} destinataire(s) désinscrit(s).\n");
+    fwrite(STDOUT, "BOOKILI : {$sent} message(s) envoyé(s), {$retried} en attente de reprise, {$skipped} traitement(s) ignoré(s).\n");
     exit(0);
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();

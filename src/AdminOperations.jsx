@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiRequest, apiUrl, algerianDate, priceLabel } from "./api-client.js";
+import { apiRequest, apiUrl, algerianDate, appointmentDate, priceLabel } from "./api-client.js";
 
 function Feedback({ notice }) {
   if (!notice) return null;
@@ -277,22 +277,25 @@ export function AdminBilling({ csrfToken }) {
 
 export function AdminCampaigns({ csrfToken }) {
   const [result, setResult] = useState(null);
+  const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState(null);
   const [working, setWorking] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    apiRequest("admin-campaigns.php", { signal: controller.signal })
+    setResult(null);
+    apiRequest(`admin-campaigns.php?page=${page}`, { signal: controller.signal })
       .then((data) => { if (!controller.signal.aborted) setResult(data); })
       .catch((cause) => { if (!controller.signal.aborted) setNotice({ kind: "error", text: cause.message }); });
     return () => controller.abort();
-  }, [revision]);
+  }, [page, revision]);
   async function submit(action, payload) {
     setWorking(true);
     setNotice(null);
     try {
       const response = await apiRequest("admin-campaigns.php", { csrfToken, body: { action, ...payload } });
       setNotice({ kind: "success", text: response.message });
+      setPage(1);
       setRevision((value) => value + 1);
       return true;
     } catch (cause) {
@@ -300,6 +303,7 @@ export function AdminCampaigns({ csrfToken }) {
       return false;
     } finally { setWorking(false); }
   }
+  const statuses = { queued: "En attente", sending: "En cours", completed: "Terminée", cancelled: "Annulée" };
   return <section className="client-card">
     <h2>Campagnes e-mail</h2>
     <p>Les campagnes sont envoyées uniquement aux comptes clients actifs ayant explicitement accepté les communications. Elles sont en texte brut, limitées à 5 000 destinataires et comportent un lien de désinscription. Configurez l’adresse publique HTTPS du site et le cron d’envoi avant de les lancer.</p>
@@ -319,13 +323,28 @@ export function AdminCampaigns({ csrfToken }) {
       </fieldset>
     </form>
     <h3>Historique des campagnes</h3>
+    <p>Les envois acceptés par le serveur ne garantissent pas la réception. Le cron traite les reprises possibles ; une reprise vérifie à nouveau le consentement et ne renvoie pas les messages déjà acceptés.</p>
+    <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setRevision((value) => value + 1); }}>Actualiser les campagnes</button>
     {!result && !notice && <p role="status">Chargement…</p>}
-    {result?.campaigns.length === 0 && <p>Aucune campagne.</p>}
+    {result?.campaigns.length === 0 && <p>Aucune campagne sur cette page.</p>}
     <div className="service-list">{result?.campaigns.map((campaign) => <article className="service-row" key={campaign.id}>
-      <span><strong>{campaign.subject}</strong><br />{campaign.status} · {campaign.sent}/{campaign.recipients} envoyés · {campaign.pending} en attente · {campaign.failed} en échec · {campaign.cancelled} annulés<br />Créée le {campaign.created_at}</span>
+      <span><strong>{campaign.subject}</strong><br />{statuses[campaign.status]} · {campaign.sent}/{campaign.recipients} envois acceptés · {campaign.pending} en attente, dont {campaign.retrying} en reprise · {campaign.failed} en échec définitif · {campaign.cancelled} annulés<br />
+        Créée le {appointmentDate(campaign.created_at)} (heure d’Algérie)
+        {campaign.completed_at && <><br />Terminée le {appointmentDate(campaign.completed_at)} (heure d’Algérie)</>}
+        {campaign.next_retry && <><br />Reprise possible à partir de {appointmentDate(campaign.next_retry)} (heure d’Algérie)</>}
+      </span>
+      <div className="review-buttons">
       {campaign.status === "queued" && <button className="admin-nav-link" type="button" disabled={working} onClick={() => {
         if (window.confirm("Annuler cette campagne avant le début de l’envoi ?")) submit("cancel", { campaignId: Number(campaign.id) });
       }}>Annuler</button>}
+      {campaign.status !== "cancelled" && Number(campaign.failed) > 0 && <button className="admin-nav-link" type="button" disabled={working} onClick={() => {
+        if (window.confirm("Remettre en attente les e-mails en échec de cette campagne ? Le consentement sera vérifié avant l’envoi.")) submit("retry-failed", { campaignId: Number(campaign.id) });
+      }}>Réessayer les échecs</button>}
+      </div>
     </article>)}</div>
+    <nav className="pagination" aria-label="Pages des campagnes">
+      {page > 1 && <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setPage(page - 1); }}>Précédent</button>}
+      {result?.hasMore && <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setPage(page + 1); }}>Suivant</button>}
+    </nav>
   </section>;
 }
