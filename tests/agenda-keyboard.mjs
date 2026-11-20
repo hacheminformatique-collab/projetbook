@@ -238,8 +238,8 @@ try {
   assert.equal(await evaluate("document.activeElement.matches('.agenda-client-search input')"), true);
   await evaluate("Array.from(document.querySelectorAll('.agenda-create button')).find(b => b.textContent.includes('Créer la fiche')).click()");
   await evaluate("document.querySelector('.agenda-service-picker input').click()");
-  await waitFor("!!document.querySelector('.agenda-create select option[value=\"11:30\"]')");
-  assert.equal(await evaluate("Array.from(document.querySelectorAll('.agenda-create select')).find(s => s.querySelector('option[value=\"11:30\"]')).value"), "11:30");
+  await waitFor("!!document.querySelector('.agenda-create .booking-time-option input[value=\"11:30\"]')");
+  assert.equal(await evaluate("document.querySelector('.agenda-create .booking-time-option input[value=\"11:30\"]').checked"), true);
   await key("Escape");
   await waitFor("!document.querySelector('.agenda-create')");
   assert.match(await evaluate("document.activeElement.getAttribute('aria-label')"), /Sonia.*11:30/);
@@ -278,7 +278,7 @@ try {
   assert.equal(await dragOver(1, 7), false, "an absent collaborator cannot receive a drop");
   await evaluate(`document.querySelector('.agenda-day-column').querySelectorAll('.agenda-slot')[7]
     .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.agendaDrag }))`);
-  await waitFor("document.querySelector('.agenda-edit select option[value=\"10:45\"]')?.selected");
+  await waitFor("document.querySelector('.agenda-edit .booking-time-option input[value=\"10:45\"]')?.checked");
   assert.equal(await evaluate("window.appointmentMutations"), 0, "dropping must only propose a move");
   await evaluate("document.querySelector('.agenda-edit button[type=submit]').click()");
   await waitFor("document.querySelector('.agenda-detail [role=alert]')?.textContent.includes('plus disponible')");
@@ -345,6 +345,15 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('.agenda-slot-free').length"), 0);
   await evaluate("(() => { const select = document.querySelector('[aria-label=\"Collaborateur affiché\"]'); select.value = '1'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
   await waitFor("!!document.querySelector('.agenda-slot-free')");
+  await evaluate("document.querySelector('.agenda-booking').click()");
+  await waitFor("!!document.querySelector('.agenda-detail')");
+  await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(button => button.textContent === 'Modifier le rendez-vous').click()");
+  await waitFor("document.querySelectorAll('.agenda-edit .booking-time-option').length === 3");
+  assert.equal(await evaluate("document.querySelector('.agenda-edit .booking-time-picker legend').textContent"), "Horaire · 3 créneaux disponibles");
+  await evaluate("document.querySelector('.agenda-edit .booking-time-option input[value=\"11:30\"]').click()");
+  assert.equal(await evaluate("document.querySelector('.agenda-edit .booking-time-option input[value=\"11:30\"]').checked"), true);
+  await evaluate("document.querySelector('.agenda-detail-header button').click()");
+  await waitFor("!document.querySelector('.agenda-detail')");
   await evaluate("document.querySelector('.pro-mobile-menu').click()");
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.pro-sidebar')).display"), "block");
   await evaluate("document.querySelector('.pro-mobile-menu').click()");

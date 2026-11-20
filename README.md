@@ -318,7 +318,9 @@ privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.
 La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
 un glisser-déposer vers un créneau visible en vue jour ou semaine prépare le
 déplacement, à confirmer depuis la fiche ; sur mobile, la fiche permet de
-choisir le nouvel horaire.
+choisir le nouvel horaire parmi des boutons tactiles accessibles. La création
+et la modification de rendez-vous depuis l'agenda professionnel utilisent le
+même sélecteur d'horaires.
 Pendant le glisser-déposer, la grille vérifie la durée du rendez-vous, les
 horaires et les autres réservations. Un déplacement peut chevaucher son ancien
 créneau, mais pas un autre rendez-vous. Les rendez-vous déjà enregistrés en

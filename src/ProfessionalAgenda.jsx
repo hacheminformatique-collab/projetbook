@@ -29,6 +29,19 @@ function bounds(item, date) {
   ];
 }
 
+function TimeSlotPicker({ slots, time, onChange, disabled }) {
+  if (slots.length === 0) return null;
+  return <fieldset className="booking-time-picker" disabled={disabled}>
+    <legend>Horaire · {slots.length} créneaux disponibles</legend>
+    <div className="booking-time-options">
+      {slots.map((slot, index) => <label className={`booking-time-option${time === slot ? " booking-time-selected" : ""}`} key={slot}>
+        <input type="radio" name="agendaTime" value={slot} checked={time === slot} required={index === 0} onChange={() => onChange(slot)} />
+        <span>{slot}</span>
+      </label>)}
+    </div>
+  </fieldset>;
+}
+
 function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged, onCheckout, onViewSale, destination }) {
   const [note, setNote] = useState(appointment.private_note);
   const [showClient, setShowClient] = useState(false);
@@ -212,9 +225,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         {loadingSlots && <p role="status">Recherche des créneaux…</p>}
         {slotError && <p className="form-message form-error" role="alert">{slotError}</p>}
         {!loadingSlots && !slotError && slots.length === 0 && (activeStaff.length === 0 || staffId) && <p>Aucun créneau disponible pour cette sélection.</p>}
-        <label>Horaire<select value={time} required onChange={(event) => setTime(event.target.value)} disabled={loadingSlots || slots.length === 0}>
-          <option value="">Choisir un horaire</option>{slots.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
-        </select></label>
+        <TimeSlotPicker slots={slots} time={time} onChange={setTime} disabled={loadingSlots || busy} />
         <button className="auth-submit" type="submit" disabled={busy || !service || !time || !!slotError}>Enregistrer la modification</button>
       </form>}
     </section>
@@ -377,9 +388,12 @@ function AppointmentCreate({ agenda, csrfToken, initial, onClose, onCreated }) {
         {loadingSlots && <p role="status">Recherche des créneaux…</p>}
         {serviceIds.length > 0 && activeStaff.length > 0 && !staffId && <p className="field-hint">Choisissez un collaborateur pour afficher ses disponibilités.</p>}
         {!loadingSlots && serviceIds.length > 0 && slots.length === 0 && (activeStaff.length === 0 || staffId) && <p>Aucun créneau disponible pour cette sélection.</p>}
-        <label>Horaire<select required value={time} onChange={(event) => setTime(event.target.value)} disabled={serviceIds.length === 0 || (activeStaff.length > 0 && !staffId) || slots.length === 0}>
-          <option value="">Choisir un horaire</option>{slots.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
-        </select></label>
+        <TimeSlotPicker
+          slots={slots}
+          time={time}
+          onChange={(slot) => { setTime(slot); setError(""); }}
+          disabled={busy || loadingSlots || serviceIds.length === 0 || (activeStaff.length > 0 && !staffId)}
+        />
         <button className="auth-submit" type="submit" disabled={busy || (!client && !newClient) || serviceIds.length === 0 || !time}>
           {busy ? "Création en cours…" : "Confirmer le rendez-vous"}
         </button>
