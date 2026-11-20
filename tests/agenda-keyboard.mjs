@@ -95,7 +95,7 @@ try {
           data = { salons: [], hasMore: window.directoryQuery.tri === "prix" && !window.directoryQuery.page };
         }
       } else if (url.pathname.endsWith("/api/professional-salon.php")) {
-        data = { salon: { id: 1, name: "Salon test", is_public: 1 }, hours: [] };
+        data = { salon: { id: 1, name: "Salon test", city: "Sétif", wilaya_code: "19", is_public: 1 }, hours: [] };
       } else if (url.pathname.endsWith("/api/professional-staff.php")) {
         const hours = Array.from({ length: 7 }, (_, index) => ({
           weekday: index + 1, opens_at: "09:00:00", closes_at: "18:00:00",
@@ -312,6 +312,17 @@ try {
   await evaluate("document.querySelector('.pro-panel .auth-form button[type=submit]').click()");
   await waitFor("window.staffSaveBody?.hours[0]?.pause_starts_at === '12:15'");
   assert.equal(await evaluate("window.staffSaveBody.hours[0].pause_ends_at"), "13:15");
+  await evaluate("Array.from(document.querySelectorAll('.pro-sidebar nav button')).find(b => b.textContent === 'Salon et horaires').click()");
+  await waitFor("document.querySelector('.pro-panel h2')?.textContent === 'Mon salon et mes horaires'");
+  assert.equal(await evaluate("document.querySelector('.pro-panel input[name=city]').value"), "Sétif");
+  await evaluate(`(() => {
+    const input = document.querySelector('.pro-panel input[name=city]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Ora');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor("window.citySuggestionQuery === 'Ora'");
+  assert.equal(await evaluate("document.querySelector('.pro-panel input[name=city]').list.options[0]?.value"), "Oran");
+  assert.equal(await evaluate("document.querySelector('.pro-panel input[name=city]').value"), "Ora", "the professional can keep an unlisted Algerian city");
   await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
   await waitFor("!!document.querySelector('.agenda-day-column')");
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });

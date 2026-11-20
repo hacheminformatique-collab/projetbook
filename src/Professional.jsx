@@ -8,6 +8,7 @@ import AgendaDisplaySettings from "./AgendaDisplaySettings.jsx";
 import ProfessionalProfile from "./ProfessionalProfile.jsx";
 import ProfessionalPhotos from "./ProfessionalPhotos.jsx";
 import StaffAbsences from "./StaffAbsences.jsx";
+import AlgerianCityInput from "./AlgerianCityInput.jsx";
 import { InstallLink } from "./PwaInstall.jsx";
 import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } from "./api-client.js";
 import { algerianWilayas } from "./data/algerian-wilayas.js";
@@ -320,7 +321,7 @@ function SalonSettings({ configuration, csrfToken, onSaved }) {
           <label>Nom du salon<input name="name" required maxLength={180} defaultValue={salon.name} /></label>
           <div className="auth-grid">
             <label>Wilaya<select name="wilaya" required defaultValue={salon.wilaya_code}>{algerianWilayas.map((wilaya) => <option key={wilaya.code} value={wilaya.code}>{wilaya.name}</option>)}</select></label>
-            <label>Ville ou commune<input name="city" required maxLength={120} defaultValue={salon.city} /></label>
+            <label>Ville ou commune<AlgerianCityInput name="city" required maxLength={120} defaultValue={salon.city} /></label>
           </div>
           <label>Adresse<input name="address" required maxLength={255} defaultValue={salon.address} /></label>
           <label>Téléphone<input name="phone" type="tel" required maxLength={24} defaultValue={salon.phone_number || ""} /></label>

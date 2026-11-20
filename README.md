@@ -279,7 +279,9 @@ sans supprimer l'historique.
 L'annuaire `/recherche` filtre les salons publiés par nom de salon,
 prestation, ville, wilaya et catégorie, avec pagination. La saisie de ville
 propose les villes d'Algérie où des établissements publics sont répertoriés ;
-elle reste libre et n'exige pas de géolocalisation. Depuis les résultats,
+elle reste libre et n'exige pas de géolocalisation. La configuration du salon
+et la recherche réutilisent ces suggestions ; un professionnel peut toujours
+saisir une commune qui n'apparaît pas encore dans l'annuaire. Depuis les résultats,
 le formulaire permet de modifier le salon ou la prestation recherchée, la
 ville et la wilaya sans revenir à l’accueil. Le tarif « À partir de » est le
 prix le plus bas parmi les prestations actives qui correspondent aux filtres.
