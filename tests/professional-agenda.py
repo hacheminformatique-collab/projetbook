@@ -85,6 +85,9 @@ def main():
         "serviceIds": [int(service["id"]), int(alternate["id"])],
         "date": day, "time": "13:00", "expectedPrice": 3500, "expectedDuration": 75,
     }), 201)["appointmentId"]
+    client_appointments = expect(client.request("appointments.php"), 200)["appointments"]
+    assert int(next(item for item in client_appointments if int(item["id"]) == multiple)["service_count"]) == 2
+    assert not any(int(item["id"]) == multiple for item in expect(other_client.request("appointments.php"), 200)["appointments"])
     new_email = f"walk-in-{booking.SUFFIX}@example.test"
     new_phone = "0550998765"
     walk_in = expect(professional.request("appointments.php", {

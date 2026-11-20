@@ -130,6 +130,9 @@ export function SalonPage() {
                 bookingMessage={result.salon.booking_message}
                 initialSelection={{
                   serviceId: result.services.some((service) => String(service.id) === params.get("serviceId")) ? params.get("serviceId") : "",
+                  serviceUnavailable: Boolean(appointmentId && params.has("serviceId") && !result.services.some((service) => String(service.id) === params.get("serviceId"))),
+                  multipleServices: appointmentId && params.get("multipleServices") === "1",
+                  unknownServices: appointmentId && params.get("unknownServices") === "1",
                   staffId: /^[1-9][0-9]*$/.test(params.get("staffId") || "") ? params.get("staffId") : "",
                   date: validRequestedDate && requestedDate >= algerianDate() && requestedDate <= algerianDate(60)
                     ? requestedDate
@@ -219,6 +222,8 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   const client = session?.authenticated && session.account?.role === "client";
   const returnParams = new URLSearchParams();
   if (appointmentId) returnParams.set("appointmentId", appointmentId);
+  if (initialSelection.multipleServices) returnParams.set("multipleServices", "1");
+  if (initialSelection.unknownServices) returnParams.set("unknownServices", "1");
   if (serviceId) returnParams.set("serviceId", serviceId);
   if (date) returnParams.set("date", date);
   if (time) returnParams.set("time", time);
@@ -233,7 +238,6 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
     if (!serviceId || !date) {
       setLoading(false);
       setStaffMembers([]);
-      setStaffId("");
       return;
     }
     setLoading(true);
@@ -244,7 +248,12 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
       .then((result) => {
         const activeStaff = result.staff || [];
         setStaffMembers(activeStaff);
-        if (staffId && !activeStaff.some((member) => String(member.id) === staffId && !member.is_absent)) setStaffId("");
+        if (staffId && !activeStaff.some((member) => String(member.id) === staffId && !member.is_absent)) {
+          setStaffId("");
+          setTimeRestoreNotice("Ce collaborateur n’est plus disponible pour cette date. Vérifiez le collaborateur et choisissez un créneau.");
+          timeToRestore.current = "";
+          return;
+        }
         setSlots(result.slots);
         const requestedTime = timeToRestore.current;
         timeToRestore.current = "";
@@ -253,7 +262,14 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
           else setTimeRestoreNotice("Le créneau choisi n’est plus disponible. Sélectionnez un autre horaire.");
         }
       })
-      .catch((cause) => { if (!controller.signal.aborted) setSlotError(cause.message); })
+      .catch((cause) => {
+        if (controller.signal.aborted) return;
+        if (staffId && cause.message === "Ce collaborateur n’est plus disponible.") {
+          setStaffId("");
+          timeToRestore.current = "";
+          setTimeRestoreNotice("Ce collaborateur n’est plus disponible. Vérifiez le collaborateur et choisissez un créneau.");
+        } else setSlotError(cause.message);
+      })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [salonId, serviceId, date, staffId, appointmentId, refresh]);
@@ -313,6 +329,9 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
     <>
       {notice && <p className={`form-message form-${notice.kind}`} role="alert">{notice.text}</p>}
       {appointmentId && <p className="field-hint">Choisissez une prestation et un nouveau créneau. Le tarif et la durée affichés sont ceux actuellement proposés. Votre réservation actuelle reste inchangée tant que la modification n’est pas confirmée ou si elle échoue.</p>}
+      {initialSelection.multipleServices && <p className="form-message" role="status">Ce rendez-vous contient plusieurs prestations. La modification remplacera toutes ces prestations par la prestation choisie.</p>}
+      {initialSelection.unknownServices && <p className="form-message" role="status">Vérifiez les prestations de votre rendez-vous : la modification les remplacera par la prestation choisie.</p>}
+      {initialSelection.serviceUnavailable && <p className="form-message" role="status">La prestation initiale n’est plus disponible. Choisissez une autre prestation.</p>}
       <form className="auth-form" onSubmit={submit}>
         <label>Prestation
           <select required value={serviceId} onChange={(event) => { timeToRestore.current = ""; setServiceId(event.target.value); setTime(""); setTimeRestoreNotice(""); }} disabled={saving}>
@@ -406,6 +425,18 @@ export function Appointments({ csrfToken, professional = false }) {
     } catch (cause) { setError(cause.message); }
     finally { setWorking(false); }
   }
+  function modificationLink(appointment) {
+    const params = new URLSearchParams({
+      appointmentId: appointment.id,
+      date: appointment.starts_at.slice(0, 10),
+    });
+    const count = Number(appointment.service_count);
+    if (count === 1) params.set("serviceId", appointment.service_id);
+    else if (count > 1) params.set("multipleServices", "1");
+    else params.set("unknownServices", "1");
+    if (appointment.staff_id) params.set("staffId", appointment.staff_id);
+    return `/salons/${appointment.salon_id}?${params}`;
+  }
   return (
     <section className="client-card">
       <h2>{professional ? "Agenda" : "Mes rendez-vous"}</h2>
@@ -438,7 +469,7 @@ export function Appointments({ csrfToken, professional = false }) {
                 <p>{appointment.salon_name} · {appointment.address}, {appointment.city}<br /><a className="inline-link" href={`tel:${appointment.salon_phone}`}>{appointment.salon_phone}</a></p>
               )}
               {editable && <div className="review-buttons">
-                {!professional && <Link className="admin-nav-link" to={`/salons/${appointment.salon_id}?appointmentId=${appointment.id}`}>Modifier</Link>}
+                {!professional && <Link className="admin-nav-link" to={modificationLink(appointment)}>Modifier</Link>}
                 {!professional && <CalendarDownloadButton details={{
                   appointmentId: appointment.id, salonId: appointment.salon_id, salonName: appointment.salon_name,
                   salonAddress: `${appointment.address}, ${appointment.city}`, serviceName: appointment.service_name,

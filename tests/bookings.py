@@ -236,6 +236,7 @@ def main():
     expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
     mine = expect(first.request("appointments.php"), 200)["appointments"]
     assert mine[0]["starts_at"].endswith("09:00:00")
+    assert int(mine[0]["service_count"]) == 1
     expect(first.request("appointments.php", {**move, "time": "09:30"}), 200)
     assert "09:00" in expect(guest.request(available), 200)["slots"]
     notification_counts = expect(admin.request("admin-notifications.php"), 200)["counts"]

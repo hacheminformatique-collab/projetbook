@@ -17,6 +17,7 @@ try {
                        b.service_name, b.price_dzd, b.starts_at, b.ends_at, b.status,
                        s.name AS salon_name, s.city, s.address, s.phone_number AS salon_phone";
         if ($professional) $sql .= ', c.first_name, c.last_name, c.phone_number AS client_phone';
+        else $sql .= ', (SELECT COUNT(*) FROM appointment_services aps WHERE aps.appointment_id = b.id) AS service_count';
         $sql .= ' FROM appointments b INNER JOIN salons s ON s.id = b.salon_id
                   LEFT JOIN staff_members m ON m.id = b.staff_id';
         if ($professional) {
