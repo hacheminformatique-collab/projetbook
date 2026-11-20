@@ -238,20 +238,51 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
     return $slots;
 }
 
+function bookili_notification_service_details(array $appointment): string
+{
+    $services = $appointment['services'];
+    if (!$services) return '';
+
+    $duration = 0;
+    $price = 0;
+    $names = [];
+    foreach ($services as $service) {
+        $duration += (int) $service['duration_minutes'];
+        $price += (int) $service['price_dzd'];
+        $names[] = $service['service_name'];
+    }
+    $timezone = new DateTimeZone('Africa/Algiers');
+    $start = new DateTimeImmutable($appointment['starts_at'], $timezone);
+    $end = new DateTimeImmutable($appointment['ends_at'], $timezone);
+    if (implode(' + ', $names) !== $appointment['service_name']
+        || $duration * 60 !== $end->getTimestamp() - $start->getTimestamp()
+        || $price !== (int) $appointment['price_dzd']) {
+        error_log('BOOKILI notification: inconsistent service details for appointment ' . $appointment['id']);
+        return "\nLe détail des prestations est indisponible. Consultez votre espace client ou contactez l’établissement.\n";
+    }
+    if (count($services) === 1) return '';
+
+    $lines = array_map(static fn(array $service): string =>
+        '- ' . $service['service_name'] . ' : ' . (int) $service['duration_minutes'] . ' min, '
+        . number_format((int) $service['price_dzd'], 0, ',', ' ') . ' DA', $services);
+    return "\nDétail des prestations :\n" . implode("\n", $lines) . "\n";
+}
+
 function bookili_queue_email(PDO $pdo, array $appointment, string $kind, DateTimeImmutable $sendAt): void
 {
     $formattedDate = (new DateTimeImmutable($appointment['starts_at'], new DateTimeZone('Africa/Algiers')))
         ->format('d/m/Y à H:i');
     $salonPhone = $appointment['salon_phone'] ?: 'Non renseigné';
     $price = number_format((int) $appointment['price_dzd'], 0, ',', ' ') . ' DA';
-    $details = "Établissement : {$appointment['salon_name']}\nPrestation : {$appointment['service_name']}\nDate et heure : {$formattedDate}\nAdresse : {$appointment['address']}, {$appointment['city']}\nTéléphone : {$salonPhone}\nPrix à régler sur place : {$price} (aucun paiement en ligne).\n";
+    $serviceDetails = $appointment['service_details'];
+    $details = "Établissement : {$appointment['salon_name']}\nPrestation : {$appointment['service_name']}\n{$serviceDetails}Date et heure : {$formattedDate}\nAdresse : {$appointment['address']}, {$appointment['city']}\nTéléphone : {$salonPhone}\nPrix à régler sur place : {$price} (aucun paiement en ligne).\n";
     if (in_array($kind, ['confirmation', 'rescheduled'], true) && trim($appointment['booking_message']) !== '') {
         $details .= "\nMessage de {$appointment['salon_name']} :\n{$appointment['booking_message']}\n";
     }
     $content = match ($kind) {
         'confirmation' => ["Votre rendez-vous BOOKILI est confirmé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous est confirmé.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client. Si votre professionnel a créé votre compte, choisissez « Mot de passe oublié » sur la page Mon compte pour définir votre mot de passe."],
         'rescheduled' => ["Votre rendez-vous BOOKILI a été modifié", "Bonjour {$appointment['first_name']},\n\nLa modification de votre rendez-vous est confirmée.\n\n{$details}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
-        'cancelled' => ["Votre rendez-vous BOOKILI a été annulé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous du {$formattedDate} chez {$appointment['salon_name']} a été annulé. Aucun paiement n’a été effectué.\n\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
+        'cancelled' => ["Votre rendez-vous BOOKILI a été annulé", "Bonjour {$appointment['first_name']},\n\nVotre rendez-vous du {$formattedDate} chez {$appointment['salon_name']} a été annulé. Aucun paiement n’a été effectué.\n{$serviceDetails}\nConnectez-vous à BOOKILI pour retrouver vos rendez-vous dans votre espace client."],
         'reminder_7d' => ["Rappel BOOKILI : rendez-vous dans une semaine", "Bonjour {$appointment['first_name']},\n\nPetit rappel : votre rendez-vous BOOKILI aura lieu dans une semaine.\n\n{$details}\nNous vous attendons bientôt !"],
         'reminder_1d' => ["Rappel BOOKILI : rendez-vous demain", "Bonjour {$appointment['first_name']},\n\nPetit rappel : votre rendez-vous BOOKILI aura lieu demain.\n\n{$details}\nNous vous attendons bientôt !"],
     };
@@ -339,7 +370,7 @@ function bookili_appointment_calendar_event(array $appointment): string
 function bookili_queue_appointment_emails(PDO $pdo, int $appointmentId, string $event): void
 {
     $statement = $pdo->prepare(
-        'SELECT b.id, b.notification_version, b.status, b.starts_at, b.service_name, b.price_dzd,
+        'SELECT b.id, b.notification_version, b.status, b.starts_at, b.ends_at, b.service_name, b.price_dzd,
                 a.email, c.first_name, s.name AS salon_name, s.city, s.address, s.phone_number AS salon_phone,
                 s.booking_message
          FROM appointments b
@@ -353,6 +384,13 @@ function bookili_queue_appointment_emails(PDO $pdo, int $appointmentId, string $
     if (!$appointment || !filter_var($appointment['email'], FILTER_VALIDATE_EMAIL)) {
         throw new RuntimeException('Appointment notification recipient is invalid.');
     }
+    $statement = $pdo->prepare(
+        'SELECT service_name, duration_minutes, price_dzd FROM appointment_services
+         WHERE appointment_id = :id ORDER BY position'
+    );
+    $statement->execute(['id' => $appointmentId]);
+    $appointment['services'] = $statement->fetchAll();
+    $appointment['service_details'] = bookili_notification_service_details($appointment);
 
     $now = bookili_now();
     $eventTime = new DateTimeImmutable($appointment['starts_at'], new DateTimeZone('Africa/Algiers'));

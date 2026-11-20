@@ -32,6 +32,26 @@ try {
     verify(str_contains($unfolded, "Tarif : 1 000 DA\\, paiement sur place"), 'Calendar price is missing.');
     verify(count(array_filter(explode("\r\n", $calendar), static fn(string $line): bool => strlen($line) > 75)) === 0, 'Calendar line exceeds the iCalendar limit.');
 
+    $appointment['service_name'] = 'Coupe + Soin';
+    $appointment['ends_at'] = '2026-11-19 11:45:00';
+    $appointment['price_dzd'] = 2500;
+    $appointment['services'] = [
+        ['service_name' => 'Coupe', 'duration_minutes' => 30, 'price_dzd' => 1000],
+        ['service_name' => 'Soin', 'duration_minutes' => 45, 'price_dzd' => 1500],
+    ];
+    $details = bookili_notification_service_details($appointment);
+    verify(str_contains($details, "- Coupe : 30 min, 1 000 DA\n- Soin : 45 min, 1 500 DA"), 'Service details are missing or incorrectly ordered.');
+    $appointment['services'][1]['price_dzd'] = 1400;
+    $details = bookili_notification_service_details($appointment);
+    verify(str_contains($details, 'détail des prestations est indisponible') && !str_contains($details, '- Coupe'), 'Inconsistent details were presented as valid.');
+    $appointment['services'] = [];
+    verify(bookili_notification_service_details($appointment) === '', 'Legacy appointments should retain their aggregate summary.');
+    $appointment['service_name'] = 'Coupe';
+    $appointment['ends_at'] = '2026-11-19 11:00:00';
+    $appointment['price_dzd'] = 1000;
+    $appointment['services'] = [['service_name' => 'Coupe', 'duration_minutes' => 30, 'price_dzd' => 1000]];
+    verify(bookili_notification_service_details($appointment) === '', 'Single-service messages should retain their existing format.');
+
     $email = [
         'recipient' => 'client@example.test',
         'subject' => 'Votre rendez-vous BOOKILI est confirmé',

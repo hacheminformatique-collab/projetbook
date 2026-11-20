@@ -282,6 +282,7 @@ def main():
     }), 200)
     frozen_booking = next(item for item in expect(client.request("appointments.php"), 200)["appointments"] if int(item["id"]) == booked_id)
     assert frozen_booking["services"] == expected_details
+    expect(client.request("appointments.php", {"action": "cancel", "appointmentId": booked_id}), 200)
     print("Professional agenda integration checks passed.")
 
 
