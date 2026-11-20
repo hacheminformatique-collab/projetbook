@@ -8,6 +8,13 @@ export function DirectoryResults({ search }) {
   const [error, setError] = useState("");
   const params = new URLSearchParams(search);
   const currentPage = Number(params.get("page") || 1);
+  const city = params.get("ville")?.trim();
+  const wilaya = getWilayaName(params.get("wilaya"));
+  const broaderSearch = new URLSearchParams(params);
+  broaderSearch.delete("page");
+  broaderSearch.delete("ville");
+  if (!city) broaderSearch.delete("wilaya");
+  const broaderLink = `/recherche${broaderSearch.size ? `?${broaderSearch}` : ""}`;
   const pageLink = (page) => {
     const next = new URLSearchParams(search);
     next.set("page", String(page));
@@ -29,7 +36,12 @@ export function DirectoryResults({ search }) {
       {result?.salons.length === 0 && (
         <div className="empty-results">
           <h2>Aucun établissement pour cette recherche</h2>
-          <p>Essayez une autre prestation, une ville ou une autre wilaya.</p>
+          <p>{city || wilaya
+            ? "Élargissez la zone ou modifiez vos filtres."
+            : "Essayez une autre prestation ou une autre catégorie."}</p>
+          {(city || wilaya) && <Link className="admin-nav-link" to={broaderLink}>
+            {city && wilaya ? `Rechercher dans toute la wilaya de ${wilaya}` : "Rechercher dans toute l’Algérie"}
+          </Link>}
         </div>
       )}
       <div className="salon-grid">

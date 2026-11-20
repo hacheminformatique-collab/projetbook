@@ -287,7 +287,11 @@ Si le mot-clé correspond au nom du salon ou à sa ville, toutes ses prestations
 actives dans la catégorie sélectionnée sont prises en compte. Les résultats
 sont triés par nom par défaut ; le tri par prix croissant utilise ce tarif
 sur l’ensemble des résultats, avant pagination. Les nouveaux
-filtres conservent la catégorie sélectionnée et repartent à la première page. La fiche
+filtres conservent la catégorie sélectionnée et repartent à la première page.
+Si aucun établissement n’est trouvé, le client peut retirer le filtre de
+ville pour chercher dans la wilaya sélectionnée, puis retirer le filtre de
+wilaya pour chercher dans toute l’Algérie. Le mot-clé, la catégorie et le tri
+sont conservés. La fiche
 `/salons/ID` présente les prestations, l'adresse, le téléphone et les
 disponibilités. Les comptes suspendus et les salons masqués ne sont pas
 réservables.

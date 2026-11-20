@@ -426,9 +426,20 @@ try {
   const allCategories = await evaluate("document.querySelector('#categories a').href");
   assert.equal(new URL(allCategories).searchParams.get("tri"), "prix");
   await evaluate("history.back()");
-  await waitFor("window.directoryQuery?.page === '2'");
-  assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19", tri: "" });
+  await waitFor("window.directoryQuery?.page === '2' && document.querySelector('.results-summary')?.textContent.includes('Coupe')");
+  assert.deepEqual(await evaluate("window.directoryQuery"), { q: "Coupe", ville: "Sétif", wilaya: "19", categorie: "coiffeur", page: "2" });
   console.log("Public directory filters passed.");
+
+  await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&tri=prix&page=2` });
+  await waitFor("window.directoryQuery?.tri === 'prix' && document.querySelectorAll('.empty-results a').length === 1");
+  assert.match(await evaluate("document.querySelector('.empty-results a').textContent.trim()"), /wilaya de Sétif/);
+  await evaluate("document.querySelector('.empty-results a').click()");
+  await waitFor("window.directoryQuery?.wilaya === '19' && !window.directoryQuery.ville && document.querySelector('.empty-results a')?.textContent.includes('Algérie')");
+  assert.deepEqual(await evaluate("window.directoryQuery"), { q: "Coupe", wilaya: "19", categorie: "coiffeur", tri: "prix" });
+  await evaluate("document.querySelector('.empty-results a').click()");
+  await waitFor("!window.directoryQuery?.wilaya && !!document.querySelector('.empty-results h2')");
+  assert.deepEqual(await evaluate("window.directoryQuery"), { q: "Coupe", categorie: "coiffeur", tri: "prix" });
+  assert.equal(await evaluate("!!document.querySelector('.empty-results a')"), false);
 
   await send("Page.navigate", { url: `${origin}/masalledereception/` });
   await waitFor("!!document.querySelector('.search-panel .location-field input')");

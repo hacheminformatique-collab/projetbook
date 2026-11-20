@@ -192,7 +192,7 @@ function SearchResults() {
               <Link key={value} aria-current={(category?.[0] || "") === value ? "true" : undefined} to={categoryLink(value)}>{label}</Link>
             )}
           </nav>
-          <DirectoryResults search={search} />
+          <DirectoryResults key={search} search={search} />
         </section>
       </main>
       <Footer />
