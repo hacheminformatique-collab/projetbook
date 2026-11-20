@@ -315,10 +315,11 @@ ou refusées ne sont jamais affichées au public. Sans photo validée, la carte
 conserve un emplacement gris. Cette évolution réutilise la galerie existante
 et ne nécessite pas de nouvelle migration.
 
-Sur la fiche d'un salon, les créneaux disponibles sont proposés sous forme de
-boutons radio accessibles et faciles à toucher, avec le nombre d'options
-affiché. Si le client doit se connecter avant de confirmer, son choix de
-prestation, date, collaborateur et horaire est restauré à son retour. Un client
+Sur la fiche d'un salon, le client peut choisir jusqu’à six prestations ; leur
+durée et leur tarif sont cumulés pour déterminer les créneaux disponibles,
+proposés sous forme de boutons radio accessibles et faciles à toucher. Si le
+client doit se connecter avant de confirmer, ses choix de prestations, date,
+collaborateur et horaire sont restaurés à son retour. Un client
 connecté voit un récapitulatif de l’établissement, de la prestation, de la date,
 de l’horaire, du collaborateur et du tarif après confirmation et peut télécharger
 une invitation `.ics` pour l’ajouter à son calendrier. Il peut aussi télécharger

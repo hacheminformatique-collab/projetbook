@@ -231,6 +231,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .agenda-service-picker legend { padding-inline: 5px; font-weight: 700; }
 .agenda-service-picker label { display: flex; gap: 9px; align-items: flex-start; line-height: 1.45; }
 .agenda-service-picker input { width: 18px; height: 18px; min-height: 18px; flex: none; accent-color: var(--rose-ink); }
+.booking-service-picker { min-width: 0; }
+.booking-service-picker .checkbox-label { min-height: 44px; padding: 6px 0; overflow-wrap: anywhere; }
 .agenda-client-search { display: grid; gap: 8px; margin-block: 20px 10px; font-weight: 600; }
 .agenda-client-search input { width: 100%; min-height: 46px; padding: 11px 12px; border: 1px solid #cbd2d8; border-radius: 8px; }
 .agenda-client-results { display: grid; gap: 6px; max-height: 250px; overflow-y: auto; margin-block: 10px; }

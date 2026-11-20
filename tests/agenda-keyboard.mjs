@@ -83,9 +83,11 @@ try {
     window.clientBookingTest = location.pathname.startsWith("/masalledereception/salons/");
     window.clientBookingGuest = new URLSearchParams(location.search).get("bookingTest") === "guest";
     window.multiGuestTest = new URLSearchParams(location.search).get("multiTest") === "1";
-    if (window.multiGuestTest) {
+    window.multiBookingTest = new URLSearchParams(location.search).get("multiTest") === "booking";
+    if (window.multiGuestTest || window.multiBookingTest) {
       window.extraServices = Array.from({ length: 6 }, (_, index) => ({
-        id: index + 2, name: "Prestation " + (index + 2), category: "coiffeur", duration_minutes: 15, price_dzd: 500,
+        id: index + 2, name: window.multiBookingTest && index === 5 ? "Prestation " + "x".repeat(150) : "Prestation " + (index + 2),
+        category: "coiffeur", duration_minutes: 15, price_dzd: 500,
       }));
     }
     window.loginPayload = null;
@@ -553,11 +555,7 @@ try {
 
   await send("Page.navigate", { url: `${origin}/masalledereception/salons/1` });
   await waitFor("document.querySelector('.booking-content h1')?.textContent === 'Salon test'");
-  await evaluate(`(() => {
-    const select = document.querySelector('.booking-content select');
-    select.value = '1';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-  })()`);
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"1\"]').click()");
   await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
   assert.equal(await evaluate("document.querySelector('.booking-time-picker legend').textContent"), "Horaire · 4 créneaux disponibles");
   assert.equal(await evaluate("document.querySelector('.booking-time-options').scrollWidth <= document.querySelector('.booking-time-options').clientWidth"), true);
@@ -570,14 +568,10 @@ try {
 
   await send("Page.navigate", { url: `${origin}/masalledereception/salons/1?bookingTest=guest` });
   await waitFor("document.querySelector('.booking-content h1')?.textContent === 'Salon test' && document.querySelector('.booking-content a.inline-link')?.textContent.includes('Connexion')");
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"1\"]').click()");
+  await waitFor("document.querySelector('.booking-content select')?.querySelector('option[value=\"1\"]')?.textContent === 'Sonia'");
   await evaluate(`(() => {
     const select = document.querySelector('.booking-content select');
-    select.value = '1';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-  })()`);
-  await waitFor("document.querySelectorAll('.booking-content select')[1]?.querySelector('option[value=\"1\"]')?.textContent === 'Sonia'");
-  await evaluate(`(() => {
-    const select = document.querySelectorAll('.booking-content select')[1];
     select.value = '1';
     select.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
@@ -605,8 +599,8 @@ try {
   await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
   await waitFor("window.location.pathname === '/masalledereception/salons/1' && !!document.querySelector('.booking-content h1')");
   await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
+  assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"1\"]').checked"), true);
   assert.equal(await evaluate("document.querySelector('.booking-content select').value"), "1");
-  assert.equal(await evaluate("document.querySelectorAll('.booking-content select')[1].value"), "1");
   assert.equal(await evaluate("document.querySelector('.booking-content input[type=date]').value"), "2026-11-19");
   assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), false);
   assert.deepEqual(await evaluate("window.loginPayload"), { email: "client@example.test", password: "test-password" });
@@ -839,6 +833,91 @@ try {
   await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"3\"]').click()");
   assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').disabled"), false);
   console.log("Multi-service selection limit and login restoration passed.");
+
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/salons/1?serviceId=1&bookingTest=guest&multiTest=booking`,
+  });
+  await waitFor("!!document.querySelector('.booking-content select')?.querySelector('option[value=\"1\"]')");
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);
+  assert.equal(await evaluate("document.querySelector('.booking-service-picker .checkbox-label').getBoundingClientRect().height >= 44"), true);
+  await evaluate(`(() => {
+    const select = document.querySelector('.booking-content select');
+    select.value = '1';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
+  await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').click()");
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').click()");
+  await waitFor("window.availabilityQuery.serviceIds === '1,2' && document.querySelectorAll('.booking-time-option').length === 4");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-time-option input:checked').length"), 0);
+  assert.match(await evaluate("document.querySelector('.booking-content form').textContent"), /Coupe test \+ Prestation 2 · 45 minutes.*1.?500 DA/);
+  for (const id of [3, 4, 5, 6]) {
+    await evaluate(`document.querySelector('.booking-content input[name=bookingService][value="${id}"]').click()`);
+  }
+  assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"7\"]').disabled"), true);
+  for (const id of [3, 4, 5, 6]) {
+    await evaluate(`document.querySelector('.booking-content input[name=bookingService][value="${id}"]').click()`);
+  }
+  await waitFor("window.availabilityQuery.serviceIds === '1,2' && document.querySelectorAll('.booking-time-option').length === 4");
+  await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').click()");
+  const multiBookingReturn = new URL(new URL(await evaluate("document.querySelector('.booking-content a.inline-link').href")).searchParams.get("retour"), origin);
+  assert.equal(multiBookingReturn.searchParams.get("serviceIds"), "1,2");
+  assert.equal(multiBookingReturn.searchParams.get("time"), "10:30");
+  assert.equal(multiBookingReturn.searchParams.get("staffId"), "1");
+  await evaluate("document.querySelector('.booking-content a.inline-link').click()");
+  await waitFor("!!document.querySelector('.auth-form input[name=email]')");
+  await evaluate(`(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    for (const [name, value] of [['email', 'client@example.test'], ['password', 'test-password']]) {
+      const input = document.querySelector('.auth-form input[name=' + name + ']');
+      setValue.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  })()`);
+  await waitFor("!document.querySelector('.auth-form button[type=submit]').disabled");
+  await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.booking-content input[name=bookingService]:checked')).map(input => input.value)"), ["1", "2"]);
+  await evaluate("document.querySelector('.booking-content button[type=submit]').click()");
+  await waitFor("document.querySelector('.booking-content [role=alert]')?.textContent.includes('n’est plus disponible')");
+  await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-time-option input:checked').length"), 0);
+  await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').click()");
+  await evaluate("window.bookingConfirmationTest = true; document.querySelector('.booking-content button[type=submit]').click()");
+  await waitFor("!!document.querySelector('.booking-confirmation')");
+  assert.deepEqual(await evaluate("window.bookingPayload"), {
+    action: "book", salonId: "1", serviceIds: [1, 2], date: "2026-11-19", time: "10:30",
+    expectedPrice: 1500, expectedDuration: 45, staffId: 1,
+  });
+  assert.match(await evaluate("document.querySelector('.booking-confirmation').textContent"), /Coupe test \+ Prestation 2.*45 min.*1.?500 DA/);
+  await evaluate("document.querySelector('.booking-confirmation + button').click()");
+  await waitFor("window.calendarFiles.length === 1");
+  const bookingMultiCalendar = await evaluate("window.calendarFiles[0].text.replace(/\\r\\n[ \\t]/g, '')");
+  assert.match(bookingMultiCalendar, /SUMMARY:Coupe test \+ Prestation 2 - Salon test/);
+  assert.match(bookingMultiCalendar, /DTSTART:20261119T093000Z/);
+  assert.match(bookingMultiCalendar, /DTEND:20261119T101500Z/);
+  console.log("Multi-service client booking and calendar passed.");
+
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/salons/1?serviceIds=1%2C2&bookingTest=guest&multiTest=booking`,
+  });
+  await waitFor("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length === 2");
+  await evaluate("window.hideService = true; document.querySelector('.booking-content a.inline-link').click()");
+  await waitFor("!!document.querySelector('.auth-form input[name=email]')");
+  await evaluate(`(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    for (const [name, value] of [['email', 'client@example.test'], ['password', 'test-password']]) {
+      const input = document.querySelector('.auth-form input[name=' + name + ']');
+      setValue.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  })()`);
+  await waitFor("!document.querySelector('.auth-form button[type=submit]').disabled");
+  await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('Certaines prestations choisies')");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length"), 0);
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), true);
+  console.log("Unavailable booking selections require an explicit choice.");
 
   await send("Page.navigate", {
     url: `${origin}/masalledereception/compte?retour=${encodeURIComponent("/salons/1?appointmentId=55&serviceIds=1%2C1")}`,

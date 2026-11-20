@@ -79,7 +79,7 @@ export function SalonPage() {
   const parsedRequestedDate = new Date(`${requestedDate}T00:00:00Z`);
   const validRequestedDate = !Number.isNaN(parsedRequestedDate.valueOf())
     && parsedRequestedDate.toISOString().slice(0, 10) === requestedDate;
-  const requestedServices = appointmentId && params.has("serviceIds")
+  const requestedServices = params.has("serviceIds")
     ? params.get("serviceIds").split(",")
     : params.has("serviceId") ? [params.get("serviceId")] : [];
   const validRequestedServices = requestedServices.length <= 6
@@ -136,7 +136,7 @@ export function SalonPage() {
                 bookingMessage={result.salon.booking_message}
                 initialSelection={{
                   serviceIds: validRequestedServices && requestedServices.every((id) => result.services.some((service) => String(service.id) === id)) ? requestedServices : [],
-                  serviceUnavailable: Boolean(appointmentId && requestedServices.length > 0 && (!validRequestedServices || !requestedServices.every((id) => result.services.some((service) => String(service.id) === id)))),
+                  serviceUnavailable: requestedServices.length > 0 && (!validRequestedServices || !requestedServices.every((id) => result.services.some((service) => String(service.id) === id))),
                   unknownServices: appointmentId && (params.get("unknownServices") === "1" || params.get("multipleServices") === "1"),
                   staffId: /^[1-9][0-9]*$/.test(params.get("staffId") || "") ? params.get("staffId") : "",
                   date: validRequestedDate && requestedDate >= algerianDate() && requestedDate <= algerianDate(60)
@@ -234,7 +234,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   const returnParams = new URLSearchParams();
   if (appointmentId) returnParams.set("appointmentId", appointmentId);
   if (initialSelection.unknownServices) returnParams.set("unknownServices", "1");
-  if (serviceKey) returnParams.set(appointmentId ? "serviceIds" : "serviceId", serviceKey);
+  if (serviceKey) returnParams.set(appointmentId || serviceIds.length > 1 ? "serviceIds" : "serviceId", serviceKey);
   if (date) returnParams.set("date", date);
   if (time) returnParams.set("time", time);
   if (staffId) returnParams.set("staffId", staffId);
@@ -252,7 +252,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
     }
     setLoading(true);
     const query = new URLSearchParams({ salonId, date });
-    query.set(appointmentId ? "serviceIds" : "serviceId", serviceKey);
+    query.set(appointmentId || serviceIds.length > 1 ? "serviceIds" : "serviceId", serviceKey);
     if (staffId) query.set("staffId", staffId);
     if (appointmentId) query.set("appointmentId", appointmentId);
     apiRequest(`availability.php?${query}`, { signal: controller.signal })
@@ -294,7 +294,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         csrfToken: session.csrfToken,
         body: {
           action: appointmentId ? "reschedule" : "book", salonId, date, time,
-          ...(appointmentId ? { serviceIds: serviceIds.map(Number) } : { serviceId: serviceIds[0] }),
+          ...(appointmentId || serviceIds.length > 1 ? { serviceIds: serviceIds.map(Number) } : { serviceId: serviceIds[0] }),
           expectedPrice: Number(selected.price_dzd), expectedDuration: Number(selected.duration_minutes),
           ...(staffId ? { staffId: Number(staffId) } : {}),
           ...(appointmentId ? { appointmentId } : {}),
@@ -342,9 +342,11 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
       {notice && <p className={`form-message form-${notice.kind}`} role="alert">{notice.text}</p>}
       {appointmentId && <p className="field-hint">Choisissez jusqu’à six prestations et un nouveau créneau. Les tarifs et durées affichés sont ceux actuellement proposés. Votre réservation actuelle reste inchangée tant que la modification n’est pas confirmée ou si elle échoue.</p>}
       {initialSelection.unknownServices && <p className="form-message" role="status">Vérifiez les prestations de votre rendez-vous et sélectionnez celles que vous souhaitez conserver.</p>}
-      {initialSelection.serviceUnavailable && <p className="form-message" role="status">Certaines prestations initiales ne sont plus disponibles ou sont invalides. Sélectionnez les prestations que vous souhaitez conserver.</p>}
+      {initialSelection.serviceUnavailable && <p className="form-message" role="status">{appointmentId
+        ? "Certaines prestations initiales ne sont plus disponibles ou sont invalides. Sélectionnez les prestations que vous souhaitez conserver."
+        : "Certaines prestations choisies ne sont plus disponibles ou sont invalides. Sélectionnez à nouveau vos prestations."}</p>}
       <form className="auth-form" onSubmit={submit}>
-        {appointmentId ? <fieldset className="agenda-service-picker" disabled={saving}>
+        <fieldset className="agenda-service-picker booking-service-picker" disabled={saving}>
           <legend>Prestations · 6 maximum</legend>
           {services.map((service) => <label className="checkbox-label" key={service.id}>
             <input type="checkbox" name="bookingService" value={service.id} checked={serviceIds.includes(String(service.id))}
@@ -358,12 +360,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
               }} />
             {service.name} · {service.duration_minutes} min · {priceLabel(service.price_dzd)}
           </label>)}
-        </fieldset> : <label>Prestation
-          <select required value={serviceIds[0] || ""} onChange={(event) => { timeToRestore.current = ""; setServiceIds(event.target.value ? [event.target.value] : []); setTime(""); setTimeRestoreNotice(""); }} disabled={saving}>
-            <option value="">Choisir une prestation</option>
-            {services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.duration_minutes} min · {priceLabel(service.price_dzd)}</option>)}
-          </select>
-        </label>}
+        </fieldset>
         <label>Date
           <input required type="date" min={algerianDate()} max={algerianDate(60)} value={date} onChange={(event) => { timeToRestore.current = ""; setDate(event.target.value); setTime(""); setTimeRestoreNotice(""); }} disabled={saving} />
         </label>

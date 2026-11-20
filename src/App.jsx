@@ -220,7 +220,7 @@ function isSafeClientReturn(value) {
   const params = new URLSearchParams(match[1] || "");
   const entries = [...params];
   if (new Set(entries.map(([key]) => key)).size !== entries.length) return false;
-  if ((params.has("serviceIds") || params.has("unknownServices")) && !params.has("appointmentId")) return false;
+  if (params.has("unknownServices") && !params.has("appointmentId")) return false;
   if (params.has("serviceIds") && params.has("serviceId")) return false;
   return entries.every(([key, item]) => {
     if (key === "date") {
