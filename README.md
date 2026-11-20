@@ -284,7 +284,9 @@ le formulaire permet de modifier le salon ou la prestation recherchée, la
 ville et la wilaya sans revenir à l’accueil. Le tarif « À partir de » est le
 prix le plus bas parmi les prestations actives qui correspondent aux filtres.
 Si le mot-clé correspond au nom du salon ou à sa ville, toutes ses prestations
-actives dans la catégorie sélectionnée sont prises en compte. Les nouveaux
+actives dans la catégorie sélectionnée sont prises en compte. Les résultats
+sont triés par nom par défaut ; le tri par prix croissant utilise ce tarif
+sur l’ensemble des résultats, avant pagination. Les nouveaux
 filtres conservent la catégorie sélectionnée et repartent à la première page. La fiche
 `/salons/ID` présente les prestations, l'adresse, le téléphone et les
 disponibilités. Les comptes suspendus et les salons masqués ne sont pas

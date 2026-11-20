@@ -152,6 +152,18 @@ def main():
     for payload in search_services[:2]:
         expect(professional.request("professional-services.php", {**payload, "isActive": False}), 200)
 
+    expect(other_pro.request("professional-services.php", {**service_payload, "price": 900}), 200)
+    expect(other_pro.request("professional-salon.php", salon_payload(other_salon)), 200)
+    sort_search = "salons.php?q=Coupe&wilaya=19&categorie=coiffeur"
+    alphabetical = expect(guest.request(sort_search), 200)["salons"]
+    assert [int(row["id"]) for row in alphabetical] == [salon_id, int(other_salon["id"])]
+    sorted_results = expect(guest.request(sort_search + "&tri=prix"), 200)["salons"]
+    assert [(int(row["id"]), int(row["from_price"])) for row in sorted_results] == [
+        (int(other_salon["id"]), 900), (salon_id, 1500),
+    ]
+    expect(guest.request(sort_search + "&tri=inconnu"), 422)
+    expect(other_pro.request("professional-salon.php", salon_payload(other_salon, public=False)), 200)
+
     tomorrow = (datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=1))).date() + datetime.timedelta(days=1)).isoformat()
     booking_day = (datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=1))).date() + datetime.timedelta(days=30)).isoformat()
     notification_before = expect(admin.request("admin-notifications.php"), 200)["counts"]

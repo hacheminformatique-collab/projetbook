@@ -145,7 +145,7 @@ function SearchResults() {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
     const next = new URLSearchParams();
-    for (const filter of ["q", "ville", "wilaya"]) {
+    for (const filter of ["q", "ville", "wilaya", "tri"]) {
       const value = fields.get(filter).trim();
       if (value) next.set(filter, value);
     }
@@ -180,6 +180,10 @@ function SearchResults() {
             <label>Wilaya<select name="wilaya" defaultValue={wilayaName ? requestedWilaya : ""}>
               <option value="">Toutes les wilayas</option>
               {algerianWilayas.map(({ code, name }) => <option key={code} value={code}>{name}</option>)}
+            </select></label>
+            <label>Trier par<select name="tri" defaultValue={params.get("tri") === "prix" ? "prix" : ""}>
+              <option value="">Nom (A à Z)</option>
+              <option value="prix">Prix croissant</option>
             </select></label>
             <button type="submit" className="search-button">Rechercher</button>
           </form>

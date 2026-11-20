@@ -92,7 +92,7 @@ try {
           data = { cities: ["Sétif", "Setif", "Oran"].filter((city) => city.toLowerCase().startsWith(window.citySuggestionQuery.toLowerCase())) };
         } else {
           window.directoryQuery = Object.fromEntries(url.searchParams);
-          data = { salons: [], hasMore: false };
+          data = { salons: [], hasMore: window.directoryQuery.tri === "prix" && !window.directoryQuery.page };
         }
       } else if (url.pathname.endsWith("/api/professional-salon.php")) {
         data = { salon: { id: 1, name: "Salon test", is_public: 1 }, hours: [] };
@@ -399,7 +399,7 @@ try {
   await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&page=2` });
   await waitFor("window.directoryQuery?.page === '2'");
   const filterValues = () => evaluate("Object.fromEntries(new FormData(document.querySelector('.results-filters')))");
-  assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19" });
+  assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19", tri: "" });
   await evaluate(`(() => {
     const input = document.querySelector('.results-filters input[name=ville]');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Sé');
@@ -414,14 +414,20 @@ try {
     form.elements.q.value = '  Brushing  ';
     form.elements.ville.value = ' ';
     form.elements.wilaya.value = '31';
+    form.elements.tri.value = 'prix';
     form.requestSubmit();
   })()`);
   await waitFor("window.directoryQuery?.wilaya === '31'");
-  assert.deepEqual(await evaluate("window.directoryQuery"), { q: "Brushing", wilaya: "31", categorie: "coiffeur" });
+  assert.deepEqual(await evaluate("window.directoryQuery"), { q: "Brushing", wilaya: "31", categorie: "coiffeur", tri: "prix" });
   assert.match(await evaluate("document.querySelector('.results-summary').textContent"), /Brushing.*Wilaya : Oran/);
+  const nextResults = await evaluate("document.querySelector('.results-page .pagination a').href");
+  assert.equal(new URL(nextResults).searchParams.get("tri"), "prix");
+  assert.equal(new URL(nextResults).searchParams.get("page"), "2");
+  const allCategories = await evaluate("document.querySelector('#categories a').href");
+  assert.equal(new URL(allCategories).searchParams.get("tri"), "prix");
   await evaluate("history.back()");
   await waitFor("window.directoryQuery?.page === '2'");
-  assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19" });
+  assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19", tri: "" });
   console.log("Public directory filters passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/` });

@@ -58,9 +58,10 @@ try {
     $city = $_GET['ville'] ?? '';
     $wilaya = $_GET['wilaya'] ?? '';
     $category = $_GET['categorie'] ?? '';
+    $sort = $_GET['tri'] ?? '';
     $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;
     if (!is_string($query) || strlen($query) > 400 || !is_string($city) || strlen($city) > 400
-        || !is_string($wilaya) || !is_string($category) || $page > 10000
+        || !is_string($wilaya) || !is_string($category) || !in_array($sort, ['', 'prix'], true) || $page > 10000
         || ($wilaya !== '' && !preg_match('/^(0[1-9]|[1-4][0-9]|5[0-8])$/D', $wilaya))
         || ($category !== '' && !in_array($category, [...BOOKILI_SERVICE_CATEGORIES, 'cadeau'], true))) {
         bookili_json_response(422, ['error' => 'Les filtres de recherche sont invalides.']);
@@ -98,8 +99,9 @@ try {
         $pattern = '%' . strtr(trim($query), ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
         $params += ['salon_query' => $pattern, 'city_query' => $pattern, 'service_query' => $pattern];
     }
+    $order = $sort === 'prix' ? 'from_price ASC, s.name, s.id' : 's.name, s.id';
     $sql .= ' GROUP BY s.id, s.name, s.city, s.wilaya_code, s.address
-              ORDER BY s.name, s.id LIMIT 21 OFFSET ' . (($page - 1) * 20);
+              ORDER BY ' . $order . ' LIMIT 21 OFFSET ' . (($page - 1) * 20);
     $statement = $pdo->prepare($sql);
     $statement->execute($params);
     $salons = $statement->fetchAll();
