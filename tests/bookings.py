@@ -10,6 +10,7 @@ import secrets
 import threading
 import urllib.error
 import urllib.request
+import uuid
 
 spec = importlib.util.spec_from_file_location("account_tests", pathlib.Path(__file__).with_name("client-account.py"))
 account_tests = importlib.util.module_from_spec(spec)
@@ -409,9 +410,21 @@ def main():
     draft = {"subject": f"Test {SUFFIX}", "body": "Message de test"}
     preview = expect(admin.request("admin-campaigns.php", {"action": "preview", **draft}), 200)
     assert preview["recipients"] == 1
-    campaign = expect(admin.request("admin-campaigns.php", {
-        "action": "create", **draft, "expectedRecipients": preview["recipients"],
-    }), 201)
+    admin2 = Client()
+    admin2.token()
+    assert admin2.login(email, PASSWORD) == 200
+    campaign_request = {
+        "action": "create", **draft, "expectedRecipients": preview["recipients"], "requestKey": str(uuid.uuid4()),
+    }
+    barrier = threading.Barrier(2)
+    def create_campaign(client):
+        barrier.wait()
+        return client.request("admin-campaigns.php", campaign_request)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(create_campaign, (admin, admin2)))
+    assert sorted(status for status, _ in responses) == [200, 201], responses
+    assert responses[0][1]["campaignId"] == responses[1][1]["campaignId"], responses
+    campaign = responses[0][1]
     assert campaign["recipients"] == 1
     expect(first.request("admin-campaigns.php"), 403)
     expect(second.request("admin-campaigns.php"), 403)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiRequest, apiUrl, algerianDate, appointmentDate, priceLabel } from "./api-client.js";
 
 function Feedback({ notice }) {
@@ -279,10 +279,18 @@ export function AdminCampaigns({ csrfToken }) {
   const [result, setResult] = useState(null);
   const [draft, setDraft] = useState({ subject: "", body: "" });
   const [preview, setPreview] = useState(null);
+  const [pending, setPending] = useState(null);
+  const creating = useRef(false);
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState(null);
   const [working, setWorking] = useState(false);
+  useEffect(() => {
+    if (!pending) return undefined;
+    const warn = (event) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [pending]);
   useEffect(() => {
     const controller = new AbortController();
     setResult(null);
@@ -301,11 +309,40 @@ export function AdminCampaigns({ csrfToken }) {
       setRevision((value) => value + 1);
       return true;
     } catch (cause) {
-      if (action === "create") setPreview(null);
-      const uncertain = action === "create" && (!cause.status || cause.status >= 500);
-      setNotice({ kind: "error", text: `${cause.message}${uncertain ? " Vérifiez l’historique avant de créer une autre campagne." : ""}` });
+      setNotice({ kind: "error", text: cause.message });
       return false;
     } finally { setWorking(false); }
+  }
+  async function createCampaign() {
+    if (creating.current) return;
+    creating.current = true;
+    setWorking(true);
+    setNotice(null);
+    try {
+      const request = pending || {
+        action: "create", subject: preview.subject, body: preview.body,
+        expectedRecipients: preview.recipients, requestKey: crypto.randomUUID(),
+      };
+      setPending(request);
+      const response = await apiRequest("admin-campaigns.php", { csrfToken, body: request });
+      setPending(null);
+      setDraft({ subject: "", body: "" });
+      setPreview(null);
+      setNotice({ kind: "success", text: response.message });
+      setPage(1);
+      setRevision((value) => value + 1);
+    } catch (cause) {
+      if (cause.code === "campaign_audience_changed") {
+        setPending(null);
+        setPreview(null);
+        setNotice({ kind: "error", text: cause.message });
+      } else {
+        setNotice({ kind: "error", text: `${cause.message} Réessayez la même demande avant de quitter cette page.` });
+      }
+    } finally {
+      creating.current = false;
+      setWorking(false);
+    }
   }
   async function previewDraft(event) {
     event.preventDefault();
@@ -331,9 +368,9 @@ export function AdminCampaigns({ csrfToken }) {
     {notice && <Feedback notice={notice} />}
     <form className="auth-form" onSubmit={previewDraft}>
       <fieldset className="form-fieldset" disabled={working}>
-        <label>Objet<input name="subject" required maxLength={200} value={draft.subject} onChange={changeDraft} /></label>
-        <label>Message<textarea name="body" required maxLength={10000} rows={8} value={draft.body} onChange={changeDraft} /></label>
-        <button className="admin-nav-link" type="submit" disabled={working || !csrfToken}>Afficher l’aperçu</button>
+        <label>Objet<input name="subject" required maxLength={200} value={draft.subject} onChange={changeDraft} disabled={!!pending} /></label>
+        <label>Message<textarea name="body" required maxLength={10000} rows={8} value={draft.body} onChange={changeDraft} disabled={!!pending} /></label>
+        <button className="admin-nav-link" type="submit" disabled={working || !csrfToken || !!pending}>Afficher l’aperçu</button>
         {preview && <section className="campaign-preview" aria-labelledby="campaign-preview-title" aria-live="polite">
           <h3 id="campaign-preview-title">Aperçu de la campagne</h3>
           <p>Destinataires actuellement éligibles : <strong>{preview.recipients}</strong>. Le nombre est revérifié à la confirmation ; le consentement est vérifié à nouveau avant chaque envoi.</p>
@@ -342,10 +379,8 @@ export function AdminCampaigns({ csrfToken }) {
           <p><strong>Objet :</strong> {preview.subject}</p>
           <pre>{preview.previewBody}</pre>
           <p className="field-hint">Le lien indiqué est un exemple : chaque destinataire recevra son propre lien de désinscription. La mise en file ne garantit pas la réception.</p>
-          <button className="auth-submit" type="button" disabled={working || preview.recipients < 1 || preview.recipients > 5000} onClick={async () => {
-            const created = await submit("create", { subject: preview.subject, body: preview.body, expectedRecipients: preview.recipients });
-            if (created) { setDraft({ subject: "", body: "" }); setPreview(null); }
-          }}>Confirmer la mise en file</button>
+          {pending && <p className="field-hint">La réponse est incertaine. Réessayez cette même demande : elle ne créera pas de doublon. Si vous quittez cette page, vérifiez l’historique avant de recréer la campagne.</p>}
+          <button className="auth-submit" type="button" disabled={working || !csrfToken || preview.recipients < 1 || preview.recipients > 5000} onClick={createCampaign}>{pending ? "Réessayer la même demande" : "Confirmer la mise en file"}</button>
         </section>}
       </fieldset>
     </form>

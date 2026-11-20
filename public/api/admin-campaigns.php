@@ -6,12 +6,45 @@ require_once __DIR__ . '/mailer.php';
 $method = bookili_booking_method();
 $data = $method === 'POST' ? bookili_read_json() : [];
 
+function bookili_campaign_replay(PDO $pdo, string $key, int $adminId, string $subject, string $body, int $count): bool
+{
+    $statement = $pdo->prepare(
+        'SELECT id, created_by, subject, message_body, expected_recipients FROM marketing_campaigns WHERE request_key = ?'
+    );
+    $statement->execute([$key]);
+    $campaign = $statement->fetch();
+    if (!$campaign) return false;
+    if ((int) $campaign['created_by'] !== $adminId || $campaign['subject'] !== $subject
+        || $campaign['message_body'] !== $body || (int) $campaign['expected_recipients'] !== $count) {
+        bookili_json_response(409, ['code' => 'campaign_request_conflict', 'error' => 'Cette demande correspond à une autre campagne. Consultez l’historique avant de continuer.']);
+    }
+    bookili_json_response(200, [
+        'campaignId' => (int) $campaign['id'], 'recipients' => $count,
+        'message' => 'Campagne déjà enregistrée. Consultez son statut dans l’historique.',
+    ]);
+}
+
 try {
     $pdo = bookili_database();
     $admin = bookili_require_role($pdo, ['super_admin']);
     if ($method === 'POST') {
         $action = $data['action'] ?? null;
         if (in_array($action, ['preview', 'create'], true)) {
+            $subject = bookili_required_text($data, 'subject', 200);
+            $body = bookili_required_text($data, 'body', 10000);
+            if (preg_match('/[\r\n\x00-\x1f\x7f]/', $subject)) {
+                bookili_json_response(422, ['error' => 'L’objet du courriel ne peut pas contenir de saut de ligne.']);
+            }
+            if ($action === 'create') {
+                $requestKey = $data['requestKey'] ?? null;
+                if (!is_string($requestKey) || !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D', $requestKey)) {
+                    bookili_json_response(422, ['error' => 'Demande de campagne invalide. Rechargez le formulaire.']);
+                }
+                if (!is_int($data['expectedRecipients'] ?? null) || $data['expectedRecipients'] < 1 || $data['expectedRecipients'] > 5000) {
+                    bookili_json_response(422, ['error' => 'Vérifiez l’aperçu et le nombre de destinataires avant de confirmer.']);
+                }
+                bookili_campaign_replay($pdo, $requestKey, (int) $admin['id'], $subject, $body, $data['expectedRecipients']);
+            }
             $configuration = bookili_configuration();
             $publicUrl = $configuration['public_url'] ?? '';
             $urlParts = is_string($publicUrl) ? parse_url($publicUrl) : false;
@@ -21,11 +54,6 @@ try {
                 || !is_string($sender) || filter_var($sender, FILTER_VALIDATE_EMAIL) === false
                 || preg_match('/[\r\n\x00-\x20\x7f]/', $sender)) {
                 bookili_json_response(503, ['error' => 'Configurez une adresse e-mail d’expédition et public_url en HTTPS avant de créer une campagne.']);
-            }
-            $subject = bookili_required_text($data, 'subject', 200);
-            $body = bookili_required_text($data, 'body', 10000);
-            if (preg_match('/[\r\n\x00-\x1f\x7f]/', $subject)) {
-                bookili_json_response(422, ['error' => 'L’objet du courriel ne peut pas contenir de saut de ligne.']);
             }
             if ($action === 'preview') {
                 $count = (int) $pdo->query(
@@ -41,10 +69,22 @@ try {
                     ),
                 ]);
             }
-            if (!is_int($data['expectedRecipients'] ?? null) || $data['expectedRecipients'] < 1 || $data['expectedRecipients'] > 5000) {
-                bookili_json_response(422, ['error' => 'Vérifiez l’aperçu et le nombre de destinataires avant de confirmer.']);
-            }
             $pdo->beginTransaction();
+            $now = bookili_now()->format('Y-m-d H:i:s');
+            try {
+                $pdo->prepare(
+                    "INSERT INTO marketing_campaigns (created_by, subject, message_body, request_key, expected_recipients, status, created_at)
+                     VALUES (:admin, :subject, :body, :request_key, :expected, 'queued', :created)"
+                )->execute([
+                    'admin' => $admin['id'], 'subject' => $subject, 'body' => $body,
+                    'request_key' => $requestKey, 'expected' => $data['expectedRecipients'], 'created' => $now,
+                ]);
+            } catch (PDOException $error) {
+                if ((int) ($error->errorInfo[1] ?? 0) !== 1062) throw $error;
+                $pdo->rollBack();
+                if (!bookili_campaign_replay($pdo, $requestKey, (int) $admin['id'], $subject, $body, $data['expectedRecipients'])) throw $error;
+            }
+            $campaignId = (int) $pdo->lastInsertId();
             $recipients = $pdo->query(
                 "SELECT a.id, a.email FROM client_marketing_preferences mp
                  INNER JOIN accounts a ON a.id = mp.account_id
@@ -59,12 +99,6 @@ try {
                     'error' => 'Le nombre de destinataires a changé. Vérifiez un nouvel aperçu avant de confirmer.',
                 ]);
             }
-            $now = bookili_now()->format('Y-m-d H:i:s');
-            $pdo->prepare(
-                "INSERT INTO marketing_campaigns (created_by, subject, message_body, status, created_at)
-                 VALUES (:admin, :subject, :body, 'queued', :created)"
-            )->execute(['admin' => $admin['id'], 'subject' => $subject, 'body' => $body, 'created' => $now]);
-            $campaignId = (int) $pdo->lastInsertId();
             $insert = $pdo->prepare(
                 "INSERT INTO marketing_campaign_recipients (campaign_id, account_id, recipient, send_after)
                  VALUES (:campaign, :account, :recipient, :send_after)"

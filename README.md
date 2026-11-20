@@ -181,7 +181,8 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/022_salon_public_profile.sql` et
 `database/migrations/023_salon_photos.sql` et
 `database/migrations/024_staff_absences.sql` et
-`database/migrations/025_daily_schedule_pauses.sql` dans phpMyAdmin,
+`database/migrations/025_daily_schedule_pauses.sql` et
+`database/migrations/026_campaign_request_key.sql` dans phpMyAdmin,
 uniquement pour les migrations non encore appliquées. Les nouvelles
 installations obtiennent ces tables directement via `database/schema.sql`.
 Les migrations doivent être appliquées dans l’ordre et une seule fois.
@@ -254,6 +255,13 @@ le texte exige un nouvel aperçu. Si le nombre de destinataires change avant
 confirmation, la mise en file est refusée : il faut vérifier un nouvel aperçu.
 La composition de l'audience peut évoluer même si le nombre reste identique ;
 le consentement est toujours vérifié à nouveau avant l'envoi.
+Si la réponse de création est incertaine, réessayez la même demande depuis
+cette page : sa clé unique évite de créer une seconde campagne. La demande
+en attente n'est conservée que tant que la page reste ouverte ; après l'avoir
+quittée ou rechargée, vérifiez l'historique avant de recréer une campagne.
+Cette protection ne supprime pas le risque de doublon lors de l'envoi par le
+transport. La migration 026 est nécessaire avant de déployer l'API actualisée ;
+déployez aussi le nouveau frontend pour que chaque création fournisse une clé.
 
 Ajoutez des tâches cron cPanel, par exemple :
 
@@ -653,5 +661,7 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/021_salon_booking_message.sql` et
 `database/migrations/022_salon_public_profile.sql` et
 `database/migrations/023_salon_photos.sql` et
-`database/migrations/024_staff_absences.sql`, dans cet ordre,
+`database/migrations/024_staff_absences.sql`,
+`database/migrations/025_daily_schedule_pauses.sql` et
+`database/migrations/026_campaign_request_key.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

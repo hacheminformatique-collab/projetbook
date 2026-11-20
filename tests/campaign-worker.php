@@ -87,12 +87,19 @@ function awaitAttempts(PDO $pdo, int $campaignId, int $attempts): void
     throw new RuntimeException('Worker did not claim the campaign.');
 }
 
+function requestKey(): string
+{
+    $hex = bin2hex(random_bytes(16));
+    return substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-' . substr($hex, 12, 4)
+        . '-' . substr($hex, 16, 4) . '-' . substr($hex, 20, 12);
+}
+
 function createCampaign(CurlHandle $admin, string $token, string $subject, int $expectedRecipients = 1): int
 {
     $draft = ['subject' => $subject, 'body' => 'Message de test'];
     [$code, $preview] = request($admin, 'admin-campaigns.php', ['action' => 'preview'] + $draft, $token);
     verify($code === 200 && $preview['recipients'] === $expectedRecipients, 'Campaign preview failed.');
-    [$code, $result] = request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => $preview['recipients']] + $draft, $token);
+    [$code, $result] = request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => $preview['recipients'], 'requestKey' => requestKey()] + $draft, $token);
     verify($code === 201 && $result['recipients'] === $expectedRecipients, 'Campaign creation failed.');
     return (int) $result['campaignId'];
 }
@@ -124,9 +131,12 @@ try {
     verify($code === 200 && $preview['recipients'] === 1 && $preview['subject'] === 'Offre spéciale' && $preview['body'] === "Bonjour\nTexte <b>brut</b>", 'Preview did not show normalized content.');
     verify($preview['previewBody'] === bookili_campaign_message($preview['body'], 'https://example.test/api/unsubscribe.php?token=[lien-personnel]'), 'Preview footer does not match the delivered format.');
     verify((int) $pdo->query('SELECT COUNT(*) FROM marketing_campaigns')->fetchColumn() === $before, 'Preview created a campaign.');
-    verify(request($admin, 'admin-campaigns.php', ['action' => 'create'] + $draft, $adminToken)[0] === 422, 'Missing preview count was accepted.');
-    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => '1'] + $draft, $adminToken)[0] === 422, 'Invalid preview count was accepted.');
-    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => 5001] + $draft, $adminToken)[0] === 422, 'Audience above 5000 was accepted.');
+    $key = requestKey();
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => 1] + $draft, $adminToken)[0] === 422, 'Missing request key was accepted.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'requestKey' => 'invalid', 'expectedRecipients' => 1] + $draft, $adminToken)[0] === 422, 'Invalid request key was accepted.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'requestKey' => $key] + $draft, $adminToken)[0] === 422, 'Missing preview count was accepted.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'requestKey' => $key, 'expectedRecipients' => '1'] + $draft, $adminToken)[0] === 422, 'Invalid preview count was accepted.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'requestKey' => $key, 'expectedRecipients' => 5001] + $draft, $adminToken)[0] === 422, 'Audience above 5000 was accepted.');
     verify(request($admin, 'admin-campaigns.php', ['action' => 'preview', 'subject' => "Offre\nmalformée", 'body' => 'Test'], $adminToken)[0] === 422, 'Invalid preview subject was accepted.');
     $otherClient = (int) $pdo->query("SELECT id FROM accounts WHERE role = 'client' AND status = 'active' AND id <> {$clientId} ORDER BY id LIMIT 1")->fetchColumn();
     verify($otherClient > 0, 'Expected a second client.');
@@ -135,10 +145,67 @@ try {
          ON DUPLICATE KEY UPDATE consent = VALUES(consent), updated_at = VALUES(updated_at)'
     );
     $consent->execute([$otherClient, 1, bookili_now()->format('Y-m-d H:i:s')]);
-    [$code, $changed] = request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => $preview['recipients']] + $draft, $adminToken);
+    $create = ['action' => 'create', 'requestKey' => $key, 'expectedRecipients' => $preview['recipients']] + $draft;
+    [$code, $changed] = request($admin, 'admin-campaigns.php', $create, $adminToken);
     verify($code === 409 && $changed['code'] === 'campaign_audience_changed', 'Changed audience was not rejected.');
     verify((int) $pdo->query('SELECT COUNT(*) FROM marketing_campaigns')->fetchColumn() === $before, 'A stale audience created a campaign.');
     $consent->execute([$otherClient, 0, bookili_now()->format('Y-m-d H:i:s')]);
+
+    [$code, $created] = request($admin, 'admin-campaigns.php', $create, $adminToken);
+    verify($code === 201, 'Could not create idempotent campaign after audience was restored.');
+    $idempotentId = (int) $created['campaignId'];
+    $consent->execute([$otherClient, 1, bookili_now()->format('Y-m-d H:i:s')]);
+    [$code, $replayed] = request($admin, 'admin-campaigns.php', $create, $adminToken);
+    verify($code === 200 && (int) $replayed['campaignId'] === $idempotentId && $replayed['recipients'] === 1, 'Replay did not return the original campaign after the audience changed.');
+    $altered = $create;
+    $altered['body'] = 'Autre message';
+    [$code, $conflict] = request($admin, 'admin-campaigns.php', $altered, $adminToken);
+    verify($code === 409 && $conflict['code'] === 'campaign_request_conflict', 'Reusing a key with different content was accepted.');
+    $altered = $create;
+    $altered['expectedRecipients'] = 2;
+    verify(request($admin, 'admin-campaigns.php', $altered, $adminToken)[0] === 409, 'Reusing a key with a different count was accepted.');
+    verify((int) $pdo->query('SELECT COUNT(*) FROM marketing_campaigns')->fetchColumn() === $before + 1, 'Replay created another campaign.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'cancel', 'campaignId' => $idempotentId], $adminToken)[0] === 200, 'Could not cancel idempotency test campaign.');
+    verify(request($admin, 'admin-campaigns.php', $create, $adminToken)[0] === 200, 'A cancelled campaign replay created a new campaign.');
+    $consent->execute([$otherClient, 0, bookili_now()->format('Y-m-d H:i:s')]);
+
+    $concurrent = ['action' => 'create', 'requestKey' => requestKey(), 'expectedRecipients' => 1,
+        'subject' => 'Campagne simultanée', 'body' => 'Message simultané'];
+    $now = bookili_now()->format('Y-m-d H:i:s');
+    $lockPdo->beginTransaction();
+    $lockPdo->prepare(
+        "INSERT INTO marketing_campaigns (created_by, subject, message_body, request_key, expected_recipients, status, created_at)
+         VALUES (?, ?, ?, ?, 1, 'queued', ?)"
+    )->execute([$adminId, $concurrent['subject'], $concurrent['body'], $concurrent['requestKey'], $now]);
+    $concurrentId = (int) $lockPdo->lastInsertId();
+    $lockPdo->prepare(
+        'INSERT INTO marketing_campaign_recipients (campaign_id, account_id, recipient, send_after)
+         SELECT ?, id, email, ? FROM accounts WHERE id = ?'
+    )->execute([$concurrentId, $now, $clientId]);
+    curl_setopt_array($admin, [
+        CURLOPT_URL => rtrim(getenv('BOOKILI_TEST_URL'), '/') . '/api/admin-campaigns.php',
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($concurrent, JSON_THROW_ON_ERROR),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-CSRF-Token: ' . $adminToken],
+    ]);
+    $multi = curl_multi_init();
+    curl_multi_add_handle($multi, $admin);
+    $deadline = microtime(true) + 0.5;
+    do {
+        curl_multi_exec($multi, $running);
+        usleep(10000);
+    } while ($running && microtime(true) < $deadline);
+    verify($running > 0, 'Concurrent request did not wait for the uncommitted campaign.');
+    $lockPdo->commit();
+    do {
+        curl_multi_exec($multi, $running);
+        if ($running) curl_multi_select($multi, 1);
+    } while ($running);
+    $concurrentResult = json_decode(curl_multi_getcontent($admin), true, 512, JSON_THROW_ON_ERROR);
+    verify(curl_getinfo($admin, CURLINFO_RESPONSE_CODE) === 200
+        && (int) $concurrentResult['campaignId'] === $concurrentId, 'Concurrent replay did not return the committed campaign.');
+    curl_multi_remove_handle($multi, $admin);
+    curl_multi_close($multi);
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'cancel', 'campaignId' => $concurrentId], $adminToken)[0] === 200, 'Could not cancel concurrent test campaign.');
 
     $raceId = createCampaign($admin, $adminToken, 'Campagne concurrence');
     $lockPdo->beginTransaction();

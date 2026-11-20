@@ -530,10 +530,13 @@ CREATE TABLE IF NOT EXISTS marketing_campaigns (
   created_by BIGINT UNSIGNED NOT NULL,
   subject VARCHAR(200) NOT NULL,
   message_body TEXT NOT NULL,
+  request_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  expected_recipients SMALLINT UNSIGNED NULL,
   status ENUM('queued', 'sending', 'completed', 'cancelled') NOT NULL DEFAULT 'queued',
   created_at DATETIME NOT NULL,
   completed_at DATETIME NULL,
   PRIMARY KEY (id),
+  UNIQUE KEY marketing_campaigns_request_key (request_key),
   KEY marketing_campaigns_status (status, created_at),
   CONSTRAINT marketing_campaigns_admin_fk FOREIGN KEY (created_by) REFERENCES accounts (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

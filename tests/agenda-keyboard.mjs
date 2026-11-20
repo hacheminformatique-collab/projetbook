@@ -158,8 +158,16 @@ try {
             data = { subject, body, recipients: window.previewRecipients ?? 4, previewBody: body + "\\n\\n---\\nPour vous désinscrire : [lien-personnel]" };
           } else if (window.campaignPayload.action === "create") {
             if (window.campaignAudienceChanged) return new Response(JSON.stringify({ code: "campaign_audience_changed", error: "Le nombre de destinataires a changé. Vérifiez un nouvel aperçu avant de confirmer." }), { status: 409, headers: { "Content-Type": "application/json" } });
-            window.createdCampaigns = (window.createdCampaigns || 0) + 1;
-            data = { message: "Campagne mise en file." };
+            window.campaignRequests ||= {};
+            const key = window.campaignPayload.requestKey;
+            if (!window.campaignRequests[key]) {
+              window.campaignRequests[key] = window.campaignPayload;
+              window.createdCampaigns = (window.createdCampaigns || 0) + 1;
+              if (window.loseCampaignResponse) throw new Error("Réseau interrompu");
+              data = { message: "Campagne mise en file." };
+            } else {
+              data = { message: "Campagne déjà enregistrée." };
+            }
           } else {
             if (window.campaignFail) return new Response(JSON.stringify({ error: "Cette campagne ne comporte plus d’e-mails en échec." }), { status: 409, headers: { "Content-Type": "application/json" } });
             const item = window.campaignItems.find(entry => entry.id === window.campaignPayload.campaignId);
@@ -1318,9 +1326,17 @@ try {
   assert.equal(await evaluate("window.createdCampaigns || 0"), 0);
   await evaluate("window.campaignAudienceChanged = false; document.querySelector('.auth-form button[type=submit]').click()");
   await waitFor("!!document.querySelector('.campaign-preview')");
+  await evaluate("window.loseCampaignResponse = true; document.querySelector('.campaign-preview button').click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('Réessayez la même demande')");
+  const firstRequest = await evaluate("window.campaignPayload");
+  assert.match(firstRequest.requestKey, /^[0-9a-f-]{36}$/);
+  assert.deepEqual({ ...firstRequest, requestKey: undefined }, { action: "create", subject: "Offre spéciale", body: "Message corrigé", expectedRecipients: 4, requestKey: undefined });
+  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').disabled"), true);
+  assert.equal(await evaluate("document.querySelector('.auth-form button[type=submit]').disabled"), true);
+  assert.match(await evaluate("document.querySelector('.campaign-preview button').textContent"), /Réessayer/);
   await evaluate("document.querySelector('.campaign-preview button').click()");
-  await waitFor("document.querySelector('.client-card [role=status]')?.textContent.includes('mise en file')");
-  assert.deepEqual(await evaluate("window.campaignPayload"), { action: "create", subject: "Offre spéciale", body: "Message corrigé", expectedRecipients: 4 });
+  await waitFor("document.querySelector('.client-card [role=status]')?.textContent.includes('déjà enregistrée')");
+  assert.deepEqual(await evaluate("window.campaignPayload"), firstRequest);
   assert.equal(await evaluate("window.createdCampaigns"), 1);
   assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').value"), "");
   assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
