@@ -215,18 +215,24 @@ def main():
     expect(second.request("appointments.php", {**booking, "time": "09:15"}), 409)
     assert "09:15" not in expect(guest.request(available), 200)["slots"]
     assert "09:30" in expect(guest.request(available), 200)["slots"]
-    expect(second.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id}), 404)
-    expect(other_pro.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id}), 404)
+    expect(second.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id, "expectedVersion": 1}), 404)
+    expect(other_pro.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id, "expectedVersion": 1}), 404)
     expect(second.request(available + f"&appointmentId={appointment_id}"), 404)
     assert "09:00" in expect(first.request(available + f"&appointmentId={appointment_id}"), 200)["slots"]
     assert not expect(other_pro.request(f"appointments.php?date={tomorrow}"), 200)["appointments"]
     agenda = expect(professional.request(f"appointments.php?date={booking_day}"), 200)["appointments"]
-    assert len(agenda) == 1 and agenda[0]["first_name"] == "Client 1"
+    assert len(agenda) == 1 and agenda[0]["first_name"] == "Client 1" and agenda[0]["version"] == 1
     clients = expect(professional.request("professional-clients.php"), 200)["clients"]
     assert len(clients) == 1
 
     second_id = expect(second.request("appointments.php", {**booking, "time": "10:00"}), 201)["appointmentId"]
-    move = {**booking, "action": "reschedule", "appointmentId": appointment_id}
+    move = {**booking, "action": "reschedule", "appointmentId": appointment_id, "expectedVersion": 1}
+    for version in (None, 0, -1, 1.0, "1", True, 4294967296):
+        expect(first.request("appointments.php", {**move, "expectedVersion": version}), 422)
+        expect(first.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id, "expectedVersion": version}), 422)
+    missing_version = dict(move)
+    del missing_version["expectedVersion"]
+    expect(first.request("appointments.php", missing_version), 422)
     expect(first.request("appointments.php", {**move, "time": "10:00"}), 409)
     pause_schedule = salon_payload(salon)
     target_pause = next(hour for hour in pause_schedule["hours"] if hour["weekday"] == weekday)
@@ -238,6 +244,18 @@ def main():
     assert mine[0]["starts_at"].endswith("09:00:00")
     assert int(mine[0]["service_count"]) == 1
     expect(first.request("appointments.php", {**move, "time": "09:30"}), 200)
+    move["expectedVersion"] = 2
+    snapshot = expect(first.request("appointments.php"), 200)["appointments"][0]
+    assert snapshot["version"] == 2 and snapshot["starts_at"].endswith("09:30:00")
+    counts = expect(admin.request("admin-notifications.php"), 200)["counts"]
+    for stale in (
+        {**move, "expectedVersion": 1, "time": "11:00"},
+        {"action": "cancel", "appointmentId": appointment_id, "expectedVersion": 1},
+    ):
+        assert expect(professional.request("appointments.php", stale), 409)["code"] == "appointment_changed"
+    expect(second.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id, "expectedVersion": 1}), 404)
+    assert expect(first.request("appointments.php"), 200)["appointments"][0] == snapshot
+    assert expect(admin.request("admin-notifications.php"), 200)["counts"] == counts
     assert "09:00" in expect(guest.request(available), 200)["slots"]
     notification_counts = expect(admin.request("admin-notifications.php"), 200)["counts"]
     assert notification_counts["queued"] == 7 and notification_counts["cancelled"] == 2
@@ -247,10 +265,12 @@ def main():
     expect(first.request("appointments.php", {
         **move, "time": "09:30", "serviceId": alternate["id"], "expectedPrice": 900, "expectedDuration": 15,
     }), 200)
+    move["expectedVersion"] = 3
     changed = expect(first.request("appointments.php"), 200)["appointments"][0]
     assert changed["service_name"] == "Autre prestation" and int(changed["price_dzd"]) == 900
     assert changed["ends_at"].endswith("09:45:00")
     expect(first.request("appointments.php", {**move, "time": "09:30"}), 200)
+    move["expectedVersion"] = 4
     expect(professional.request("professional-services.php", {
         **service_payload, "id": alternate["id"], "name": "Autre prestation", "duration": 15, "price": 900, "isActive": False,
     }), 200)
@@ -273,8 +293,8 @@ def main():
 
     expect(professional.request("professional-salon.php", salon_payload(salon, public=False)), 200)
     expect(first.request("appointments.php", {**booking, "time": "14:00"}), 404)
-    expect(first.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id}), 200)
-    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": second_id}), 200)
+    expect(first.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id, "expectedVersion": 4}), 200)
+    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": second_id, "expectedVersion": 1}), 200)
     notification_counts = expect(admin.request("admin-notifications.php"), 200)["counts"]
     assert notification_counts["queued"] == 10 and notification_counts["cancelled"] == 10
     expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
@@ -358,8 +378,31 @@ def main():
         "action": "save", "staffId": int(staff_a["id"]), "name": "Collaboratrice A", "isActive": False,
     }), 200)
     expect(guest.request(staff_a_url), 422)
-    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": staff_appointment_a}), 200)
-    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": staff_appointment_b}), 200)
+    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": staff_appointment_a, "expectedVersion": 1}), 200)
+    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": staff_appointment_b, "expectedVersion": 1}), 200)
+
+    race_booking = {**booking, "time": "15:30", "staffId": int(staff_b["id"])}
+    race_id = expect(first.request("appointments.php", race_booking), 201)["appointmentId"]
+    race_move = {**race_booking, "action": "reschedule", "appointmentId": race_id, "expectedVersion": 1, "time": "16:00"}
+    race_cancel = {"action": "cancel", "appointmentId": race_id, "expectedVersion": 1}
+    barrier = threading.Barrier(2)
+    def race_change(client, payload):
+        barrier.wait()
+        return client.request("appointments.php", payload)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        results = [future.result() for future in (
+            pool.submit(race_change, first, race_move),
+            pool.submit(race_change, professional, race_cancel),
+        )]
+    assert sorted(status for status, _ in results) == [200, 409], results
+    assert next(body for status, body in results if status == 409)["code"] == "appointment_changed"
+    race_snapshot = next(item for item in expect(first.request("appointments.php"), 200)["appointments"] if item["id"] == race_id)
+    assert race_snapshot["version"] == 2
+    assert (race_snapshot["status"], race_snapshot["starts_at"][-8:]) in (
+        ("confirmed", "16:00:00"), ("cancelled", "15:30:00"),
+    )
+    if race_snapshot["status"] == "confirmed":
+        expect(first.request("appointments.php", {"action": "cancel", "appointmentId": race_id, "expectedVersion": race_snapshot["version"]}), 200)
 
     campaigns = expect(admin.request("admin-campaigns.php"), 200)
     assert campaigns["consentingClients"] == 1

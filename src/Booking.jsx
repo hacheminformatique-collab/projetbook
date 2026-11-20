@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, apiUrl, algerianDate, appointmentDate, priceLabel, weekDays } from "./api-client.js";
 import { createBookingCalendarEvent } from "./lib/booking-calendar.js";
-import { validAppointmentPrice, validAppointmentServiceDetails, validServiceDetails } from "./lib/appointment-services.js";
+import { validAppointmentPrice, validAppointmentServiceDetails, validAppointmentVersion, validServiceDetails } from "./lib/appointment-services.js";
 import { getWilayaName } from "./data/algerian-wilayas.js";
 
 export function DirectoryResults({ search }) {
@@ -139,6 +139,7 @@ export function SalonPage() {
                   serviceIds: validRequestedServices && requestedServices.every((id) => result.services.some((service) => String(service.id) === id)) ? requestedServices : [],
                   serviceUnavailable: requestedServices.length > 0 && (!validRequestedServices || !requestedServices.every((id) => result.services.some((service) => String(service.id) === id))),
                   unknownServices: appointmentId && (params.get("unknownServices") === "1" || params.get("multipleServices") === "1"),
+                  appointmentVersion: validAppointmentVersion(params.get("version")) ? Number(params.get("version")) : null,
                   staffId: /^[1-9][0-9]*$/.test(params.get("staffId") || "") ? params.get("staffId") : "",
                   date: validRequestedDate && requestedDate >= algerianDate() && requestedDate <= algerianDate(60)
                     ? requestedDate
@@ -233,6 +234,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   const [slotError, setSlotError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
+  const [stale, setStale] = useState(false);
   const [timeRestoreNotice, setTimeRestoreNotice] = useState("");
   const [confirmedAppointmentId, setConfirmedAppointmentId] = useState(null);
   const [confirmedServices, setConfirmedServices] = useState(null);
@@ -248,6 +250,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   const client = session?.authenticated && session.account?.role === "client";
   const returnParams = new URLSearchParams();
   if (appointmentId) returnParams.set("appointmentId", appointmentId);
+  if (appointmentId && initialSelection.appointmentVersion) returnParams.set("version", String(initialSelection.appointmentVersion));
   if (initialSelection.unknownServices) returnParams.set("unknownServices", "1");
   if (serviceKey) returnParams.set(appointmentId || serviceIds.length > 1 ? "serviceIds" : "serviceId", serviceKey);
   if (date) returnParams.set("date", date);
@@ -302,6 +305,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
 
   async function submit(event) {
     event.preventDefault();
+    if (appointmentId && (!initialSelection.appointmentVersion || stale)) return;
     setSaving(true);
     setNotice(null);
     try {
@@ -312,7 +316,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
           ...(appointmentId || serviceIds.length > 1 ? { serviceIds: serviceIds.map(Number) } : { serviceId: serviceIds[0] }),
           expectedPrice: Number(selected.price_dzd), expectedDuration: Number(selected.duration_minutes),
           ...(staffId ? { staffId: Number(staffId) } : {}),
-          ...(appointmentId ? { appointmentId } : {}),
+          ...(appointmentId ? { appointmentId, expectedVersion: initialSelection.appointmentVersion } : {}),
         },
       });
       setConfirmedAppointmentId(result.appointmentId);
@@ -322,6 +326,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
       setNotice({ kind: "success", text: appointmentId ? "Votre rendez-vous a bien été modifié." : result.message });
     } catch (cause) {
       setNotice({ kind: "error", text: cause.message });
+      if (cause.code === "appointment_changed") setStale(true);
       setRefresh((value) => value + 1);
     } finally {
       setSaving(false);
@@ -361,6 +366,9 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   return (
     <>
       {notice && <p className={`form-message form-${notice.kind}`} role="alert">{notice.text}</p>}
+      {appointmentId && (!initialSelection.appointmentVersion || stale) && <p className="form-message form-error" role="alert">
+        Retournez à <Link className="inline-link" to="/espace-client">vos rendez-vous</Link> et ouvrez à nouveau le rendez-vous avant de le modifier.
+      </p>}
       {appointmentId && <p className="field-hint">Choisissez jusqu’à six prestations et un nouveau créneau. Les tarifs et durées affichés sont ceux actuellement proposés. Votre réservation actuelle reste inchangée tant que la modification n’est pas confirmée ou si elle échoue.</p>}
       {initialSelection.unknownServices && <p className="form-message" role="status">Vérifiez les prestations de votre rendez-vous et sélectionnez celles que vous souhaitez conserver.</p>}
       {initialSelection.serviceUnavailable && <p className="form-message" role="status">{appointmentId
@@ -414,7 +422,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         </fieldset>}
         {selected && <p>{selected.name} · {selected.duration_minutes} minutes · <strong>{priceLabel(selected.price_dzd)}</strong><br />Paiement sur place. Aucun paiement en ligne.</p>}
         {time && bookingMessage && <p className="field-hint booking-message"><strong>Message de l’établissement</strong><br />{bookingMessage}</p>}
-        {client ? <button className="auth-submit" disabled={!selected || !time || loading || saving || !!slotError} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
+        {client ? <button className="auth-submit" disabled={!selected || !time || loading || saving || !!slotError || !!(appointmentId && (!initialSelection.appointmentVersion || stale))} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
           <p className="form-message">Connectez-vous avec un compte client pour réserver. <Link className="inline-link" to={`/compte?retour=${encodeURIComponent(returnTo)}`}>Connexion ou inscription</Link></p>
         )}
       </form>
@@ -433,6 +441,7 @@ export function Appointments({ csrfToken, professional = false }) {
   const [notice, setNotice] = useState("");
   const [working, setWorking] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [staleIds, setStaleIds] = useState([]);
   useEffect(() => {
     if (!professional) return undefined;
     const controller = new AbortController();
@@ -448,12 +457,13 @@ export function Appointments({ csrfToken, professional = false }) {
     const query = new URLSearchParams(professional ? { date, page } : { filter, page });
     if (professional && staffId) query.set("staffId", staffId);
     apiRequest(`appointments.php?${query}`, { signal: controller.signal })
-      .then(setResult)
+      .then((response) => { setResult(response); setStaleIds([]); })
       .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
     return () => controller.abort();
   }, [professional, date, filter, page, staffId, refresh]);
 
   async function cancel(appointment) {
+    if (!validAppointmentVersion(appointment.version) || staleIds.includes(appointment.id)) return;
     const confirmation = professional
       ? "Confirmer l’annulation de ce rendez-vous ?"
       : `Annuler ce rendez-vous ?\n\n${appointment.service_name} · ${appointment.salon_name}\n${appointmentDate(appointment.starts_at)} (heure d’Algérie)\n\nSi vous l’avez ajouté à votre calendrier, vous devrez le supprimer manuellement.`;
@@ -462,16 +472,20 @@ export function Appointments({ csrfToken, professional = false }) {
     setError("");
     setNotice("");
     try {
-      const response = await apiRequest("appointments.php", { csrfToken, body: { action: "cancel", appointmentId: appointment.id } });
+      const response = await apiRequest("appointments.php", { csrfToken, body: { action: "cancel", appointmentId: appointment.id, expectedVersion: Number(appointment.version) } });
       setNotice(professional ? response.message : `${response.message} Un e-mail d’annulation est en attente d’envoi. Si vous avez ajouté ce rendez-vous à votre calendrier, supprimez-le manuellement.`);
       setRefresh((value) => value + 1);
-    } catch (cause) { setError(cause.message); }
+    } catch (cause) {
+      setError(cause.message);
+      if (cause.code === "appointment_changed") setStaleIds((ids) => [...ids, appointment.id]);
+    }
     finally { setWorking(false); }
   }
   function modificationLink(appointment, hasDetails) {
     const params = new URLSearchParams({
       appointmentId: appointment.id,
       date: appointment.starts_at.slice(0, 10),
+      version: String(appointment.version),
     });
     if (hasDetails) {
       const ids = appointment.services.map((service) => String(service.id));
@@ -505,6 +519,8 @@ export function Appointments({ csrfToken, professional = false }) {
           const editable = appointment.status === "confirmed" && new Date(appointment.starts_at.replace(" ", "T") + "+01:00") > new Date();
           const duration = (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000;
           const hasDetails = validAppointmentServiceDetails(appointment, duration, appointment.service_count);
+          const hasVersion = validAppointmentVersion(appointment.version);
+          const stale = staleIds.includes(appointment.id);
           const appointmentPrice = validAppointmentPrice(appointment.price_dzd) ? priceLabel(appointment.price_dzd) : "Tarif indisponible";
           return (
             <article className="appointment-card" key={appointment.id}>
@@ -514,11 +530,13 @@ export function Appointments({ csrfToken, professional = false }) {
               {!professional && (!hasDetails
                 ? <p className="form-message form-error" role="alert">Le détail des prestations est indisponible ou incohérent. Actualisez la liste ou contactez l’établissement.</p>
                 : appointment.services.length > 1 && <ServiceBreakdown services={appointment.services} />)}
+              {editable && !hasVersion && <p className="form-message form-error" role="alert">Impossible de vérifier la version du rendez-vous. Actualisez la liste avant de continuer.</p>}
+              {editable && stale && <p className="form-message form-error" role="alert">Actualisez la liste avant de continuer.</p>}
               {professional ? <p>{appointment.first_name} {appointment.last_name} · <a className="inline-link" href={`tel:${appointment.client_phone}`}>{appointment.client_phone}</a></p> : (
                 <p>{appointment.salon_name} · {appointment.address}, {appointment.city}<br /><a className="inline-link" href={`tel:${appointment.salon_phone}`}>{appointment.salon_phone}</a></p>
               )}
               {editable && <div className="review-buttons">
-                {!professional && <Link className="admin-nav-link" to={modificationLink(appointment, hasDetails)}>Modifier</Link>}
+                {!professional && hasVersion && !stale && <Link className="admin-nav-link" to={modificationLink(appointment, hasDetails)}>Modifier</Link>}
                 {!professional && <CalendarDownloadButton details={{
                   appointmentId: appointment.id, salonId: appointment.salon_id, salonName: appointment.salon_name,
                   salonAddress: `${appointment.address}, ${appointment.city}`, serviceName: appointment.service_name,
@@ -528,7 +546,7 @@ export function Appointments({ csrfToken, professional = false }) {
                   serviceDetails: hasDetails ? calendarServiceDetails(appointment.services)
                     : ["Le détail des prestations est indisponible. Consultez votre espace client ou contactez l’établissement."],
                 }} />}
-                <button className="review-reject" type="button" disabled={working} onClick={() => cancel(appointment)}>Annuler</button>
+                <button className="review-reject" type="button" disabled={working || !hasVersion || stale} onClick={() => cancel(appointment)}>Annuler</button>
               </div>}
             </article>
           );

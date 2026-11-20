@@ -54,10 +54,10 @@ def main():
     expect(professional.request(endpoint, {"action": "add", "date": day}), 409)
     expect(professional.request(endpoint, {"action": "add", "date": next_day}), 200)
     expect(client.request("appointments.php", {
-        **booking, "action": "reschedule", "appointmentId": appointment_id, "date": next_day,
+        **booking, "action": "reschedule", "appointmentId": appointment_id, "expectedVersion": 1, "date": next_day,
     }), 409)
     assert expect(client.request("appointments.php"), 200)["appointments"][0]["starts_at"].startswith(day)
-    expect(client.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id}), 200)
+    expect(client.request("appointments.php", {"action": "cancel", "appointmentId": appointment_id, "expectedVersion": 1}), 200)
     expect(professional.request(endpoint, {"action": "add", "date": day}), 200)
 
     barrier = threading.Barrier(2)

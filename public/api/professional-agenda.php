@@ -82,7 +82,7 @@ try {
 
     $day = bookili_calendar_date($_GET['date'] ?? bookili_now()->format('Y-m-d'));
     $statement = $pdo->prepare(
-        'SELECT b.id, b.client_id, b.service_id, b.staff_id, b.service_name, b.price_dzd, cs.id AS cash_sale_id, cs.voided_at,
+        'SELECT b.id, b.client_id, b.service_id, b.staff_id, b.service_name, b.price_dzd, b.notification_version AS version, cs.id AS cash_sale_id, cs.voided_at,
                 b.starts_at, b.ends_at, c.first_name, c.last_name, c.phone_number, c.date_of_birth,
                 a.email, COALESCE(n.note, \'\') AS private_note
          FROM appointments b
@@ -119,6 +119,7 @@ try {
             $appointment['services'] = $serviceRows[$appointment['id']] ?? [];
             $appointment['id'] = (int) $appointment['id'];
             $appointment['service_id'] = (int) $appointment['service_id'];
+            $appointment['version'] = (int) $appointment['version'];
         }
         unset($appointment);
     }

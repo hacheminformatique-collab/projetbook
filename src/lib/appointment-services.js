@@ -14,6 +14,11 @@ export function validAppointmentPrice(price) {
     && Number.isSafeInteger(Number(price)) && Number(price) >= 0;
 }
 
+export function validAppointmentVersion(version) {
+  return (typeof version === "number" || (typeof version === "string" && /^[1-9]\d*$/.test(version)))
+    && Number.isSafeInteger(Number(version)) && Number(version) >= 1 && Number(version) <= 4294967295;
+}
+
 export function validAppointmentServiceDetails(appointment, duration, count) {
   const services = appointment.services;
   return (typeof count === "number" || (typeof count === "string" && /^\d+$/.test(count)))

@@ -94,7 +94,7 @@ try {
     window.bookingConfirmationTest = false;
     window.bookingPayload = null;
     window.clientAppointments = [
-      { id: 55, salon_id: 1, service_id: 1, service_count: 1, services: [{ id: 1, name: "Coupe test", duration_minutes: 45, price_dzd: 2500 }], staff_id: 1, status: "confirmed", starts_at: "2026-11-20 10:30:00", ends_at: "2026-11-20 11:15:00", service_name: "Coupe test", price_dzd: 2500, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: "Sonia" },
+      { id: 55, version: 1, salon_id: 1, service_id: 1, service_count: 1, services: [{ id: 1, name: "Coupe test", duration_minutes: 45, price_dzd: 2500 }], staff_id: 1, status: "confirmed", starts_at: "2026-11-20 10:30:00", ends_at: "2026-11-20 11:15:00", service_name: "Coupe test", price_dzd: 2500, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: "Sonia" },
       { id: 56, salon_id: 1, service_id: 1, service_count: 2, services: [
         { id: 1, name: "Coupe annulée", duration_minutes: 30, price_dzd: 1000 },
         { id: 2, name: "Soin annulé", duration_minutes: 45, price_dzd: 1500 },
@@ -169,14 +169,14 @@ try {
           ],
           staffAbsences: [{ staff_id: 2 }],
           appointments: date === "2026-11-19" ? [{
-            id: 3, client_id: 7, staff_id: 1, service_id: 1,
+            id: 3, version: 1, client_id: 7, staff_id: 1, service_id: 1,
             price_dzd: 1000, cash_sale_id: appointmentSaleId,
             services: [{ id: 1, name: "Coupe", duration_minutes: 30, price_dzd: 1000 }],
             starts_at: date + " 11:00:00", ends_at: date + " 11:30:00",
             first_name: "Test", last_name: "Client", service_name: "Coupe", private_note: "",
             ...window.agendaAppointmentOverride,
           }, {
-            id: 4, client_id: 8, staff_id: 1, service_id: 1, cash_sale_id: 20,
+            id: 4, version: 1, client_id: 8, staff_id: 1, service_id: 1, cash_sale_id: 20,
             price_dzd: 1000,
             voided_at: "2026-11-18 10:00:00",
             starts_at: date + " 12:00:00", ends_at: date + " 12:30:00",
@@ -274,6 +274,12 @@ try {
           return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
         }
         window.appointmentMutations++;
+        window.lastAppointmentPayload = JSON.parse(options.body);
+        if (window.conflictMode) {
+          return new Response(JSON.stringify({ code: "appointment_changed", error: "Ce rendez-vous a changé depuis son affichage." }), {
+            status: 409, headers: { "Content-Type": "application/json" },
+          });
+        }
         if (window.clientBookingTest && window.cancelTestMode && JSON.parse(options.body).action === "cancel") {
           window.cancelPayload = JSON.parse(options.body);
           if (window.cancelTestMode === "success") {
@@ -380,6 +386,15 @@ try {
   await key("Escape");
   await evaluate("window.agendaAppointmentOverride = null; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
   await waitFor("document.querySelector('.agenda-booking')?.textContent.includes('Coupe') && !document.querySelector('.agenda-booking').textContent.includes('indisponible')");
+  await evaluate("window.agendaAppointmentOverride = { version: null }; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
+  await waitFor("window.agendaAppointmentOverride?.version === null && !!document.querySelector('.agenda-booking')");
+  await evaluate("document.querySelector('.agenda-booking').click()");
+  await waitFor("document.querySelector('.agenda-detail [role=alert]')?.textContent.includes('version')");
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Modifier le rendez-vous').disabled"), true);
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Annuler le rendez-vous').disabled"), true);
+  await key("Escape");
+  await evaluate("window.agendaAppointmentOverride = null; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
+  await waitFor("!!document.querySelector('.agenda-booking')");
   assert.equal(await evaluate("document.querySelectorAll('.agenda-booking')[1].draggable"), false);
   await evaluate(`(() => {
     window.agendaDrag = new DataTransfer();
@@ -404,7 +419,21 @@ try {
   await evaluate("document.querySelector('.agenda-edit button[type=submit]').click()");
   await waitFor("document.querySelector('.agenda-detail [role=alert]')?.textContent.includes('plus disponible')");
   assert.equal(await evaluate("window.appointmentMutations"), 1);
-  await key("Escape");
+  assert.equal(await evaluate("window.lastAppointmentPayload.expectedVersion"), 1);
+  await evaluate("window.conflictMode = true; document.querySelector('.agenda-edit button[type=submit]').click()");
+  await waitFor("document.querySelector('.agenda-detail [role=alert]')?.textContent.includes('a changé')");
+  assert.equal(await evaluate("document.querySelector('.agenda-edit button[type=submit]').disabled"), true);
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Annuler le rendez-vous').disabled"), true);
+  await evaluate("window.conflictMode = false; Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Actualiser l’agenda').click()");
+  await waitFor("!document.querySelector('[role=dialog]')");
+  await waitFor("!!document.querySelector('.agenda-booking')");
+  await evaluate("window.confirm = () => true; window.conflictMode = true; document.querySelector('.agenda-booking').click()");
+  await waitFor("!!document.querySelector('.agenda-detail')");
+  await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Annuler le rendez-vous').click()");
+  await waitFor("document.querySelector('.agenda-detail [role=alert]')?.textContent.includes('a changé')");
+  assert.deepEqual(await evaluate("window.lastAppointmentPayload"), { action: "cancel", appointmentId: 3, expectedVersion: 1 });
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Annuler le rendez-vous').disabled"), true);
+  await evaluate("window.conflictMode = false; Array.from(document.querySelectorAll('.agenda-detail button')).find(b => b.textContent === 'Actualiser l’agenda').click()");
   await waitFor("!document.querySelector('[role=dialog]')");
   assert.match(await evaluate("document.querySelector('.agenda-booking').textContent"), /11:00–11:30/);
   await evaluate("window.agendaPauses = true; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
@@ -680,6 +709,13 @@ try {
 
   await evaluate("Array.from(document.querySelectorAll('.booking-content a')).find(link => link.textContent === 'Voir mes rendez-vous').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
+  assert.equal(await evaluate("new URL(document.querySelector('.appointment-list a[href*=\"appointmentId=\"]').href).searchParams.get('version')"), "1");
+  await evaluate("window.clientAppointments[0].version = null; document.querySelector('.booking-toolbar button').click()");
+  await waitFor("Array.from(document.querySelectorAll('.appointment-list [role=alert]')).some(item => item.textContent.includes('version'))");
+  assert.equal(await evaluate("document.querySelector('.appointment-list .review-reject').disabled"), true);
+  assert.equal(await evaluate("!!document.querySelector('.appointment-list a[href*=\"appointmentId=\"]')"), false);
+  await evaluate("window.clientAppointments[0].version = 1; document.querySelector('.booking-toolbar button').click()");
+  await waitFor("!!document.querySelector('.appointment-list a[href*=\"appointmentId=\"]')");
   assert.match(await evaluate("document.querySelector('.appointment-list .appointment-card:nth-child(2)').textContent"), /Annulé.*Coupe annulée · 30 min.*Soin annulé · 45 min/);
   await evaluate("document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
@@ -898,15 +934,37 @@ try {
   await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('ne peut plus être modifié')");
   assert.equal(await evaluate("window.clientAppointments[0].status"), "confirmed");
   assert.equal(await evaluate("document.querySelector('.client-card [role=status]')"), null);
+  await evaluate("window.conflictMode = true; document.querySelector('.appointment-list .review-reject').click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('a changé')");
+  assert.equal(await evaluate("document.querySelector('.appointment-list .review-reject').disabled"), true);
+  assert.equal(await evaluate("!!document.querySelector('.appointment-list a[href*=\"appointmentId=\"]')"), false);
+  await evaluate("window.conflictMode = false; document.querySelector('.booking-toolbar button').click()");
+  await waitFor("!!document.querySelector('.appointment-list a[href*=\"appointmentId=\"]')");
   await evaluate("window.cancelTestMode = 'success'; document.querySelector('.appointment-list .review-reject').click()");
   await waitFor("document.querySelector('.client-card [role=status]')?.textContent.includes('Rendez-vous annulé')");
-  assert.deepEqual(await evaluate("window.cancelPayload"), { action: "cancel", appointmentId: 55 });
+  assert.deepEqual(await evaluate("window.cancelPayload"), { action: "cancel", appointmentId: 55, expectedVersion: 1 });
   assert.match(await evaluate("document.querySelector('.client-card [role=status]').textContent"), /e-mail d’annulation.*attente d’envoi.*calendrier.*supprimez-le manuellement/);
   await waitFor("document.querySelectorAll('.appointment-list .review-reject').length === 0");
   console.log("Client cancellation confirmation and error handling passed.");
 
   await send("Page.navigate", {
     url: `${origin}/masalledereception/salons/1?appointmentId=55&serviceId=1&date=2026-11-19&time=10%3A30`,
+  });
+  await waitFor("document.querySelector('.booking-content [role=alert]')?.textContent.includes('vos rendez-vous')");
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), true);
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/salons/1?appointmentId=55&version=1&serviceId=1&date=2026-11-19&time=10%3A30`,
+  });
+  await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
+  await evaluate("window.conflictMode = true; document.querySelector('.booking-content button[type=submit]').click()");
+  await waitFor("document.querySelector('.booking-content [role=alert]')?.textContent.includes('a changé')");
+  assert.equal(await evaluate("window.lastAppointmentPayload.expectedVersion"), 1);
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), true);
+  assert.equal(await evaluate("!!document.querySelector('.booking-confirmation')"), false);
+  assert.equal(await evaluate("!!document.querySelector('.booking-content a[href$=\"/espace-client\"]')"), true);
+
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/salons/1?appointmentId=55&version=1&serviceId=1&date=2026-11-19&time=10%3A30`,
   });
   await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
   assert.match(await evaluate("document.querySelector('.booking-content .client-card').textContent"), /tarifs et durées affichés.*réservation actuelle reste inchangée/);
@@ -923,10 +981,11 @@ try {
   assert.match(modification, /calendrier.*mettez-le à jour manuellement.*pas synchronisé automatiquement/);
   assert.equal(await evaluate("window.bookingPayload.action"), "reschedule");
   assert.equal(await evaluate("window.bookingPayload.appointmentId"), "55");
+  assert.equal(await evaluate("window.bookingPayload.expectedVersion"), 1);
   console.log("Client rescheduling guidance and confirmation passed.");
 
   await send("Page.navigate", {
-    url: `${origin}/masalledereception/salons/1?appointmentId=55&serviceIds=1%2C2&date=2026-11-20&staffId=1&bookingTest=guest&multiTest=1`,
+    url: `${origin}/masalledereception/salons/1?appointmentId=55&version=7&serviceIds=1%2C2&date=2026-11-20&staffId=1&bookingTest=guest&multiTest=1`,
   });
   await waitFor("document.querySelectorAll('.booking-content input[name=bookingService]').length === 7");
   await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').click()");
@@ -938,6 +997,7 @@ try {
   const multiReturnUrl = await evaluate("document.querySelector('.booking-content a.inline-link').href");
   const multiReturn = new URL(new URL(multiReturnUrl).searchParams.get("retour"), origin);
   assert.equal(multiReturn.searchParams.get("serviceIds"), "1,3,4,5,6,7");
+  assert.equal(multiReturn.searchParams.get("version"), "7");
   await evaluate("document.querySelector('.booking-content a.inline-link').click()");
   await waitFor("!!document.querySelector('.auth-form input[name=email]')");
   await evaluate(`(() => {
@@ -951,6 +1011,7 @@ try {
   await waitFor("!document.querySelector('.auth-form button[type=submit]').disabled");
   await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
   await waitFor("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length === 6");
+  assert.equal(await evaluate("new URL(location.href).searchParams.get('version')"), "7");
   assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').disabled"), true);
   await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"3\"]').click()");
   assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').disabled"), false);
@@ -1042,7 +1103,7 @@ try {
   console.log("Missing confirmation details are reported without a misleading calendar.");
 
   await send("Page.navigate", {
-    url: `${origin}/masalledereception/salons/1?appointmentId=55&unknownServices=1&date=2026-11-20&bookingTest=guest`,
+    url: `${origin}/masalledereception/salons/1?appointmentId=55&version=1&unknownServices=1&date=2026-11-20&bookingTest=guest`,
   });
   await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('Vérifiez les prestations')");
   assert.equal(await evaluate("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length"), 0);

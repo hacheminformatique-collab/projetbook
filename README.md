@@ -417,6 +417,10 @@ comptes ou les rendez-vous d’autres salons.
 - Les mutations d'agenda sont sérialisées par verrou InnoDB sur le salon et
   la disponibilité est revérifiée avant enregistrement pour éviter les
   doubles réservations. Une modification échouée conserve le rendez-vous initial.
+- La modification ou l'annulation vérifie aussi la version du rendez-vous
+  affiché : si un autre utilisateur l'a changé entre-temps, la demande est
+  refusée. Le client doit actualiser sa liste et rouvrir le rendez-vous ; le
+  professionnel doit actualiser son agenda avant de réessayer.
 - La mise en file des courriels est dans la même transaction que le rendez-vous ;
   si elle échoue, la réservation est annulée aussi.
 - Le prix et la durée sont figés pour une réservation existante. Une

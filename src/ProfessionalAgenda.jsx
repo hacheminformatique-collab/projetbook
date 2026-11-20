@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { algerianDate, apiRequest, appointmentDate, priceLabel } from "./api-client.js";
 import { currentTimePosition } from "./lib/agenda-time.js";
-import { validAppointmentPrice, validAppointmentServiceDetails } from "./lib/appointment-services.js";
+import { validAppointmentPrice, validAppointmentServiceDetails, validAppointmentVersion } from "./lib/appointment-services.js";
 import { ClientProfile } from "./ProfessionalClients.jsx";
 
 const minutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
@@ -47,6 +47,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   const duration = (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000;
   const hasDetails = validAppointmentServiceDetails(appointment, duration, appointment.services?.length);
   const appointmentPrice = validAppointmentPrice(appointment.price_dzd) ? priceLabel(appointment.price_dzd) : "Tarif indisponible";
+  const hasVersion = validAppointmentVersion(appointment.version);
   const servicesAvailable = hasDetails && appointment.services.every((item) => agenda.services.some((service) => String(service.id) === String(item.id)));
   const [note, setNote] = useState(appointment.private_note);
   const [showClient, setShowClient] = useState(false);
@@ -62,6 +63,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   const [slotError, setSlotError] = useState("");
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
   const closeRef = useRef(null);
   const selectedServices = serviceIds.map((id) => agenda.services.find((item) => String(item.id) === id)).filter(Boolean);
@@ -143,29 +145,31 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   }
   async function reschedule(event) {
     event.preventDefault();
-    if (!service || loadingSlots || !slots.includes(time) || busy) return;
+    if (!service || loadingSlots || !slots.includes(time) || busy || !hasVersion || stale) return;
     setBusy(true);
     setNotice(null);
     try {
       const response = await apiRequest("appointments.php", {
         csrfToken, body: {
           action: "reschedule", appointmentId: Number(appointment.id), serviceIds: serviceIds.map(Number),
+          expectedVersion: Number(appointment.version),
           ...(staffId ? { staffId: Number(staffId) } : {}), date, time,
           expectedPrice: Number(service.price_dzd), expectedDuration: Number(service.duration_minutes),
         },
       });
       onChanged(true, response.message, date);
-    } catch (error) { setNotice({ error: true, text: error.message }); }
+    } catch (error) { setNotice({ error: true, text: error.message }); if (error.code === "appointment_changed") setStale(true); }
     finally { setBusy(false); }
   }
   async function cancel() {
+    if (!hasVersion || stale) return;
     if (!window.confirm("Confirmer l’annulation de ce rendez-vous ?")) return;
     setBusy(true);
     setNotice(null);
     try {
-      const response = await apiRequest("appointments.php", { csrfToken, body: { action: "cancel", appointmentId: Number(appointment.id) } });
+      const response = await apiRequest("appointments.php", { csrfToken, body: { action: "cancel", appointmentId: Number(appointment.id), expectedVersion: Number(appointment.version) } });
       onChanged(true, response.message);
-    } catch (error) { setNotice({ error: true, text: error.message }); }
+    } catch (error) { setNotice({ error: true, text: error.message }); if (error.code === "appointment_changed") setStale(true); }
     finally { setBusy(false); }
   }
   return <div className="agenda-backdrop">
@@ -188,6 +192,10 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         <ClientProfile key={appointment.client_id} clientId={appointment.client_id} csrfToken={csrfToken} />
       </section>}
       {notice && <p className={`form-message ${notice.error ? "form-error" : "form-success"}`} role={notice.error ? "alert" : "status"}>{notice.text}</p>}
+      {(!hasVersion || stale) && <div>
+        {!hasVersion && <p className="form-message form-error" role="alert">Impossible de vérifier la version du rendez-vous. Actualisez l’agenda avant de continuer.</p>}
+        <button className="admin-nav-link" type="button" onClick={() => onChanged(true)}>Actualiser l’agenda</button>
+      </div>}
       <form className="auth-form" onSubmit={saveNote}>
         <label>Note privée du rendez-vous<textarea value={note} maxLength={4000} rows={3} onChange={(event) => setNote(event.target.value)} />
           <span className="field-hint">Visible uniquement par le professionnel du salon, jamais dans les e-mails au client.</span>
@@ -205,15 +213,15 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         </article>)}
       </details>
       {(canEdit || canCancel) && <div className="review-buttons">
-        {canEdit && <button className="admin-nav-link" type="button" disabled={busy} onClick={() => setEditing(!editing)}>{editing ? "Fermer la modification" : "Modifier le rendez-vous"}</button>}
-        {canCancel && <button className="review-reject" type="button" disabled={busy} onClick={cancel}>Annuler le rendez-vous</button>}
+        {canEdit && <button className="admin-nav-link" type="button" disabled={busy || !hasVersion || stale} onClick={() => setEditing(!editing)}>{editing ? "Fermer la modification" : "Modifier le rendez-vous"}</button>}
+        {canCancel && <button className="review-reject" type="button" disabled={busy || !hasVersion || stale} onClick={cancel}>Annuler le rendez-vous</button>}
       </div>}
       {appointment.cash_sale_id
         ? <>
           <p className="field-hint">Ce rendez-vous possède déjà une vente dans le journal{appointment.voided_at ? " (annulée)" : ""}.</p>
           <button className="admin-nav-link" type="button" disabled={busy} onClick={() => onViewSale(appointment.cash_sale_id)}>Voir la vente n° {appointment.cash_sale_id}</button>
         </>
-        : <button className="auth-submit agenda-cash-button" type="button" disabled={busy || !hasDetails} onClick={() => onCheckout(appointment)}>Encaisser · {appointmentPrice}</button>}
+        : <button className="auth-submit agenda-cash-button" type="button" disabled={busy || !hasDetails || stale} onClick={() => onCheckout(appointment)}>Encaisser · {appointmentPrice}</button>}
       {editing && <form className="auth-form agenda-edit" onSubmit={reschedule}>
         {suggestedTime && <p className="field-hint">Déplacement proposé à {suggestedTime}. {loadingSlots ? "" : slots.includes(suggestedTime) ? "Confirmez pour enregistrer." : "Ce créneau ne convient pas à la prestation. Choisissez un autre horaire."}</p>}
         <p className="field-hint">La prestation sera enregistrée au tarif et à la durée affichés ci-dessous. Le rendez-vous initial reste inchangé si le créneau est indisponible.</p>
@@ -233,7 +241,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         {slotError && <p className="form-message form-error" role="alert">{slotError}</p>}
         {!loadingSlots && !slotError && slots.length === 0 && (activeStaff.length === 0 || staffId) && <p>Aucun créneau disponible pour cette sélection.</p>}
         <TimeSlotPicker slots={slots} time={time} onChange={setTime} disabled={loadingSlots || busy} />
-        <button className="auth-submit" type="submit" disabled={busy || !service || !time || !!slotError}>Enregistrer la modification</button>
+        <button className="auth-submit" type="submit" disabled={busy || !service || !time || !!slotError || !hasVersion || stale}>Enregistrer la modification</button>
       </form>}
     </section>
   </div>;

@@ -14,7 +14,7 @@ try {
     if ($method === 'GET') {
         $params = [];
         $sql = "SELECT b.id, b.salon_id, b.service_id, b.staff_id, m.name AS staff_name,
-                       b.service_name, b.price_dzd, b.starts_at, b.ends_at, b.status,
+                       b.service_name, b.price_dzd, b.starts_at, b.ends_at, b.status, b.notification_version AS version,
                        s.name AS salon_name, s.city, s.address, s.phone_number AS salon_phone";
         if ($professional) $sql .= ', c.first_name, c.last_name, c.phone_number AS client_phone';
         else $sql .= ', (SELECT COUNT(*) FROM appointment_services aps WHERE aps.appointment_id = b.id) AS service_count';
@@ -47,6 +47,8 @@ try {
         $statement->execute($params);
         $rows = $statement->fetchAll();
         $appointments = array_slice($rows, 0, 50);
+        foreach ($appointments as &$appointment) $appointment['version'] = (int) $appointment['version'];
+        unset($appointment);
         if (!$professional && $appointments) {
             $ids = array_column($appointments, 'id');
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
@@ -77,6 +79,10 @@ try {
     $newClient = null;
     $existingClientId = null;
     $appointmentId = $action !== 'book' ? bookili_id($data['appointmentId'] ?? null) : null;
+    if ($action !== 'book' && (!is_int($data['expectedVersion'] ?? null)
+        || $data['expectedVersion'] < 1 || $data['expectedVersion'] > 4294967295)) {
+        bookili_json_response(422, ['error' => 'La version du rendez-vous est invalide. Actualisez vos rendez-vous avant de réessayer.']);
+    }
     if ($action === 'book') {
         if ($professional) {
             if (isset($data['newClient'], $data['clientId'])) {
@@ -185,6 +191,13 @@ try {
         if (!$owns) {
             $pdo->rollBack();
             bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
+        }
+        if ((int) $appointment['notification_version'] !== $data['expectedVersion']) {
+            $pdo->rollBack();
+            bookili_json_response(409, [
+                'code' => 'appointment_changed',
+                'error' => 'Ce rendez-vous a changé depuis son affichage. Actualisez vos rendez-vous avant de réessayer.',
+            ]);
         }
         if ($appointment['status'] !== 'confirmed' || $appointment['starts_at'] <= bookili_now()->format('Y-m-d H:i:s')) {
             $pdo->rollBack();

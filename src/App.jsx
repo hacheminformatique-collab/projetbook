@@ -221,6 +221,7 @@ function isSafeClientReturn(value) {
   const entries = [...params];
   if (new Set(entries.map(([key]) => key)).size !== entries.length) return false;
   if (params.has("unknownServices") && !params.has("appointmentId")) return false;
+  if (params.has("version") && !params.has("appointmentId")) return false;
   if (params.has("serviceIds") && params.has("serviceId")) return false;
   return entries.every(([key, item]) => {
     if (key === "date") {
@@ -235,6 +236,7 @@ function isSafeClientReturn(value) {
       return new Set(ids).size === ids.length;
     }
     if (key === "unknownServices") return item === "1";
+    if (key === "version") return /^[1-9][0-9]*$/.test(item) && Number(item) <= 4294967295;
     return ["appointmentId", "serviceId", "staffId"].includes(key) && /^[1-9][0-9]*$/.test(item);
   });
 }

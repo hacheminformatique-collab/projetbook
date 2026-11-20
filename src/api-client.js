@@ -19,6 +19,7 @@ export async function apiRequest(path, { body, csrfToken, signal } = {}) {
   if (!response.ok) {
     const error = new Error(result.error || "La demande n’a pas abouti.");
     error.status = response.status;
+    error.code = result.code;
     throw error;
   }
   return result;

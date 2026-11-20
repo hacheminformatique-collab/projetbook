@@ -96,7 +96,7 @@ def main():
     assert client_multiple["services"] == expected_details
     assert not any(int(item["id"]) == multiple for item in expect(other_client.request("appointments.php"), 200)["appointments"])
     move_client = {
-        "action": "reschedule", "appointmentId": multiple,
+        "action": "reschedule", "appointmentId": multiple, "expectedVersion": 1,
         "serviceIds": [int(service["id"]), int(alternate["id"])], "date": day,
         "time": "13:15", "expectedPrice": 3500, "expectedDuration": 75,
     }
@@ -153,7 +153,7 @@ def main():
         "serviceIds": [int(service["id"])], "date": day, "time": "16:30",
         "expectedPrice": 1500, "expectedDuration": 30,
     }), 409)
-    multi_move = {"action": "reschedule", "appointmentId": multiple, "serviceIds": [int(service["id"]), int(alternate["id"])],
+    multi_move = {"action": "reschedule", "appointmentId": multiple, "expectedVersion": 2, "serviceIds": [int(service["id"]), int(alternate["id"])],
         "date": day, "time": "15:00", "expectedPrice": 3500, "expectedDuration": 75}
     multi_appointment = next(item for item in expect(professional.request(agenda_path), 200)["appointments"] if item["id"] == multiple)
     assert multi_appointment["service_name"] == "Coupe + Soin" and int(multi_appointment["price_dzd"]) == 3500
@@ -173,7 +173,7 @@ def main():
     }), 201)
     assert cash["totalDzd"] == 3500 and cash["collectedDzd"] == 3500
     expect(professional.request("appointments.php", {**multi_move, "time": "15:00"}), 409)
-    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": multiple}), 409)
+    expect(professional.request("appointments.php", {"action": "cancel", "appointmentId": multiple, "expectedVersion": 2}), 409)
     expect(professional.request("professional-cash.php", {
         **invalid_cash, "requestKey": str(uuid.uuid4()),
         "lines": [
@@ -188,7 +188,7 @@ def main():
     assert "09:00" in expect(professional.request(available), 200)["slots"]
     expect(other_pro.request(available), 404)
     expect(other_client.request(available), 404)
-    move = {**base, "action": "reschedule", "appointmentId": appointment_id}
+    move = {**base, "action": "reschedule", "appointmentId": appointment_id, "expectedVersion": 1}
     expect(other_pro.request("appointments.php", {**move, "time": "11:00"}), 404)
     expect(professional.request("appointments.php", {**move, "time": "10:00"}), 409)
     assert expect(client.request("appointments.php"), 200)["appointments"][0]["starts_at"].endswith("09:00:00")
@@ -200,6 +200,8 @@ def main():
     }), 200)
     changed = expect(client.request("appointments.php"), 200)["appointments"][0]
     assert changed["service_name"] == "Soin" and int(changed["price_dzd"]) == 2000
+    assert changed["version"] == 2
+    move["expectedVersion"] = changed["version"]
     assert changed["starts_at"].endswith("11:00:00") and changed["ends_at"].endswith("11:45:00")
     assert next(item for item in expect(professional.request(agenda_path), 200)["appointments"] if item["id"] == appointment_id)["private_note"] == note["note"]
     expect(professional.request("professional-agenda.php", {**note, "note": ""}), 200)
@@ -260,6 +262,7 @@ def main():
         expect(professional.request("appointments.php", {
             **move, "time": "12:00", "staffId": int(member["id"]),
         }), 200)
+        move["expectedVersion"] += 1
     current = next(item for item in expect(professional.request(agenda_path), 200)["appointments"] if item["id"] == appointment_id)
     assert int(current["staff_id"]) == int(members[1]["id"])
     expect(professional.request(absences_path, {
@@ -282,7 +285,7 @@ def main():
     }), 200)
     frozen_booking = next(item for item in expect(client.request("appointments.php"), 200)["appointments"] if int(item["id"]) == booked_id)
     assert frozen_booking["services"] == expected_details
-    expect(client.request("appointments.php", {"action": "cancel", "appointmentId": booked_id}), 200)
+    expect(client.request("appointments.php", {"action": "cancel", "appointmentId": booked_id, "expectedVersion": 1}), 200)
     print("Professional agenda integration checks passed.")
 
 
