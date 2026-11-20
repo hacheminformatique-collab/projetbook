@@ -47,6 +47,7 @@ try {
 
     bookili_json_response(200, [
         'account' => [
+            'id' => (string) $account['id'],
             'email' => $account['email'],
             'role' => $account['role'],
         ],

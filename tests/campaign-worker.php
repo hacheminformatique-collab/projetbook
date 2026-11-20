@@ -44,6 +44,9 @@ function session(PDO $pdo, string $role): array
         'email' => $account['email'], 'password' => 'Mot-de-passe-test-123',
     ], $csrf['csrfToken']);
     verify($code === 200, 'Could not log in as ' . $role);
+    verify(($login['account']['id'] ?? null) === (string) $account['id'], 'Login did not return the account identifier.');
+    [$code, $current] = request($curl, 'session.php');
+    verify($code === 200 && ($current['account']['id'] ?? null) === $login['account']['id'], 'Session account identifier changed.');
     return [$curl, $login['csrfToken'], (int) $account['id']];
 }
 

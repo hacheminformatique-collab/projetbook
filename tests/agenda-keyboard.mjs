@@ -131,7 +131,7 @@ try {
       } else if (url.pathname.endsWith("/api/session.php")) {
         data = window.clientBookingGuest
           ? { authenticated: false }
-          : { authenticated: true, account: { role: window.adminNotificationTest ? "super_admin" : window.clientBookingTest ? "client" : "professional", email: "admin@example.test" }, csrfToken: "test" };
+          : { authenticated: true, account: { id: window.adminNotificationTest ? (sessionStorage.getItem("mock-admin-id") || "1") : "2", role: window.adminNotificationTest ? "super_admin" : window.clientBookingTest ? "client" : "professional", email: "admin@example.test" }, csrfToken: "test" };
       } else if (url.pathname.endsWith("/api/admin-homepage-image.php")) {
         data = { hasImage: false };
       } else if (url.pathname.endsWith("/api/admin-notifications.php")) {
@@ -158,11 +158,13 @@ try {
             data = { subject, body, recipients: window.previewRecipients ?? 4, previewBody: body + "\\n\\n---\\nPour vous désinscrire : [lien-personnel]" };
           } else if (window.campaignPayload.action === "create") {
             if (window.campaignAudienceChanged) return new Response(JSON.stringify({ code: "campaign_audience_changed", error: "Le nombre de destinataires a changé. Vérifiez un nouvel aperçu avant de confirmer." }), { status: 409, headers: { "Content-Type": "application/json" } });
-            window.campaignRequests ||= {};
+            window.campaignRequests ||= JSON.parse(localStorage.getItem("mock-campaign-requests") || "{}");
+            window.createdCampaigns = Object.keys(window.campaignRequests).length;
             const key = window.campaignPayload.requestKey;
             if (!window.campaignRequests[key]) {
               window.campaignRequests[key] = window.campaignPayload;
               window.createdCampaigns = (window.createdCampaigns || 0) + 1;
+              localStorage.setItem("mock-campaign-requests", JSON.stringify(window.campaignRequests));
               if (window.loseCampaignResponse) throw new Error("Réseau interrompu");
               data = { message: "Campagne mise en file." };
             } else {
@@ -1320,25 +1322,141 @@ try {
   assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
   await evaluate("window.previewRecipients = 4; document.querySelector('.auth-form button[type=submit]').click()");
   await waitFor("document.querySelector('.campaign-preview')?.textContent.includes('Message corrigé')");
-  await evaluate("window.campaignAudienceChanged = true; document.querySelector('.campaign-preview button').click()");
+  await evaluate(`(() => {
+    window.realStorageRemove = Storage.prototype.removeItem;
+    Storage.prototype.removeItem = function(key) {
+      if (key.startsWith('bookili:campaign-recovery:')) throw new Error('Storage unavailable');
+      return window.realStorageRemove.call(this, key);
+    };
+    window.campaignAudienceChanged = true;
+    document.querySelector('.campaign-preview button').click();
+  })()`);
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('Impossible d’effacer')");
+  assert.equal(await evaluate("JSON.parse(sessionStorage.getItem('bookili:campaign-recovery:v1:1')).resolution.outcome"), "changed");
+  await evaluate("Storage.prototype.removeItem = window.realStorageRemove");
+  await send("Page.reload");
+  await waitFor("!!document.querySelector('.admin-section-nav')");
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("document.querySelector('.campaign-preview button')?.textContent.includes('effacement local')");
+  await evaluate("document.querySelector('.campaign-preview button').click()");
   await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('destinataires a changé')");
   assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
   assert.equal(await evaluate("window.createdCampaigns || 0"), 0);
+  assert.equal(await evaluate("sessionStorage.getItem('bookili:campaign-recovery:v1:1')"), null);
   await evaluate("window.campaignAudienceChanged = false; document.querySelector('.auth-form button[type=submit]').click()");
   await waitFor("!!document.querySelector('.campaign-preview')");
+  await evaluate(`(() => {
+    window.realStorageSet = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key.startsWith('bookili:campaign-recovery:')) throw new Error('Storage unavailable');
+      return window.realStorageSet.call(this, key, value);
+    };
+    document.querySelector('.campaign-preview button').click();
+  })()`);
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('campagne n’a pas été envoyée')");
+  assert.equal(await evaluate("window.createdCampaigns || 0"), 0);
+  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').disabled"), false);
+  await evaluate("Storage.prototype.setItem = window.realStorageSet");
   await evaluate("window.loseCampaignResponse = true; document.querySelector('.campaign-preview button').click()");
   await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('Réessayez la même demande')");
   const firstRequest = await evaluate("window.campaignPayload");
   assert.match(firstRequest.requestKey, /^[0-9a-f-]{36}$/);
   assert.deepEqual({ ...firstRequest, requestKey: undefined }, { action: "create", subject: "Offre spéciale", body: "Message corrigé", expectedRecipients: 4, requestKey: undefined });
-  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').disabled"), true);
+  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').matches(':disabled')"), true);
   assert.equal(await evaluate("document.querySelector('.auth-form button[type=submit]').disabled"), true);
   assert.match(await evaluate("document.querySelector('.campaign-preview button').textContent"), /Réessayer/);
-  await evaluate("document.querySelector('.campaign-preview button').click()");
-  await waitFor("document.querySelector('.client-card [role=status]')?.textContent.includes('déjà enregistrée')");
+  const saved = await evaluate("JSON.parse(sessionStorage.getItem('bookili:campaign-recovery:v1:1'))");
+  assert.deepEqual(saved.request, firstRequest);
+  assert.equal(JSON.stringify(saved).includes("csrfToken"), false);
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Comptes').click()");
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("document.querySelector('.campaign-preview button')?.textContent.includes('Réessayer')");
+  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').value"), "Offre spéciale");
+  await evaluate("sessionStorage.setItem('mock-admin-id', '2')");
+  await send("Page.reload");
+  await waitFor("!!document.querySelector('.admin-section-nav')");
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("!!document.querySelector('.auth-form input[name=subject]')");
+  assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
+  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').value"), "");
+  assert.equal(await evaluate("sessionStorage.getItem('bookili:campaign-recovery:v1:1') !== null"), true);
+  await evaluate("sessionStorage.setItem('mock-admin-id', '1')");
+  await send("Page.reload");
+  await waitFor("!!document.querySelector('.admin-section-nav')");
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("document.querySelector('.campaign-preview button')?.textContent.includes('Réessayer')");
+  assert.equal(await evaluate("document.querySelector('.auth-form textarea').value"), "Message corrigé");
+  await evaluate(`(() => {
+    window.realStorageRemove = Storage.prototype.removeItem;
+    Storage.prototype.removeItem = function(key) {
+      if (key.startsWith('bookili:campaign-recovery:')) throw new Error('Storage unavailable');
+      return window.realStorageRemove.call(this, key);
+    };
+    document.querySelector('.campaign-preview button').click();
+  })()`);
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('Impossible d’effacer')");
   assert.deepEqual(await evaluate("window.campaignPayload"), firstRequest);
   assert.equal(await evaluate("window.createdCampaigns"), 1);
+  assert.equal(await evaluate("JSON.parse(sessionStorage.getItem('bookili:campaign-recovery:v1:1')).resolution.outcome"), "created");
+  await evaluate("Storage.prototype.removeItem = window.realStorageRemove");
+  await send("Page.reload");
+  await waitFor("!!document.querySelector('.admin-section-nav')");
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("document.querySelector('.campaign-preview button')?.textContent.includes('effacement local')");
+  assert.equal(await evaluate("window.campaignPayload"), undefined);
+  await evaluate("document.querySelector('.campaign-preview button').click()");
+  await waitFor("document.querySelector('.client-card [role=status]')?.textContent.includes('déjà enregistrée')");
   assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').value"), "");
+  assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
+  assert.equal(await evaluate("sessionStorage.getItem('bookili:campaign-recovery:v1:1')"), null);
+
+  await evaluate(`(() => {
+    sessionStorage.setItem('bookili:campaign-recovery:v1:1', 'invalid');
+    Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Comptes').click();
+  })()`);
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('illisible')");
+  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').matches(':disabled')"), true);
+  await evaluate("window.confirm = () => false; Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent.includes('illisible')).click()");
+  assert.equal(await evaluate("sessionStorage.getItem('bookili:campaign-recovery:v1:1')"), "invalid");
+  await evaluate("window.confirm = () => true; Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent.includes('illisible')).click()");
+  await waitFor("!document.querySelector('.client-card [role=alert]')");
+  assert.equal(await evaluate("sessionStorage.getItem('bookili:campaign-recovery:v1:1')"), null);
+
+  await evaluate(`(() => {
+    window.realStorageGet = Storage.prototype.getItem;
+    Storage.prototype.getItem = function(key) {
+      if (key.startsWith('bookili:campaign-recovery:')) throw new Error('Storage unavailable');
+      return window.realStorageGet.call(this, key);
+    };
+    Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Comptes').click();
+  })()`);
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('stockage de cet onglet est inaccessible')");
+  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').matches(':disabled')"), true);
+  await evaluate(`(() => {
+    Storage.prototype.getItem = window.realStorageGet;
+    Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Comptes').click();
+  })()`);
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
+  await waitFor("!document.querySelector('.auth-form input[name=subject]').matches(':disabled')");
+  await evaluate(`(() => {
+    const subject = document.querySelector('.auth-form input[name=subject]');
+    const body = document.querySelector('.auth-form textarea');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(subject, 'À abandonner');
+    subject.dispatchEvent(new Event('input', { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(body, 'Message de test');
+    body.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.auth-form button[type=submit]').click();
+  })()`);
+  await waitFor("!!document.querySelector('.campaign-preview')");
+  await evaluate("window.loseCampaignResponse = true; document.querySelector('.campaign-preview button').click()");
+  await waitFor("document.querySelector('.campaign-preview')?.textContent.includes('Abandonner la reprise')");
+  await evaluate("window.confirm = () => false; Array.from(document.querySelectorAll('.campaign-preview button')).find(b => b.textContent.includes('Abandonner')).click()");
+  assert.equal(await evaluate("sessionStorage.getItem('bookili:campaign-recovery:v1:1') !== null"), true);
+  await evaluate("window.confirm = () => true; Array.from(document.querySelectorAll('.campaign-preview button')).find(b => b.textContent.includes('Abandonner')).click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('Reprise locale abandonnée')");
+  assert.equal(await evaluate("sessionStorage.getItem('bookili:campaign-recovery:v1:1')"), null);
   assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
   console.log("Campaign preview and audience confirmation passed.");
 } finally {

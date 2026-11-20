@@ -275,22 +275,52 @@ export function AdminBilling({ csrfToken }) {
   </>;
 }
 
-export function AdminCampaigns({ csrfToken }) {
+function loadCampaignRecovery(accountId) {
+  if (typeof accountId !== "string" || !/^[1-9][0-9]*$/.test(accountId)) {
+    return { error: "Impossible d’identifier le compte administrateur. Rechargez la page après avoir mis à jour les fichiers du site." };
+  }
+  const key = `bookili:campaign-recovery:v1:${accountId}`;
+  let saved;
+  try {
+    saved = window.sessionStorage.getItem(key);
+  } catch {
+    return { key, error: "Le stockage de cet onglet est inaccessible. Autorisez-le et rechargez la page avant de créer une campagne." };
+  }
+  if (saved === null) return { key };
+  try {
+    const record = JSON.parse(saved);
+    const request = record?.request, preview = record?.preview;
+    if (request?.action !== "create" || typeof request.requestKey !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(request.requestKey)
+      || typeof request.subject !== "string" || !request.subject || request.subject.length > 200
+      || typeof request.body !== "string" || !request.body || request.body.length > 10000
+      || !Number.isInteger(request.expectedRecipients) || request.expectedRecipients < 1 || request.expectedRecipients > 5000
+      || preview?.subject !== request.subject || preview?.body !== request.body
+      || preview?.recipients !== request.expectedRecipients || typeof preview?.previewBody !== "string"
+      || (record.resolution && (!["created", "changed"].includes(record.resolution.outcome) || typeof record.resolution.message !== "string"))) {
+      throw new Error("Invalid campaign recovery");
+    }
+    return { key, request, preview, resolution: record.resolution || null };
+  } catch {
+    return { key, corrupt: true, error: "La demande de campagne enregistrée dans cet onglet est illisible. Vérifiez l’historique avant de l’effacer." };
+  }
+}
+
+export function AdminCampaigns({ csrfToken, accountId }) {
+  const [recovery] = useState(() => loadCampaignRecovery(accountId));
   const [result, setResult] = useState(null);
-  const [draft, setDraft] = useState({ subject: "", body: "" });
-  const [preview, setPreview] = useState(null);
-  const [pending, setPending] = useState(null);
+  const [draft, setDraft] = useState(() => recovery.request
+    ? { subject: recovery.request.subject, body: recovery.request.body } : { subject: "", body: "" });
+  const [preview, setPreview] = useState(recovery.preview || null);
+  const [pending, setPending] = useState(recovery.request || null);
+  const [storageProblem, setStorageProblem] = useState(recovery.error || "");
+  const [cleanupOutcome, setCleanupOutcome] = useState(recovery.resolution || null);
   const creating = useRef(false);
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useState(() => recovery.resolution
+    ? { kind: "error", text: `${recovery.resolution.message} La demande locale reste à effacer.` } : null);
   const [working, setWorking] = useState(false);
-  useEffect(() => {
-    if (!pending) return undefined;
-    const warn = (event) => { event.preventDefault(); event.returnValue = ""; };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [pending]);
   useEffect(() => {
     const controller = new AbortController();
     setResult(null);
@@ -314,34 +344,88 @@ export function AdminCampaigns({ csrfToken }) {
     } finally { setWorking(false); }
   }
   async function createCampaign() {
-    if (creating.current) return;
+    if (creating.current || storageProblem || cleanupOutcome) return;
     creating.current = true;
     setWorking(true);
     setNotice(null);
+    let request;
     try {
-      const request = pending || {
+      request = pending || {
         action: "create", subject: preview.subject, body: preview.body,
         expectedRecipients: preview.recipients, requestKey: crypto.randomUUID(),
       };
+    } catch {
+      setNotice({ kind: "error", text: "Impossible de générer un identifiant sécurisé. Vérifiez que le site utilise HTTPS et un navigateur compatible." });
+      creating.current = false;
+      setWorking(false);
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(recovery.key, JSON.stringify({ request, preview }));
       setPending(request);
+    } catch {
+      setNotice({ kind: "error", text: pending
+        ? "Impossible de conserver la reprise dans cet onglet. Aucune nouvelle demande n’a été envoyée ; la campagne initiale peut déjà être enregistrée. Rétablissez le stockage et réessayez."
+        : "Impossible de conserver la demande dans cet onglet. La campagne n’a pas été envoyée ; autorisez le stockage et réessayez." });
+      creating.current = false;
+      setWorking(false);
+      return;
+    }
+    try {
       const response = await apiRequest("admin-campaigns.php", { csrfToken, body: request });
-      setPending(null);
-      setDraft({ subject: "", body: "" });
-      setPreview(null);
-      setNotice({ kind: "success", text: response.message });
+      finishCampaign("created", response.message, request);
       setPage(1);
       setRevision((value) => value + 1);
     } catch (cause) {
       if (cause.code === "campaign_audience_changed") {
-        setPending(null);
-        setPreview(null);
-        setNotice({ kind: "error", text: cause.message });
+        finishCampaign("changed", cause.message, request);
       } else {
-        setNotice({ kind: "error", text: `${cause.message} Réessayez la même demande avant de quitter cette page.` });
+        setNotice({ kind: "error", text: `${cause.message} Réessayez la même demande dans cet onglet.` });
       }
     } finally {
       creating.current = false;
       setWorking(false);
+    }
+  }
+  function finishCampaign(outcome, message, request = pending) {
+    try {
+      window.sessionStorage.removeItem(recovery.key);
+    } catch {
+      const resolution = { outcome, message };
+      let warning = "Rétablissez le stockage puis réessayez l’effacement.";
+      try {
+        window.sessionStorage.setItem(recovery.key, JSON.stringify({ request, preview, resolution }));
+      } catch {
+        warning = "Le résultat ne peut pas non plus être conservé : ne rechargez pas avant d’avoir rétabli le stockage et effacé la demande. Sinon, vérifiez l’historique avant de continuer.";
+      }
+      setCleanupOutcome(resolution);
+      setNotice({ kind: "error", text: `${message} Impossible d’effacer la demande locale. ${warning}` });
+      return;
+    }
+    setCleanupOutcome(null);
+    setPending(null);
+    setPreview(null);
+    if (outcome === "created") setDraft({ subject: "", body: "" });
+    setNotice({ kind: outcome === "created" ? "success" : "error", text: message });
+  }
+  function discardCorruptRecovery() {
+    if (!window.confirm("Après vérification de l’historique, effacer la demande locale illisible ?")) return;
+    try {
+      window.sessionStorage.removeItem(recovery.key);
+      setStorageProblem("");
+    } catch {
+      setStorageProblem("Impossible d’effacer la demande locale. Rétablissez le stockage et réessayez.");
+    }
+  }
+  function abandonCampaignRecovery() {
+    if (!window.confirm("Abandonner cette reprise ? La demande initiale peut encore être en cours ou déjà enregistrée. Vérifiez l’historique avant de recréer une campagne, au risque de provoquer un doublon.")) return;
+    try {
+      window.sessionStorage.removeItem(recovery.key);
+      setPending(null);
+      setPreview(null);
+      setNotice({ kind: "error", text: "Reprise locale abandonnée. Vérifiez l’historique avant de recréer cette campagne." });
+    } catch {
+      setNotice({ kind: "error", text: "Impossible d’effacer la demande locale. Rétablissez le stockage et réessayez." });
     }
   }
   async function previewDraft(event) {
@@ -365,22 +449,26 @@ export function AdminCampaigns({ csrfToken }) {
     <h2>Campagnes e-mail</h2>
     <p>Les campagnes sont envoyées uniquement aux comptes clients actifs ayant explicitement accepté les communications. Elles sont en texte brut, limitées à 5 000 destinataires et comportent un lien de désinscription. Configurez l’adresse publique HTTPS du site et le cron d’envoi avant de les lancer.</p>
     <p>Clients actuellement consentants : <strong>{result?.consentingClients ?? "…"}</strong></p>
+    {storageProblem && <p className="form-message form-error" role="alert">{storageProblem}</p>}
+    {storageProblem && recovery.corrupt && <button className="admin-nav-link" type="button" onClick={discardCorruptRecovery}>Effacer la demande locale illisible</button>}
     {notice && <Feedback notice={notice} />}
     <form className="auth-form" onSubmit={previewDraft}>
-      <fieldset className="form-fieldset" disabled={working}>
+      <fieldset className="form-fieldset" disabled={working || !!storageProblem}>
         <label>Objet<input name="subject" required maxLength={200} value={draft.subject} onChange={changeDraft} disabled={!!pending} /></label>
         <label>Message<textarea name="body" required maxLength={10000} rows={8} value={draft.body} onChange={changeDraft} disabled={!!pending} /></label>
         <button className="admin-nav-link" type="submit" disabled={working || !csrfToken || !!pending}>Afficher l’aperçu</button>
         {preview && <section className="campaign-preview" aria-labelledby="campaign-preview-title" aria-live="polite">
           <h3 id="campaign-preview-title">Aperçu de la campagne</h3>
-          <p>Destinataires actuellement éligibles : <strong>{preview.recipients}</strong>. Le nombre est revérifié à la confirmation ; le consentement est vérifié à nouveau avant chaque envoi.</p>
+          <p>{pending ? "Destinataires lors de l’aperçu" : "Destinataires actuellement éligibles"} : <strong>{preview.recipients}</strong>. Le nombre est revérifié lors d’une nouvelle création ; le consentement est vérifié à nouveau avant chaque envoi.</p>
           {preview.recipients === 0 && <p className="form-message form-error">Aucun client actif n’a accepté les communications marketing.</p>}
           {preview.recipients > 5000 && <p className="form-message form-error">Une campagne est limitée à 5 000 destinataires consentants.</p>}
           <p><strong>Objet :</strong> {preview.subject}</p>
           <pre>{preview.previewBody}</pre>
           <p className="field-hint">Le lien indiqué est un exemple : chaque destinataire recevra son propre lien de désinscription. La mise en file ne garantit pas la réception.</p>
-          {pending && <p className="field-hint">La réponse est incertaine. Réessayez cette même demande : elle ne créera pas de doublon. Si vous quittez cette page, vérifiez l’historique avant de recréer la campagne.</p>}
-          <button className="auth-submit" type="button" disabled={working || !csrfToken || preview.recipients < 1 || preview.recipients > 5000} onClick={createCampaign}>{pending ? "Réessayer la même demande" : "Confirmer la mise en file"}</button>
+          {pending && !cleanupOutcome && <p className="field-hint">La réponse est incertaine. Réessayez cette même demande : elle ne créera pas de doublon. Elle est conservée dans cet onglet, même après rechargement, mais peut disparaître à sa fermeture.</p>}
+          {cleanupOutcome ? <button className="auth-submit" type="button" onClick={() => finishCampaign(cleanupOutcome.outcome, cleanupOutcome.message)}>Réessayer l’effacement local</button>
+            : <button className="auth-submit" type="button" disabled={working || !csrfToken || preview.recipients < 1 || preview.recipients > 5000} onClick={createCampaign}>{pending ? "Réessayer la même demande" : "Confirmer la mise en file"}</button>}
+          {pending && !cleanupOutcome && <button className="admin-nav-link" type="button" onClick={abandonCampaignRecovery}>Abandonner la reprise</button>}
         </section>}
       </fieldset>
     </form>

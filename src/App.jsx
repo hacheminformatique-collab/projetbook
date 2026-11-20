@@ -907,7 +907,7 @@ function SuperAdminDashboard({ account, csrfToken, onLogout }) {
           <button type="button" className={section === "campaigns" ? "selected" : ""} onClick={() => setSection("campaigns")}>Campagnes</button>
           <button type="button" className={section === "profile-reviews" ? "selected" : ""} onClick={() => setSection("profile-reviews")}>Contenus à valider</button>
         </nav>
-        {section === "accounts" ? <><h1>Gestion des comptes</h1><AdminAccounts csrfToken={csrfToken} /></> : section === "billing" ? <><h1>Forfaits et comptabilité</h1><AdminBilling csrfToken={csrfToken} /></> : section === "campaigns" ? <><h1>Campagnes marketing</h1><AdminCampaigns csrfToken={csrfToken} /></> : section === "profile-reviews" ? <><h1>Contenus d’établissement à valider</h1><AdminProfileReviews csrfToken={csrfToken} /></> : <>
+        {section === "accounts" ? <><h1>Gestion des comptes</h1><AdminAccounts csrfToken={csrfToken} /></> : section === "billing" ? <><h1>Forfaits et comptabilité</h1><AdminBilling csrfToken={csrfToken} /></> : section === "campaigns" ? <><h1>Campagnes marketing</h1><AdminCampaigns key={account.id} accountId={account.id} csrfToken={csrfToken} /></> : section === "profile-reviews" ? <><h1>Contenus d’établissement à valider</h1><AdminProfileReviews csrfToken={csrfToken} /></> : <>
         <h1>Page d’accueil</h1>
         <NotificationSettings csrfToken={csrfToken} />
         <section className="client-card" aria-labelledby="homepage-image-title">

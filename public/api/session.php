@@ -16,6 +16,7 @@ try {
         'authenticated' => true,
         'csrfToken' => $_SESSION['csrf_token'] ?? null,
         'account' => [
+            'id' => (string) $account['id'],
             'email' => $account['email'],
             'role' => $account['role'],
         ],

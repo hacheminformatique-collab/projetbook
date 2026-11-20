@@ -256,9 +256,18 @@ confirmation, la mise en file est refusée : il faut vérifier un nouvel aperçu
 La composition de l'audience peut évoluer même si le nombre reste identique ;
 le consentement est toujours vérifié à nouveau avant l'envoi.
 Si la réponse de création est incertaine, réessayez la même demande depuis
-cette page : sa clé unique évite de créer une seconde campagne. La demande
-en attente n'est conservée que tant que la page reste ouverte ; après l'avoir
-quittée ou rechargée, vérifiez l'historique avant de recréer une campagne.
+cet onglet : sa clé unique évite de créer une seconde campagne. L'objet, le
+message, l'aperçu et la clé sont conservés dans le stockage de cet onglet,
+associés au compte super-admin, sans mot de passe ni jeton de session. Ils
+permettent de reprendre après navigation, rechargement ou reconnexion du même
+compte, et sont effacés après confirmation ou refus de l'audience. Le stockage
+peut être effacé à la fermeture de l'onglet ou par le navigateur ; dans ce cas
+vérifiez l'historique avant de recréer la campagne. Sur un appareil partagé,
+tenez compte du fait que les données restent lisibles localement tant qu'elles
+ne sont pas effacées, même après déconnexion. Si le stockage est inaccessible,
+la création est bloquée. L'abandon manuel de la reprise ne garantit pas que
+la demande initiale a échoué : elle peut encore aboutir et créer un doublon
+si une nouvelle campagne est lancée.
 Cette protection ne supprime pas le risque de doublon lors de l'envoi par le
 transport. La migration 026 est nécessaire avant de déployer l'API actualisée ;
 déployez aussi le nouveau frontend pour que chaque création fournisse une clé.

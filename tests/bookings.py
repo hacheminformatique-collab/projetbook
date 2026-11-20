@@ -86,6 +86,9 @@ def main():
         "setupToken": os.environ["BOOKILI_TEST_SETUP_TOKEN"], "email": email, "password": PASSWORD,
     }), 201)
     assert admin.login(email, PASSWORD) == 200
+    admin_session = expect(admin.request("session.php"), 200)
+    assert admin_session["account"]["role"] == "super_admin"
+    assert admin_session["account"]["id"].isdigit()
     first, second = new_client(1, marketing_consent=True), new_client(2)
     professional, salon = new_professional(admin, 1)
     other_pro, other_salon = new_professional(admin, 2)
