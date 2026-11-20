@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { algerianDate, apiRequest, appointmentDate, priceLabel } from "./api-client.js";
 import { currentTimePosition } from "./lib/agenda-time.js";
-import { validServiceDetails } from "./lib/appointment-services.js";
+import { validAppointmentPrice, validAppointmentServiceDetails } from "./lib/appointment-services.js";
 import { ClientProfile } from "./ProfessionalClients.jsx";
 
 const minutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
@@ -45,10 +45,8 @@ function TimeSlotPicker({ slots, time, onChange, disabled }) {
 
 function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged, onCheckout, onViewSale, destination }) {
   const duration = (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000;
-  const hasDetails = validServiceDetails(appointment.services, appointment.services?.length, duration, Number(appointment.price_dzd))
-    && appointment.services.length <= 6
-    && String(appointment.services[0].id) === String(appointment.service_id)
-    && appointment.services.map((item) => item.name).join(" + ") === appointment.service_name;
+  const hasDetails = validAppointmentServiceDetails(appointment, duration, appointment.services?.length);
+  const appointmentPrice = validAppointmentPrice(appointment.price_dzd) ? priceLabel(appointment.price_dzd) : "Tarif indisponible";
   const servicesAvailable = hasDetails && appointment.services.every((item) => agenda.services.some((service) => String(service.id) === String(item.id)));
   const [note, setNote] = useState(appointment.private_note);
   const [showClient, setShowClient] = useState(false);
@@ -176,7 +174,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         <h2 id="agenda-detail-title">Fiche rendez-vous</h2>
         <button ref={closeRef} type="button" className="admin-nav-link" onClick={onClose}>Fermer</button>
       </header>
-      <p><strong>{appointment.service_name}</strong><br />{appointmentDate(appointment.starts_at)} · {priceLabel(appointment.price_dzd)}<br />
+      <p><strong>{appointment.service_name}</strong><br />{appointmentDate(appointment.starts_at)} · {appointmentPrice}<br />
         Durée : {duration} min<br />
         Collaborateur : {agenda.staff.find((member) => String(member.id) === String(appointment.staff_id))?.name || "Non attribué"}
       </p>
@@ -215,7 +213,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
           <p className="field-hint">Ce rendez-vous possède déjà une vente dans le journal{appointment.voided_at ? " (annulée)" : ""}.</p>
           <button className="admin-nav-link" type="button" disabled={busy} onClick={() => onViewSale(appointment.cash_sale_id)}>Voir la vente n° {appointment.cash_sale_id}</button>
         </>
-        : <button className="auth-submit agenda-cash-button" type="button" disabled={busy || !hasDetails} onClick={() => onCheckout(appointment)}>Encaisser · {priceLabel(appointment.price_dzd)}</button>}
+        : <button className="auth-submit agenda-cash-button" type="button" disabled={busy || !hasDetails} onClick={() => onCheckout(appointment)}>Encaisser · {appointmentPrice}</button>}
       {editing && <form className="auth-form agenda-edit" onSubmit={reschedule}>
         {suggestedTime && <p className="field-hint">Déplacement proposé à {suggestedTime}. {loadingSlots ? "" : slots.includes(suggestedTime) ? "Confirmez pour enregistrer." : "Ce créneau ne convient pas à la prestation. Choisissez un autre horaire."}</p>}
         <p className="field-hint">La prestation sera enregistrée au tarif et à la durée affichés ci-dessous. Le rendez-vous initial reste inchangé si le créneau est indisponible.</p>

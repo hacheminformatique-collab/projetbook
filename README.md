@@ -346,6 +346,9 @@ présélectionne la date, les prestations et le collaborateur lorsque ceux-ci
 sont disponibles, mais le client doit choisir un horaire. Il peut conserver ou
 modifier jusqu’à six prestations ; si une prestation initiale n’est plus
 disponible, il doit choisir explicitement celles à conserver. La modification
+demande également un choix explicite si le détail enregistré des prestations
+est absent ou incohérent ; le résumé global reste visible dans l’espace client.
+La modification
 indique les conditions et le tarif
 actuel ; l’annulation demande confirmation
 avec les détails du rendez-vous. Après confirmation, un message rappelle la

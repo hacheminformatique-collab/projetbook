@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, apiUrl, algerianDate, appointmentDate, priceLabel, weekDays } from "./api-client.js";
 import { createBookingCalendarEvent } from "./lib/booking-calendar.js";
-import { validServiceDetails } from "./lib/appointment-services.js";
+import { validAppointmentPrice, validAppointmentServiceDetails, validServiceDetails } from "./lib/appointment-services.js";
 import { getWilayaName } from "./data/algerian-wilayas.js";
 
 export function DirectoryResults({ search }) {
@@ -468,16 +468,14 @@ export function Appointments({ csrfToken, professional = false }) {
     } catch (cause) { setError(cause.message); }
     finally { setWorking(false); }
   }
-  function modificationLink(appointment) {
+  function modificationLink(appointment, hasDetails) {
     const params = new URLSearchParams({
       appointmentId: appointment.id,
       date: appointment.starts_at.slice(0, 10),
     });
-    const count = Number(appointment.service_count);
-    const ids = Array.isArray(appointment.services) ? appointment.services.map((service) => String(service.id)) : [];
-    if (count >= 1 && count <= 6 && ids.length === count && ids[0] === String(appointment.service_id)
-        && new Set(ids).size === ids.length && ids.every((id) => /^[1-9][0-9]*$/.test(id))) {
-      params.set(count === 1 ? "serviceId" : "serviceIds", ids.join(","));
+    if (hasDetails) {
+      const ids = appointment.services.map((service) => String(service.id));
+      params.set(ids.length === 1 ? "serviceId" : "serviceIds", ids.join(","));
     } else params.set("unknownServices", "1");
     if (appointment.staff_id) params.set("staffId", appointment.staff_id);
     return `/salons/${appointment.salon_id}?${params}`;
@@ -506,29 +504,29 @@ export function Appointments({ csrfToken, professional = false }) {
         {result?.appointments.map((appointment) => {
           const editable = appointment.status === "confirmed" && new Date(appointment.starts_at.replace(" ", "T") + "+01:00") > new Date();
           const duration = (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000;
-          const hasDetails = validServiceDetails(appointment.services, Number(appointment.service_count), duration, Number(appointment.price_dzd))
-            && (appointment.services.length === 1 || appointment.services.map((service) => service.name).join(" + ") === appointment.service_name);
+          const hasDetails = validAppointmentServiceDetails(appointment, duration, appointment.service_count);
+          const appointmentPrice = validAppointmentPrice(appointment.price_dzd) ? priceLabel(appointment.price_dzd) : "Tarif indisponible";
           return (
             <article className="appointment-card" key={appointment.id}>
               <p className={`application-status ${appointment.status === "cancelled" ? "status-rejected" : "status-approved"}`}>{appointment.status === "cancelled" ? "Annulé" : "Confirmé"}</p>
               <h3>{appointment.service_name}</h3>
-              <p>{appointmentDate(appointment.starts_at)}{Number.isSafeInteger(duration) && duration > 0 && <> · {duration} min</>} · {priceLabel(appointment.price_dzd)}{appointment.staff_name && <> · {appointment.staff_name}</>}</p>
-              {!professional && Number(appointment.service_count) > 1 && (hasDetails
-                ? <ServiceBreakdown services={appointment.services} />
-                : <p className="form-message form-error" role="alert">Le détail des prestations est indisponible. Actualisez la liste ou contactez l’établissement.</p>)}
+              <p>{appointmentDate(appointment.starts_at)}{Number.isSafeInteger(duration) && duration > 0 && <> · {duration} min</>} · {appointmentPrice}{appointment.staff_name && <> · {appointment.staff_name}</>}</p>
+              {!professional && (!hasDetails
+                ? <p className="form-message form-error" role="alert">Le détail des prestations est indisponible ou incohérent. Actualisez la liste ou contactez l’établissement.</p>
+                : appointment.services.length > 1 && <ServiceBreakdown services={appointment.services} />)}
               {professional ? <p>{appointment.first_name} {appointment.last_name} · <a className="inline-link" href={`tel:${appointment.client_phone}`}>{appointment.client_phone}</a></p> : (
                 <p>{appointment.salon_name} · {appointment.address}, {appointment.city}<br /><a className="inline-link" href={`tel:${appointment.salon_phone}`}>{appointment.salon_phone}</a></p>
               )}
               {editable && <div className="review-buttons">
-                {!professional && <Link className="admin-nav-link" to={modificationLink(appointment)}>Modifier</Link>}
+                {!professional && <Link className="admin-nav-link" to={modificationLink(appointment, hasDetails)}>Modifier</Link>}
                 {!professional && <CalendarDownloadButton details={{
                   appointmentId: appointment.id, salonId: appointment.salon_id, salonName: appointment.salon_name,
                   salonAddress: `${appointment.address}, ${appointment.city}`, serviceName: appointment.service_name,
                   date: appointment.starts_at.slice(0, 10), time: appointment.starts_at.slice(11, 16),
                   durationMinutes: duration,
-                  staffName: appointment.staff_name || "Non attribué", priceLabel: priceLabel(appointment.price_dzd),
+                  staffName: appointment.staff_name || "Non attribué", priceLabel: appointmentPrice,
                   serviceDetails: hasDetails ? calendarServiceDetails(appointment.services)
-                    : Number(appointment.service_count) > 1 ? ["Le détail des prestations est indisponible. Consultez votre espace client ou contactez l’établissement."] : [],
+                    : ["Le détail des prestations est indisponible. Consultez votre espace client ou contactez l’établissement."],
                 }} />}
                 <button className="review-reject" type="button" disabled={working} onClick={() => cancel(appointment)}>Annuler</button>
               </div>}
