@@ -63,7 +63,12 @@ try {
         $pdo->beginTransaction();
         try {
             $statement = $pdo->prepare(
-                'SELECT status, notification_version, starts_at FROM appointments WHERE id = :id FOR UPDATE'
+                'SELECT b.id, b.salon_id, b.status, b.notification_version, b.starts_at, b.ends_at,
+                        b.service_name, b.price_dzd, s.name AS salon_name, s.address, s.city, m.name AS staff_name
+                 FROM appointments b
+                 INNER JOIN salons s ON s.id = b.salon_id
+                 LEFT JOIN staff_members m ON m.id = b.staff_id AND m.salon_id = b.salon_id
+                 WHERE b.id = :id FOR UPDATE'
             );
             $statement->execute(['id' => $email['appointment_id']]);
             $appointment = $statement->fetch();
@@ -85,6 +90,9 @@ try {
                 continue;
             }
 
+            if (in_array($email['kind'], ['confirmation', 'rescheduled'], true)) {
+                $email['calendar_attachment'] = bookili_appointment_calendar_event($appointment);
+            }
             bookili_send_email($email, $sender);
             $pdo->prepare(
                 "UPDATE notification_outbox SET status = 'sent', sent_at = :sent_at, locked_at = NULL, last_error = NULL

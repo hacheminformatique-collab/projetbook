@@ -271,6 +271,71 @@ function bookili_queue_email(PDO $pdo, array $appointment, string $kind, DateTim
     ]);
 }
 
+function bookili_ics_escape(string $value): string
+{
+    return str_replace(
+        ["\\", "\r\n", "\r", "\n", ",", ";"],
+        ["\\\\", "\\n", "\\n", "\\n", "\\,", "\\;"],
+        $value
+    );
+}
+
+function bookili_ics_fold_line(string $line): string
+{
+    $characters = preg_split('//u', $line, -1, PREG_SPLIT_NO_EMPTY);
+    if ($characters === false) throw new RuntimeException('Calendar text is not valid UTF-8.');
+    $folded = [];
+    $current = '';
+    $bytes = 0;
+    foreach ($characters as $character) {
+        $characterBytes = strlen($character);
+        if ($bytes + $characterBytes > 75) {
+            $folded[] = $current;
+            $current = ' ' . $character;
+            $bytes = $characterBytes + 1;
+        } else {
+            $current .= $character;
+            $bytes += $characterBytes;
+        }
+    }
+    $folded[] = $current;
+    return implode("\r\n", $folded);
+}
+
+function bookili_appointment_calendar_event(array $appointment): string
+{
+    $algiers = new DateTimeZone('Africa/Algiers');
+    $utc = new DateTimeZone('UTC');
+    $start = (new DateTimeImmutable($appointment['starts_at'], $algiers))->setTimezone($utc);
+    $end = (new DateTimeImmutable($appointment['ends_at'], $algiers))->setTimezone($utc);
+    $staffName = trim((string) ($appointment['staff_name'] ?? '')) ?: 'Non attribué';
+    $price = number_format((int) $appointment['price_dzd'], 0, ',', ' ') . ' DA';
+    $description = implode("\n", [
+        'Prestation : ' . $appointment['service_name'],
+        'Collaborateur : ' . $staffName,
+        'Tarif : ' . $price . ', paiement sur place',
+    ]);
+    $lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//BOOKILI//Rendez-vous//FR',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'BEGIN:VEVENT',
+        'UID:appointment-' . $appointment['id'] . '-salon-' . $appointment['salon_id'] . '@bookili.com',
+        'DTSTAMP:' . (new DateTimeImmutable('now', $utc))->format('Ymd\THis\Z'),
+        'DTSTART:' . $start->format('Ymd\THis\Z'),
+        'DTEND:' . $end->format('Ymd\THis\Z'),
+        'SUMMARY:' . bookili_ics_escape($appointment['service_name'] . ' - ' . $appointment['salon_name']),
+        'LOCATION:' . bookili_ics_escape($appointment['address'] . ', ' . $appointment['city']),
+        'DESCRIPTION:' . bookili_ics_escape($description),
+        'STATUS:CONFIRMED',
+        'END:VEVENT',
+        'END:VCALENDAR',
+    ];
+    return implode("\r\n", array_map('bookili_ics_fold_line', $lines)) . "\r\n";
+}
+
 function bookili_queue_appointment_emails(PDO $pdo, int $appointmentId, string $event): void
 {
     $statement = $pdo->prepare(

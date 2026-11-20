@@ -21,6 +21,7 @@ assert.match(unfolded, /BEGIN:VCALENDAR\r\n/);
 assert.match(unfolded, /UID:appointment-55-salon-3@bookili\.com\r\n/);
 assert.match(unfolded, /DTSTART:20261119T093000Z\r\n/);
 assert.match(unfolded, /DTEND:20261119T100000Z\r\n/);
+assert.match(unfolded, /METHOD:PUBLISH\r\n/);
 assert.match(unfolded, /SUMMARY:Coupe\\, couleur - Salon\\; zen\r\n/);
 assert.match(unfolded, /LOCATION:10 rue de l\\, Sétif\r\n/);
 assert.match(unfolded, /DESCRIPTION:Prestation : Coupe\\, couleur\\nCollaborateur : Sonia\\nTarif : 1 000 DA\\, paiement sur place\r\n/);

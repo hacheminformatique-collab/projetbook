@@ -64,6 +64,7 @@ export function createBookingCalendarEvent({
     "VERSION:2.0",
     "PRODID:-//BOOKILI//Rendez-vous//FR",
     "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
     "BEGIN:VEVENT",
     `UID:appointment-${appointmentId}-salon-${salonId}@bookili.com`,
     `DTSTAMP:${utcTimestamp(new Date())}`,

@@ -91,6 +91,8 @@ Pour vérifier la navigation au clavier avec des réponses API simulées, exécu
 sur une machine disposant de Google Chrome. Le test n'accède à aucune base réelle.
 `node tests/booking-calendar.mjs` vérifie le format et les horaires du fichier
 calendrier, sans accès à une base de données.
+`php tests/notification-email.php` vérifie le format MIME multipart des courriels
+et leur invitation calendrier, sans accéder à une base ou envoyer de message.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
@@ -242,6 +244,9 @@ manuellement la commande sans `*/15 * * * *`. `mail()` doit pouvoir transmettre
 réception de test ; une transmission acceptée par cPanel ne garantit pas la
 livraison en boîte de réception. Tant que le cron n'est pas activé, les
 notifications restent en attente et les rappels peuvent arriver en retard.
+Les courriels de confirmation et de modification comprennent désormais
+l’invitation `.ics` du rendez-vous ; les rappels et annulations restent des
+messages texte.
 Pour tester le worker sans envoyer de vrais e-mails, `tests/fake-sendmail.sh`
 capture les messages dans le fichier défini par `BOOKILI_TEST_MAILBOX` et
 `BOOKILI_TEST_MAIL_FAIL=1` simule un refus temporaire. Utilisez exclusivement
