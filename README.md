@@ -99,6 +99,10 @@ vérifie les messages enregistrés dans la même base jetable, avec
 `BOOKILI_DISPOSABLE_TEST=1 BOOKILI_TEST_URL=http://localhost:8765 php tests/professional-agenda-integrity.php`
 vérifie dans la même installation jetable les détails absents et incomplets
 avant encaissement. Ce test modifie temporairement des données.
+Après `tests/professional-agenda.py`, `BOOKILI_DISPOSABLE_TEST=1 php tests/notification-worker.php`
+teste les livraisons, reprises et traitements concurrents avec une boîte aux
+lettres simulée. Il modifie la file d'attente et nécessite impérativement la
+même base jetable, PDO MySQL et `BOOKILI_CONFIG_PATH` configuré pour le test.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
@@ -250,6 +254,8 @@ manuellement la commande sans `*/15 * * * *`. `mail()` doit pouvoir transmettre
 réception de test ; une transmission acceptée par cPanel ne garantit pas la
 livraison en boîte de réception. Tant que le cron n'est pas activé, les
 notifications restent en attente et les rappels peuvent arriver en retard.
+Une interruption après acceptation par le transport mais avant confirmation en
+base peut entraîner un nouvel envoi lors d'une reprise.
 Les courriels de confirmation et de modification comprennent désormais
 l’invitation `.ics` du rendez-vous ; les rappels et annulations restent des
 messages texte. Pour plusieurs prestations, les nouveaux e-mails indiquent la

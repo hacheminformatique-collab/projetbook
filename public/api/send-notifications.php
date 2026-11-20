@@ -72,6 +72,17 @@ try {
             );
             $statement->execute(['id' => $email['appointment_id']]);
             $appointment = $statement->fetch();
+            // The lease may have been recovered while this worker waited for the appointment lock.
+            $statement = $pdo->prepare(
+                "SELECT id FROM notification_outbox
+                 WHERE id = :id AND status = 'sending' AND attempts = :attempts AND locked_at = :locked_at FOR UPDATE"
+            );
+            $statement->execute(['id' => $email['id'], 'attempts' => $email['attempts'], 'locked_at' => $nowText]);
+            if (!$statement->fetch()) {
+                $pdo->commit();
+                $skipped++;
+                continue;
+            }
             $matchesVersion = $appointment && (int) $appointment['notification_version'] === (int) $email['appointment_version'];
             $isReminder = str_starts_with($email['kind'], 'reminder_');
             $shouldSend = $matchesVersion && (
@@ -111,12 +122,14 @@ try {
             $pdo->prepare(
                 'UPDATE notification_outbox
                  SET status = :status, send_after = :send_after, locked_at = NULL, last_error = :last_error
-                 WHERE id = :id AND status = \'sending\''
+                 WHERE id = :id AND status = \'sending\' AND attempts = :attempts AND locked_at = :locked_at'
             )->execute([
                 'status' => $status,
                 'send_after' => $retryAt,
                 'last_error' => 'Échec du transport e-mail (tentative ' . $attempt . '/5).',
                 'id' => $email['id'],
+                'attempts' => $attempt,
+                'locked_at' => $nowText,
             ]);
             if ($status === 'retry') $retried++;
         }
