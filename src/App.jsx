@@ -214,6 +214,23 @@ function ComingSoon({ audience, title, description }) {
   );
 }
 
+function isSafeClientReturn(value) {
+  const match = /^\/salons\/[1-9][0-9]*(?:\?([^#]*))?$/.exec(value);
+  if (!match) return false;
+  const params = new URLSearchParams(match[1] || "");
+  const entries = [...params];
+  if (new Set(entries.map(([key]) => key)).size !== entries.length) return false;
+  return entries.every(([key, item]) => {
+    if (key === "date") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(item)) return false;
+      const date = new Date(`${item}T00:00:00Z`);
+      return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === item;
+    }
+    if (key === "time") return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(item);
+    return ["appointmentId", "serviceId", "staffId"].includes(key) && /^[1-9][0-9]*$/.test(item);
+  });
+}
+
 function AuthPage({ professional = false, commercial = false, superAdmin = false, onAuthenticated }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -295,7 +312,7 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
           navigate("/gestion-commercial");
         } else {
           const returnTo = searchParams.get("retour") || "";
-          const safeReturn = /^\/salons\/[1-9][0-9]*(?:\?appointmentId=[1-9][0-9]*)?$/.test(returnTo);
+          const safeReturn = isSafeClientReturn(returnTo);
           navigate(isClient ? safeReturn ? returnTo : "/espace-client" : "/espace-professionnel");
         }
         return;

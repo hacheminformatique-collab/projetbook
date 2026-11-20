@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, apiUrl, algerianDate, appointmentDate, priceLabel, weekDays } from "./api-client.js";
 import { getWilayaName } from "./data/algerian-wilayas.js";
@@ -74,6 +74,10 @@ export function SalonPage() {
   const { salonId } = useParams();
   const [params] = useSearchParams();
   const appointmentId = params.get("appointmentId");
+  const requestedDate = params.get("date") || "";
+  const parsedRequestedDate = new Date(`${requestedDate}T00:00:00Z`);
+  const validRequestedDate = !Number.isNaN(parsedRequestedDate.valueOf())
+    && parsedRequestedDate.toISOString().slice(0, 10) === requestedDate;
   const [result, setResult] = useState(null);
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
@@ -114,7 +118,22 @@ export function SalonPage() {
             <section className="client-card">
               <h2>{appointmentId ? "Modifier mon rendez-vous" : "Prendre rendez-vous"}</h2>
               <p>Horaires d’Algérie · Réservation jusqu’à 60 jours à l’avance.</p>
-              <BookingForm key={`${salonId}-${appointmentId || "new"}`} salonId={salonId} services={result.services} session={session} appointmentId={appointmentId} bookingMessage={result.salon.booking_message} />
+              <BookingForm
+                key={`${salonId}-${appointmentId || "new"}`}
+                salonId={salonId}
+                services={result.services}
+                session={session}
+                appointmentId={appointmentId}
+                bookingMessage={result.salon.booking_message}
+                initialSelection={{
+                  serviceId: result.services.some((service) => String(service.id) === params.get("serviceId")) ? params.get("serviceId") : "",
+                  staffId: /^[1-9][0-9]*$/.test(params.get("staffId") || "") ? params.get("staffId") : "",
+                  date: validRequestedDate && requestedDate >= algerianDate() && requestedDate <= algerianDate(60)
+                    ? requestedDate
+                    : algerianDate(),
+                  time: /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(params.get("time") || "") ? params.get("time") : "",
+                }}
+              />
             </section>
             <section className="client-card">
               <h2>Horaires d’ouverture</h2>
@@ -150,11 +169,11 @@ export function SalonPage() {
 
 const categories = [["access", "Accès"], ["training", "Formations"], ["experience", "Expériences"]];
 
-function BookingForm({ salonId, services, session, appointmentId, bookingMessage }) {
-  const [serviceId, setServiceId] = useState("");
-  const [staffId, setStaffId] = useState("");
+function BookingForm({ salonId, services, session, appointmentId, bookingMessage, initialSelection }) {
+  const [serviceId, setServiceId] = useState(initialSelection.serviceId);
+  const [staffId, setStaffId] = useState(initialSelection.staffId);
   const [staffMembers, setStaffMembers] = useState([]);
-  const [date, setDate] = useState(algerianDate());
+  const [date, setDate] = useState(initialSelection.date);
   const [time, setTime] = useState("");
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -163,8 +182,17 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
   const [slotError, setSlotError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
+  const [timeRestoreNotice, setTimeRestoreNotice] = useState("");
+  const timeToRestore = useRef(initialSelection.time);
   const selected = services.find((service) => String(service.id) === serviceId);
   const client = session?.authenticated && session.account?.role === "client";
+  const returnParams = new URLSearchParams();
+  if (appointmentId) returnParams.set("appointmentId", appointmentId);
+  if (serviceId) returnParams.set("serviceId", serviceId);
+  if (date) returnParams.set("date", date);
+  if (time) returnParams.set("time", time);
+  if (staffId) returnParams.set("staffId", staffId);
+  const returnTo = `/salons/${salonId}?${returnParams}`;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -187,6 +215,12 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
         setStaffMembers(activeStaff);
         if (staffId && !activeStaff.some((member) => String(member.id) === staffId && !member.is_absent)) setStaffId("");
         setSlots(result.slots);
+        const requestedTime = timeToRestore.current;
+        timeToRestore.current = "";
+        if (requestedTime) {
+          if (result.slots.includes(requestedTime)) setTime(requestedTime);
+          else setTimeRestoreNotice("Le créneau choisi n’est plus disponible. Sélectionnez un autre horaire.");
+        }
       })
       .catch((cause) => { if (!controller.signal.aborted) setSlotError(cause.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -225,16 +259,16 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
       {appointmentId && <p className="field-hint">Choisissez une prestation et un nouveau créneau. Votre réservation actuelle est conservée si la modification échoue.</p>}
       <form className="auth-form" onSubmit={submit}>
         <label>Prestation
-          <select required value={serviceId} onChange={(event) => setServiceId(event.target.value)} disabled={saving}>
+          <select required value={serviceId} onChange={(event) => { timeToRestore.current = ""; setServiceId(event.target.value); setTime(""); setTimeRestoreNotice(""); }} disabled={saving}>
             <option value="">Choisir une prestation</option>
             {services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.duration_minutes} min · {priceLabel(service.price_dzd)}</option>)}
           </select>
         </label>
         <label>Date
-          <input required type="date" min={algerianDate()} max={algerianDate(60)} value={date} onChange={(event) => setDate(event.target.value)} disabled={saving} />
+          <input required type="date" min={algerianDate()} max={algerianDate(60)} value={date} onChange={(event) => { timeToRestore.current = ""; setDate(event.target.value); setTime(""); setTimeRestoreNotice(""); }} disabled={saving} />
         </label>
         {staffMembers.length > 0 && <label>Collaborateur
-          <select required value={staffId} onChange={(event) => setStaffId(event.target.value)} disabled={saving}>
+          <select required value={staffId} onChange={(event) => { timeToRestore.current = ""; setStaffId(event.target.value); setTime(""); setTimeRestoreNotice(""); }} disabled={saving}>
             <option value="">Choisir un collaborateur</option>
             {staffMembers.map((member) => <option key={member.id} value={member.id} disabled={member.is_absent}>{member.name}{member.is_absent ? " — Absent" : ""}</option>)}
           </select>
@@ -242,6 +276,7 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
         {!staffId && staffMembers.length > 0 && <p className="field-hint">Les créneaux seront affichés après le choix du collaborateur.</p>}
         {loading && <p role="status">Recherche des créneaux…</p>}
         {slotError && <p className="form-message form-error" role="alert">{slotError}</p>}
+        {timeRestoreNotice && <p className="field-hint" role="status">{timeRestoreNotice}</p>}
         {!loading && serviceId && !slotError && slots.length === 0 && <p>Aucun créneau disponible ce jour. Choisissez une autre date.</p>}
         {slots.length > 0 && <fieldset className="booking-time-picker" disabled={saving || loading}>
           <legend>Horaire · {slots.length} créneaux disponibles</legend>
@@ -253,7 +288,7 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
                 value={slot}
                 checked={time === slot}
                 required={index === 0}
-                onChange={() => setTime(slot)}
+                onChange={() => { setTime(slot); setTimeRestoreNotice(""); }}
               />
               <span>{slot}</span>
             </label>)}
@@ -262,7 +297,7 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
         {selected && <p>{selected.name} · {selected.duration_minutes} minutes · <strong>{priceLabel(selected.price_dzd)}</strong><br />Paiement sur place. Aucun paiement en ligne.</p>}
         {time && bookingMessage && <p className="field-hint booking-message"><strong>Message de l’établissement</strong><br />{bookingMessage}</p>}
         {client ? <button className="auth-submit" disabled={!time || loading || saving || !!slotError} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
-          <p className="form-message">Connectez-vous avec un compte client pour réserver. <Link className="inline-link" to={`/compte?retour=${encodeURIComponent(`/salons/${salonId}${appointmentId ? `?appointmentId=${appointmentId}` : ""}`)}`}>Connexion ou inscription</Link></p>
+          <p className="form-message">Connectez-vous avec un compte client pour réserver. <Link className="inline-link" to={`/compte?retour=${encodeURIComponent(returnTo)}`}>Connexion ou inscription</Link></p>
         )}
       </form>
     </>

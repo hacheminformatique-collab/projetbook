@@ -81,12 +81,23 @@ try {
     window.staffSaveBody = null;
     window.agendaPauses = false;
     window.clientBookingTest = location.pathname.startsWith("/masalledereception/salons/");
+    window.clientBookingGuest = new URLSearchParams(location.search).get("bookingTest") === "guest";
+    window.loginPayload = null;
     let appointmentSaleId = null;
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === "string" ? input : input.url, location.href);
       let data;
-      if (url.pathname.endsWith("/api/session.php")) {
-        data = { authenticated: true, account: { role: window.clientBookingTest ? "client" : "professional" }, csrfToken: "test" };
+      if (url.pathname.endsWith("/api/csrf.php")) {
+        data = { csrfToken: "test" };
+      } else if (url.pathname.endsWith("/api/login.php")) {
+        window.loginPayload = JSON.parse(options.body);
+        window.clientBookingGuest = false;
+        window.clientBookingTest = true;
+        data = { account: { role: "client" }, csrfToken: "test" };
+      } else if (url.pathname.endsWith("/api/session.php")) {
+        data = window.clientBookingGuest
+          ? { authenticated: false }
+          : { authenticated: true, account: { role: window.clientBookingTest ? "client" : "professional" }, csrfToken: "test" };
       } else if (url.pathname.endsWith("/api/salons.php")) {
         if (url.searchParams.has("id")) {
           data = {
@@ -208,9 +219,17 @@ try {
           }] };
         }
       } else if (url.pathname.endsWith("/api/availability.php")) {
-        data = { slots: window.clientBookingTest ? ["09:00", "09:15", "10:30", "11:00"] : ["10:45", "11:30", "11:45"], staff: window.clientBookingTest ? [] : [
+        const selectedStaff = url.searchParams.has("staffId");
+        data = {
+          slots: window.clientBookingTest
+            ? window.clientBookingGuest && !selectedStaff ? [] : ["09:00", "09:15", "10:30", "11:00"]
+            : ["10:45", "11:30", "11:45"],
+          staff: window.clientBookingTest
+            ? (window.clientBookingGuest || selectedStaff) ? [{ id: 1, name: "Sonia", is_absent: false }] : []
+            : [
           { id: 1, name: "Sonia", is_absent: false }, { id: 2, name: "Lina", is_absent: true },
-        ] };
+          ],
+        };
       } else if (url.pathname.endsWith("/api/appointments.php")) {
         window.appointmentMutations++;
         return new Response(JSON.stringify({ error: "Ce créneau n’est plus disponible." }), {
@@ -499,6 +518,74 @@ try {
   assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), false);
   assert.equal(await evaluate("document.querySelector('.booking-time-selected span').textContent"), "10:30");
   console.log("Mobile booking time selection passed.");
+
+  await send("Page.navigate", { url: `${origin}/masalledereception/salons/1?bookingTest=guest` });
+  await waitFor("document.querySelector('.booking-content h1')?.textContent === 'Salon test' && document.querySelector('.booking-content a.inline-link')?.textContent.includes('Connexion')");
+  await evaluate(`(() => {
+    const select = document.querySelector('.booking-content select');
+    select.value = '1';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelectorAll('.booking-content select')[1]?.querySelector('option[value=\"1\"]')?.textContent === 'Sonia'");
+  await evaluate(`(() => {
+    const select = document.querySelectorAll('.booking-content select')[1];
+    select.value = '1';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
+  await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').click()");
+  const loginUrl = await evaluate("document.querySelector('.booking-content a.inline-link').href");
+  const returnTo = new URL(loginUrl).searchParams.get("retour");
+  const returnParams = new URL(returnTo, origin).searchParams;
+  assert.equal(new URL(returnTo, origin).pathname, "/salons/1");
+  assert.equal(returnParams.get("serviceId"), "1");
+  assert.equal(returnParams.get("date"), "2026-11-19");
+  assert.equal(returnParams.get("time"), "10:30");
+  assert.equal(returnParams.get("staffId"), "1");
+  await evaluate("document.querySelector('.booking-content a.inline-link').click()");
+  await waitFor("!!document.querySelector('.auth-form input[name=email]')");
+  await evaluate(`(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    const email = document.querySelector('.auth-form input[name=email]');
+    const password = document.querySelector('.auth-form input[name=password]');
+    setValue.call(email, 'client@example.test');
+    email.dispatchEvent(new Event('input', { bubbles: true }));
+    setValue.call(password, 'test-password');
+    password.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("window.location.pathname === '/masalledereception/salons/1' && !!document.querySelector('.booking-content h1')");
+  await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
+  assert.equal(await evaluate("document.querySelector('.booking-content select').value"), "1");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-content select')[1].value"), "1");
+  assert.equal(await evaluate("document.querySelector('.booking-content input[type=date]').value"), "2026-11-19");
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), false);
+  assert.deepEqual(await evaluate("window.loginPayload"), { email: "client@example.test", password: "test-password" });
+  console.log("Booking choices preserved through client login.");
+
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/salons/1?serviceId=1&date=2026-11-19&time=17%3A00`,
+  });
+  await waitFor("document.querySelector('.booking-content .field-hint[role=status]')?.textContent.includes('n’est plus disponible')");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-time-option input:checked').length"), 0);
+
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/compte?retour=${encodeURIComponent("https://example.test/")}`,
+  });
+  await waitFor("!!document.querySelector('.auth-form input[name=email]')");
+  await evaluate(`(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    const email = document.querySelector('.auth-form input[name=email]');
+    const password = document.querySelector('.auth-form input[name=password]');
+    setValue.call(email, 'client@example.test');
+    email.dispatchEvent(new Event('input', { bubbles: true }));
+    setValue.call(password, 'test-password');
+    password.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor("!document.querySelector('.auth-form button[type=submit]').disabled");
+  await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("window.location.pathname === '/masalledereception/espace-client'");
+  assert.equal(await evaluate("window.location.origin"), origin);
 } finally {
   const closed = once(chrome, "exit");
   chrome.kill("SIGTERM");
