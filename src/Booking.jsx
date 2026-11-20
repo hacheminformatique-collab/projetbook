@@ -79,6 +79,12 @@ export function SalonPage() {
   const parsedRequestedDate = new Date(`${requestedDate}T00:00:00Z`);
   const validRequestedDate = !Number.isNaN(parsedRequestedDate.valueOf())
     && parsedRequestedDate.toISOString().slice(0, 10) === requestedDate;
+  const requestedServices = appointmentId && params.has("serviceIds")
+    ? params.get("serviceIds").split(",")
+    : params.has("serviceId") ? [params.get("serviceId")] : [];
+  const validRequestedServices = requestedServices.length <= 6
+    && new Set(requestedServices).size === requestedServices.length
+    && requestedServices.every((id) => /^[1-9][0-9]*$/.test(id));
   const [result, setResult] = useState(null);
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
@@ -129,10 +135,9 @@ export function SalonPage() {
                 salonAddress={`${result.salon.address}, ${result.salon.city}`}
                 bookingMessage={result.salon.booking_message}
                 initialSelection={{
-                  serviceId: result.services.some((service) => String(service.id) === params.get("serviceId")) ? params.get("serviceId") : "",
-                  serviceUnavailable: Boolean(appointmentId && params.has("serviceId") && !result.services.some((service) => String(service.id) === params.get("serviceId"))),
-                  multipleServices: appointmentId && params.get("multipleServices") === "1",
-                  unknownServices: appointmentId && params.get("unknownServices") === "1",
+                  serviceIds: validRequestedServices && requestedServices.every((id) => result.services.some((service) => String(service.id) === id)) ? requestedServices : [],
+                  serviceUnavailable: Boolean(appointmentId && requestedServices.length > 0 && (!validRequestedServices || !requestedServices.every((id) => result.services.some((service) => String(service.id) === id)))),
+                  unknownServices: appointmentId && (params.get("unknownServices") === "1" || params.get("multipleServices") === "1"),
                   staffId: /^[1-9][0-9]*$/.test(params.get("staffId") || "") ? params.get("staffId") : "",
                   date: validRequestedDate && requestedDate >= algerianDate() && requestedDate <= algerianDate(60)
                     ? requestedDate
@@ -202,7 +207,7 @@ function CalendarDownloadButton({ details }) {
 }
 
 function BookingForm({ salonId, salonName, salonAddress, services, session, appointmentId, bookingMessage, initialSelection }) {
-  const [serviceId, setServiceId] = useState(initialSelection.serviceId);
+  const [serviceIds, setServiceIds] = useState(initialSelection.serviceIds);
   const [staffId, setStaffId] = useState(initialSelection.staffId);
   const [staffMembers, setStaffMembers] = useState([]);
   const [date, setDate] = useState(initialSelection.date);
@@ -217,14 +222,19 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   const [timeRestoreNotice, setTimeRestoreNotice] = useState("");
   const [confirmedAppointmentId, setConfirmedAppointmentId] = useState(null);
   const timeToRestore = useRef(initialSelection.time);
-  const selected = services.find((service) => String(service.id) === serviceId);
+  const selectedServices = serviceIds.map((id) => services.find((service) => String(service.id) === id)).filter(Boolean);
+  const selected = selectedServices.length > 0 && selectedServices.length === serviceIds.length ? {
+    name: selectedServices.map((service) => service.name).join(" + "),
+    duration_minutes: selectedServices.reduce((total, service) => total + Number(service.duration_minutes), 0),
+    price_dzd: selectedServices.reduce((total, service) => total + Number(service.price_dzd), 0),
+  } : null;
+  const serviceKey = serviceIds.join(",");
   const selectedStaff = staffMembers.find((member) => String(member.id) === staffId);
   const client = session?.authenticated && session.account?.role === "client";
   const returnParams = new URLSearchParams();
   if (appointmentId) returnParams.set("appointmentId", appointmentId);
-  if (initialSelection.multipleServices) returnParams.set("multipleServices", "1");
   if (initialSelection.unknownServices) returnParams.set("unknownServices", "1");
-  if (serviceId) returnParams.set("serviceId", serviceId);
+  if (serviceKey) returnParams.set(appointmentId ? "serviceIds" : "serviceId", serviceKey);
   if (date) returnParams.set("date", date);
   if (time) returnParams.set("time", time);
   if (staffId) returnParams.set("staffId", staffId);
@@ -235,13 +245,14 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
     setTime("");
     setSlots([]);
     setSlotError("");
-    if (!serviceId || !date) {
+    if (!serviceKey || !date) {
       setLoading(false);
       setStaffMembers([]);
       return;
     }
     setLoading(true);
-    const query = new URLSearchParams({ salonId, serviceId, date });
+    const query = new URLSearchParams({ salonId, date });
+    query.set(appointmentId ? "serviceIds" : "serviceId", serviceKey);
     if (staffId) query.set("staffId", staffId);
     if (appointmentId) query.set("appointmentId", appointmentId);
     apiRequest(`availability.php?${query}`, { signal: controller.signal })
@@ -272,7 +283,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [salonId, serviceId, date, staffId, appointmentId, refresh]);
+  }, [salonId, serviceKey, date, staffId, appointmentId, refresh]);
 
   async function submit(event) {
     event.preventDefault();
@@ -282,7 +293,8 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
       const result = await apiRequest("appointments.php", {
         csrfToken: session.csrfToken,
         body: {
-          action: appointmentId ? "reschedule" : "book", salonId, serviceId, date, time,
+          action: appointmentId ? "reschedule" : "book", salonId, date, time,
+          ...(appointmentId ? { serviceIds: serviceIds.map(Number) } : { serviceId: serviceIds[0] }),
           expectedPrice: Number(selected.price_dzd), expectedDuration: Number(selected.duration_minutes),
           ...(staffId ? { staffId: Number(staffId) } : {}),
           ...(appointmentId ? { appointmentId } : {}),
@@ -328,17 +340,30 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   return (
     <>
       {notice && <p className={`form-message form-${notice.kind}`} role="alert">{notice.text}</p>}
-      {appointmentId && <p className="field-hint">Choisissez une prestation et un nouveau créneau. Le tarif et la durée affichés sont ceux actuellement proposés. Votre réservation actuelle reste inchangée tant que la modification n’est pas confirmée ou si elle échoue.</p>}
-      {initialSelection.multipleServices && <p className="form-message" role="status">Ce rendez-vous contient plusieurs prestations. La modification remplacera toutes ces prestations par la prestation choisie.</p>}
-      {initialSelection.unknownServices && <p className="form-message" role="status">Vérifiez les prestations de votre rendez-vous : la modification les remplacera par la prestation choisie.</p>}
-      {initialSelection.serviceUnavailable && <p className="form-message" role="status">La prestation initiale n’est plus disponible. Choisissez une autre prestation.</p>}
+      {appointmentId && <p className="field-hint">Choisissez jusqu’à six prestations et un nouveau créneau. Les tarifs et durées affichés sont ceux actuellement proposés. Votre réservation actuelle reste inchangée tant que la modification n’est pas confirmée ou si elle échoue.</p>}
+      {initialSelection.unknownServices && <p className="form-message" role="status">Vérifiez les prestations de votre rendez-vous et sélectionnez celles que vous souhaitez conserver.</p>}
+      {initialSelection.serviceUnavailable && <p className="form-message" role="status">Certaines prestations initiales ne sont plus disponibles ou sont invalides. Sélectionnez les prestations que vous souhaitez conserver.</p>}
       <form className="auth-form" onSubmit={submit}>
-        <label>Prestation
-          <select required value={serviceId} onChange={(event) => { timeToRestore.current = ""; setServiceId(event.target.value); setTime(""); setTimeRestoreNotice(""); }} disabled={saving}>
+        {appointmentId ? <fieldset className="agenda-service-picker" disabled={saving}>
+          <legend>Prestations · 6 maximum</legend>
+          {services.map((service) => <label className="checkbox-label" key={service.id}>
+            <input type="checkbox" name="bookingService" value={service.id} checked={serviceIds.includes(String(service.id))}
+              disabled={!serviceIds.includes(String(service.id)) && serviceIds.length >= 6}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                timeToRestore.current = "";
+                setServiceIds((ids) => checked ? [...ids, String(service.id)] : ids.filter((id) => id !== String(service.id)));
+                setTime("");
+                setTimeRestoreNotice("");
+              }} />
+            {service.name} · {service.duration_minutes} min · {priceLabel(service.price_dzd)}
+          </label>)}
+        </fieldset> : <label>Prestation
+          <select required value={serviceIds[0] || ""} onChange={(event) => { timeToRestore.current = ""; setServiceIds(event.target.value ? [event.target.value] : []); setTime(""); setTimeRestoreNotice(""); }} disabled={saving}>
             <option value="">Choisir une prestation</option>
             {services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.duration_minutes} min · {priceLabel(service.price_dzd)}</option>)}
           </select>
-        </label>
+        </label>}
         <label>Date
           <input required type="date" min={algerianDate()} max={algerianDate(60)} value={date} onChange={(event) => { timeToRestore.current = ""; setDate(event.target.value); setTime(""); setTimeRestoreNotice(""); }} disabled={saving} />
         </label>
@@ -352,7 +377,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         {loading && <p role="status">Recherche des créneaux…</p>}
         {slotError && <p className="form-message form-error" role="alert">{slotError}</p>}
         {timeRestoreNotice && <p className="field-hint" role="status">{timeRestoreNotice}</p>}
-        {!loading && serviceId && !slotError && slots.length === 0 && <p>Aucun créneau disponible ce jour. Choisissez une autre date.</p>}
+        {!loading && serviceKey && !slotError && slots.length === 0 && <p>Aucun créneau disponible ce jour. Choisissez une autre date.</p>}
         {slots.length > 0 && <fieldset className="booking-time-picker" disabled={saving || loading}>
           <legend>Horaire · {slots.length} créneaux disponibles</legend>
           <div className="booking-time-options">
@@ -371,7 +396,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         </fieldset>}
         {selected && <p>{selected.name} · {selected.duration_minutes} minutes · <strong>{priceLabel(selected.price_dzd)}</strong><br />Paiement sur place. Aucun paiement en ligne.</p>}
         {time && bookingMessage && <p className="field-hint booking-message"><strong>Message de l’établissement</strong><br />{bookingMessage}</p>}
-        {client ? <button className="auth-submit" disabled={!time || loading || saving || !!slotError} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
+        {client ? <button className="auth-submit" disabled={!selected || !time || loading || saving || !!slotError} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
           <p className="form-message">Connectez-vous avec un compte client pour réserver. <Link className="inline-link" to={`/compte?retour=${encodeURIComponent(returnTo)}`}>Connexion ou inscription</Link></p>
         )}
       </form>
@@ -431,9 +456,11 @@ export function Appointments({ csrfToken, professional = false }) {
       date: appointment.starts_at.slice(0, 10),
     });
     const count = Number(appointment.service_count);
-    if (count === 1) params.set("serviceId", appointment.service_id);
-    else if (count > 1) params.set("multipleServices", "1");
-    else params.set("unknownServices", "1");
+    const ids = Array.isArray(appointment.services) ? appointment.services.map((service) => String(service.id)) : [];
+    if (count >= 1 && count <= 6 && ids.length === count && ids[0] === String(appointment.service_id)
+        && new Set(ids).size === ids.length && ids.every((id) => /^[1-9][0-9]*$/.test(id))) {
+      params.set(count === 1 ? "serviceId" : "serviceIds", ids.join(","));
+    } else params.set("unknownServices", "1");
     if (appointment.staff_id) params.set("staffId", appointment.staff_id);
     return `/salons/${appointment.salon_id}?${params}`;
   }

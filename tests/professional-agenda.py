@@ -86,8 +86,26 @@ def main():
         "date": day, "time": "13:00", "expectedPrice": 3500, "expectedDuration": 75,
     }), 201)["appointmentId"]
     client_appointments = expect(client.request("appointments.php"), 200)["appointments"]
-    assert int(next(item for item in client_appointments if int(item["id"]) == multiple)["service_count"]) == 2
+    client_multiple = next(item for item in client_appointments if int(item["id"]) == multiple)
+    assert int(client_multiple["service_count"]) == 2
+    assert [item["id"] for item in client_multiple["services"]] == [int(service["id"]), int(alternate["id"])]
     assert not any(int(item["id"]) == multiple for item in expect(other_client.request("appointments.php"), 200)["appointments"])
+    move_client = {
+        "action": "reschedule", "appointmentId": multiple,
+        "serviceIds": [int(service["id"]), int(alternate["id"])], "date": day,
+        "time": "13:15", "expectedPrice": 3500, "expectedDuration": 75,
+    }
+    multi_availability = f"availability.php?salonId={int(salon['id'])}&serviceIds={service['id']},{alternate['id']}&date={day}&appointmentId={multiple}"
+    assert "13:15" in expect(client.request(multi_availability), 200)["slots"]
+    expect(other_client.request(multi_availability), 404)
+    expect(client.request("appointments.php", {**move_client, "time": "09:00"}), 409)
+    expect(client.request("appointments.php", {**move_client, "expectedPrice": 1}), 409)
+    before_move = next(item for item in expect(client.request("appointments.php"), 200)["appointments"] if int(item["id"]) == multiple)
+    assert before_move["starts_at"].endswith("13:00:00") and len(before_move["services"]) == 2
+    expect(client.request("appointments.php", move_client), 200)
+    after_move = next(item for item in expect(client.request("appointments.php"), 200)["appointments"] if int(item["id"]) == multiple)
+    assert after_move["starts_at"].endswith("13:15:00") and after_move["ends_at"].endswith("14:30:00")
+    assert [item["id"] for item in after_move["services"]] == [int(service["id"]), int(alternate["id"])]
     new_email = f"walk-in-{booking.SUFFIX}@example.test"
     new_phone = "0550998765"
     walk_in = expect(professional.request("appointments.php", {
@@ -113,7 +131,7 @@ def main():
     multi_appointment = next(item for item in expect(professional.request(agenda_path), 200)["appointments"] if item["id"] == multiple)
     assert multi_appointment["service_name"] == "Coupe + Soin" and int(multi_appointment["price_dzd"]) == 3500
     assert [item["id"] for item in multi_appointment["services"]] == [int(service["id"]), int(alternate["id"])]
-    assert multi_appointment["ends_at"].endswith("14:15:00")
+    assert multi_appointment["ends_at"].endswith("14:30:00")
     invalid_cash = {
         "action": "record", "appointmentId": multiple, "requestKey": str(uuid.uuid4()), "paymentMethod": "cash",
         "lines": [{"kind": "service", "id": int(service["id"]), "quantity": 1, "expectedPrice": 1500}],

@@ -45,8 +45,26 @@ try {
         $sql .= ' LIMIT 51 OFFSET ' . (($page - 1) * 50);
         $statement = $pdo->prepare($sql);
         $statement->execute($params);
-        $appointments = $statement->fetchAll();
-        bookili_json_response(200, ['appointments' => array_slice($appointments, 0, 50), 'hasMore' => count($appointments) > 50]);
+        $rows = $statement->fetchAll();
+        $appointments = array_slice($rows, 0, 50);
+        if (!$professional && $appointments) {
+            $ids = array_column($appointments, 'id');
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $serviceStatement = $pdo->prepare(
+                "SELECT appointment_id, service_id, service_name FROM appointment_services
+                 WHERE appointment_id IN ($placeholders) ORDER BY appointment_id, position"
+            );
+            $serviceStatement->execute($ids);
+            $services = [];
+            foreach ($serviceStatement->fetchAll() as $row) {
+                $services[$row['appointment_id']][] = ['id' => (int) $row['service_id'], 'name' => $row['service_name']];
+            }
+            foreach ($appointments as &$appointment) {
+                $appointment['services'] = $services[$appointment['id']] ?? [];
+            }
+            unset($appointment);
+        }
+        bookili_json_response(200, ['appointments' => $appointments, 'hasMore' => count($rows) > 50]);
     }
 
     $action = $data['action'] ?? '';

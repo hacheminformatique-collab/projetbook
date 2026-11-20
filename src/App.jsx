@@ -220,6 +220,8 @@ function isSafeClientReturn(value) {
   const params = new URLSearchParams(match[1] || "");
   const entries = [...params];
   if (new Set(entries.map(([key]) => key)).size !== entries.length) return false;
+  if ((params.has("serviceIds") || params.has("unknownServices")) && !params.has("appointmentId")) return false;
+  if (params.has("serviceIds") && params.has("serviceId")) return false;
   return entries.every(([key, item]) => {
     if (key === "date") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(item)) return false;
@@ -227,6 +229,12 @@ function isSafeClientReturn(value) {
       return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === item;
     }
     if (key === "time") return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(item);
+    if (key === "serviceIds") {
+      if (!/^[1-9][0-9]*(?:,[1-9][0-9]*){0,5}$/.test(item)) return false;
+      const ids = item.split(",");
+      return new Set(ids).size === ids.length;
+    }
+    if (key === "unknownServices") return item === "1";
     return ["appointmentId", "serviceId", "staffId"].includes(key) && /^[1-9][0-9]*$/.test(item);
   });
 }

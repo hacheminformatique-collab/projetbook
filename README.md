@@ -327,10 +327,11 @@ fichiers téléchargés ne se mettent pas à jour automatiquement après modific
 ou annulation : le client doit actualiser son calendrier lui-même.
 Il peut retrouver ses rendez-vous à venir ou passés dans `/espace-client`, puis
 modifier la prestation et le créneau ou annuler avant le début. La modification
-présélectionne la date, la prestation unique et le collaborateur lorsque ceux-ci
-sont disponibles, mais le client doit choisir un horaire. Pour un rendez-vous à
-plusieurs prestations, le client est averti qu’une modification les remplacera
-par une seule prestation. La modification indique les conditions et le tarif
+présélectionne la date, les prestations et le collaborateur lorsque ceux-ci
+sont disponibles, mais le client doit choisir un horaire. Il peut conserver ou
+modifier jusqu’à six prestations ; si une prestation initiale n’est plus
+disponible, il doit choisir explicitement celles à conserver. La modification
+indique les conditions et le tarif
 actuel ; l’annulation demande confirmation
 avec les détails du rendez-vous. Après confirmation, un message rappelle la
 mise à jour manuelle du calendrier et l’envoi différé de l’e-mail.

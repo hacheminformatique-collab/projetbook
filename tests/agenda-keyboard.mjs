@@ -82,11 +82,17 @@ try {
     window.agendaPauses = false;
     window.clientBookingTest = location.pathname.startsWith("/masalledereception/salons/");
     window.clientBookingGuest = new URLSearchParams(location.search).get("bookingTest") === "guest";
+    window.multiGuestTest = new URLSearchParams(location.search).get("multiTest") === "1";
+    if (window.multiGuestTest) {
+      window.extraServices = Array.from({ length: 6 }, (_, index) => ({
+        id: index + 2, name: "Prestation " + (index + 2), category: "coiffeur", duration_minutes: 15, price_dzd: 500,
+      }));
+    }
     window.loginPayload = null;
     window.bookingConfirmationTest = false;
     window.bookingPayload = null;
     window.clientAppointments = [
-      { id: 55, salon_id: 1, service_id: 1, service_count: 1, staff_id: 1, status: "confirmed", starts_at: "2026-11-20 10:30:00", ends_at: "2026-11-20 11:15:00", service_name: "Coupe et soin", price_dzd: 2500, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: "Sonia" },
+      { id: 55, salon_id: 1, service_id: 1, service_count: 1, services: [{ id: 1, name: "Coupe test" }], staff_id: 1, status: "confirmed", starts_at: "2026-11-20 10:30:00", ends_at: "2026-11-20 11:15:00", service_name: "Coupe et soin", price_dzd: 2500, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: "Sonia" },
       { id: 56, salon_id: 1, status: "cancelled", starts_at: "2026-11-20 12:00:00", ends_at: "2026-11-20 12:30:00", service_name: "Annulé", price_dzd: 1000, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: null },
     ];
     window.calendarFiles = [];
@@ -119,7 +125,10 @@ try {
               id: 1, name: "Salon test", city: "Sétif", wilaya_code: "19",
               address: "10 rue de test", phone_number: "0550123456", booking_message: "",
             },
-            services: window.hideService ? [] : [{ id: 1, name: "Coupe test", category: "coiffeur", duration_minutes: 30, price_dzd: 1000 }],
+            services: [
+              ...(window.hideService ? [] : [{ id: 1, name: "Coupe test", category: "coiffeur", duration_minutes: 30, price_dzd: 1000 }]),
+              ...(window.extraServices || []),
+            ],
             hours: [], profileEntries: [], photos: [],
           };
         } else if (url.searchParams.get("view") === "cities") {
@@ -235,6 +244,9 @@ try {
       } else if (url.pathname.endsWith("/api/availability.php")) {
         const selectedStaff = url.searchParams.has("staffId");
         window.availabilityQuery = Object.fromEntries(url.searchParams);
+        if (window.multiGuestTest && window.clientBookingGuest) {
+          return new Response(JSON.stringify({ error: "Connectez-vous pour continuer." }), { status: 401, headers: { "Content-Type": "application/json" } });
+        }
         if (window.staffUnavailable === "inactive" && selectedStaff) {
           return new Response(JSON.stringify({ error: "Ce collaborateur n’est plus disponible." }), { status: 422, headers: { "Content-Type": "application/json" } });
         }
@@ -625,18 +637,18 @@ try {
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
   await evaluate("document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
+  assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"1\"]').checked"), true);
   assert.equal(await evaluate("document.querySelector('.booking-content select').value"), "1");
-  assert.equal(await evaluate("document.querySelectorAll('.booking-content select')[1].value"), "1");
   assert.equal(await evaluate("document.querySelector('.booking-content input[type=date]').value"), "2026-11-20");
   assert.equal(await evaluate("document.querySelectorAll('.booking-time-option input:checked').length"), 0);
   assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), true);
-  assert.deepEqual(await evaluate("window.availabilityQuery"), { salonId: "1", serviceId: "1", date: "2026-11-20", staffId: "1", appointmentId: "55" });
+  assert.deepEqual(await evaluate("window.availabilityQuery"), { salonId: "1", serviceIds: "1", date: "2026-11-20", staffId: "1", appointmentId: "55" });
   await evaluate("document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
   await evaluate("window.staffUnavailable = 'inactive'; document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
   await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('collaborateur n’est plus disponible')");
-  await waitFor("document.querySelectorAll('.booking-content select').length === 2");
-  assert.equal(await evaluate("document.querySelectorAll('.booking-content select')[1].value"), "");
+  await waitFor("document.querySelectorAll('.booking-content select').length === 1");
+  assert.equal(await evaluate("document.querySelector('.booking-content select').value"), "");
   await evaluate("document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
   await evaluate("window.staffUnavailable = 'absent'; document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
@@ -644,33 +656,70 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('.booking-time-option input:checked').length"), 0);
   await evaluate("document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
-  await evaluate("window.staffUnavailable = ''; window.clientAppointments[0].service_count = 2; document.querySelector('.booking-toolbar button').click()");
-  await waitFor("document.querySelector('.appointment-list .appointment-card a.admin-nav-link')?.href.includes('multipleServices=1')");
-  await evaluate("document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
-  await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('plusieurs prestations')");
-  assert.equal(await evaluate("document.querySelector('.booking-content select').value"), "");
-  assert.equal(await evaluate("document.querySelector('.booking-content input[type=date]').value"), "2026-11-20");
   await evaluate(`(() => {
-    const select = document.querySelector('.booking-content select');
-    select.value = '1';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
+    window.staffUnavailable = '';
+    window.extraServices = [{ id: 2, name: 'Soin test', category: 'coiffeur', duration_minutes: 45, price_dzd: 1500 }];
+    window.clientAppointments[0].service_count = 2;
+    window.clientAppointments[0].services = [{ id: 1, name: 'Coupe test' }, { id: 2, name: 'Soin test' }];
+    document.querySelector('.booking-toolbar button').click();
   })()`);
+  await waitFor("document.querySelector('.appointment-list .appointment-card a.admin-nav-link')?.href.includes('serviceIds=1%2C2')");
+  await evaluate("document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
-  assert.equal(await evaluate("document.querySelectorAll('.booking-content select')[1].value"), "1");
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.booking-content input[name=bookingService]:checked')).map(input => input.value)"), ["1", "2"]);
+  assert.equal(await evaluate("document.querySelector('.booking-content input[type=date]').value"), "2026-11-20");
+  assert.match(await evaluate("document.querySelector('.booking-content form').textContent"), /Coupe test \+ Soin test · 75 minutes.*2.?500 DA/);
+  assert.equal(await evaluate("window.availabilityQuery.serviceIds"), "1,2");
+  await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').click()");
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').click()");
+  await waitFor("window.availabilityQuery.serviceIds === '1' && document.querySelectorAll('.booking-time-option').length === 4");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-time-option input:checked').length"), 0);
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"1\"]').click()");
+  await waitFor("document.querySelectorAll('.booking-time-option').length === 0");
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), true);
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"1\"]').click()");
+  await waitFor("window.availabilityQuery.serviceIds === '1' && document.querySelectorAll('.booking-time-option').length === 4");
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').click()");
+  await waitFor("window.availabilityQuery.serviceIds === '1,2' && document.querySelectorAll('.booking-time-option').length === 4");
+  await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').click()");
+  await evaluate("window.bookingConfirmationTest = false; document.querySelector('.booking-content button[type=submit]').click()");
+  await waitFor("document.querySelector('.booking-content [role=alert]')?.textContent.includes('n’est plus disponible')");
+  assert.equal(await evaluate("window.clientAppointments[0].service_count"), 2);
+  await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
+  await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').click()");
+  await evaluate("window.bookingConfirmationTest = true; document.querySelector('.booking-content button[type=submit]').click()");
+  await waitFor("!!document.querySelector('.booking-confirmation')");
+  assert.deepEqual(await evaluate("window.bookingPayload.serviceIds"), [1, 2]);
+  assert.equal(await evaluate("window.bookingPayload.expectedDuration"), 75);
+  assert.equal(await evaluate("window.bookingPayload.expectedPrice"), 2500);
+  assert.match(await evaluate("document.querySelector('.booking-confirmation').textContent"), /Coupe test \+ Soin test/);
+  await evaluate("document.querySelector('.booking-confirmation + button').click()");
+  await waitFor("window.calendarFiles.length === 2");
+  const multiCalendar = await evaluate("window.calendarFiles[1].text.replace(/\\r\\n[ \\t]/g, '')");
+  assert.match(multiCalendar, /SUMMARY:Coupe test \+ Soin test - Salon test/);
+  assert.match(multiCalendar, /DTSTART:20261120T093000Z/);
+  assert.match(multiCalendar, /DTEND:20261120T104500Z/);
+  await evaluate("window.calendarFiles.pop()");
+  await evaluate("document.querySelector('.commercial-header a.admin-nav-link').click()");
+  await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
+  await evaluate("window.extraServices = []; document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
+  await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('Certaines prestations initiales')");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length"), 0);
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), true);
   await evaluate("document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
   await evaluate("window.clientAppointments[0].service_count = 0; document.querySelector('.booking-toolbar button').click()");
   await waitFor("document.querySelector('.appointment-list .appointment-card a.admin-nav-link')?.href.includes('unknownServices=1')");
   await evaluate("document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
   await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('Vérifiez les prestations')");
-  assert.equal(await evaluate("document.querySelector('.booking-content select').value"), "");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length"), 0);
   await evaluate("document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
-  await evaluate("window.clientAppointments[0].service_count = 1; window.hideService = true; document.querySelector('.booking-toolbar button').click()");
+  await evaluate("window.clientAppointments[0].service_count = 1; window.clientAppointments[0].services = [{ id: 1, name: 'Coupe test' }]; window.hideService = true; document.querySelector('.booking-toolbar button').click()");
   await waitFor("document.querySelector('.appointment-list .appointment-card a.admin-nav-link')?.href.includes('serviceId=1')");
   await evaluate("document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
-  await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('prestation initiale n’est plus disponible')");
-  assert.equal(await evaluate("document.querySelector('.booking-content select').value"), "");
+  await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('Certaines prestations initiales')");
+  assert.equal(await evaluate("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length"), 0);
   await evaluate("window.hideService = false; document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
   console.log("Client rescheduling defaults and unavailable selections passed.");
@@ -744,7 +793,7 @@ try {
     url: `${origin}/masalledereception/salons/1?appointmentId=55&serviceId=1&date=2026-11-19&time=10%3A30`,
   });
   await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
-  assert.match(await evaluate("document.querySelector('.booking-content .client-card').textContent"), /tarif et la durée affichés.*réservation actuelle reste inchangée/);
+  assert.match(await evaluate("document.querySelector('.booking-content .client-card').textContent"), /tarifs et durées affichés.*réservation actuelle reste inchangée/);
   await evaluate("document.querySelector('.booking-content button[type=submit]').click()");
   await waitFor("document.querySelector('.booking-content [role=alert]')?.textContent.includes('n’est plus disponible')");
   assert.equal(await evaluate("!!document.querySelector('.booking-confirmation')"), false);
@@ -759,6 +808,53 @@ try {
   assert.equal(await evaluate("window.bookingPayload.action"), "reschedule");
   assert.equal(await evaluate("window.bookingPayload.appointmentId"), "55");
   console.log("Client rescheduling guidance and confirmation passed.");
+
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/salons/1?appointmentId=55&serviceIds=1%2C2&date=2026-11-20&staffId=1&bookingTest=guest&multiTest=1`,
+  });
+  await waitFor("document.querySelectorAll('.booking-content input[name=bookingService]').length === 7");
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').click()");
+  for (const id of [3, 4, 5, 6, 7]) {
+    await evaluate(`document.querySelector('.booking-content input[name=bookingService][value="${id}"]').click()`);
+  }
+  assert.equal(await evaluate("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length"), 6);
+  assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').disabled"), true);
+  const multiReturnUrl = await evaluate("document.querySelector('.booking-content a.inline-link').href");
+  const multiReturn = new URL(new URL(multiReturnUrl).searchParams.get("retour"), origin);
+  assert.equal(multiReturn.searchParams.get("serviceIds"), "1,3,4,5,6,7");
+  await evaluate("document.querySelector('.booking-content a.inline-link').click()");
+  await waitFor("!!document.querySelector('.auth-form input[name=email]')");
+  await evaluate(`(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    for (const [name, value] of [['email', 'client@example.test'], ['password', 'test-password']]) {
+      const input = document.querySelector('.auth-form input[name=' + name + ']');
+      setValue.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  })()`);
+  await waitFor("!document.querySelector('.auth-form button[type=submit]').disabled");
+  await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length === 6");
+  assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').disabled"), true);
+  await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"3\"]').click()");
+  assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"2\"]').disabled"), false);
+  console.log("Multi-service selection limit and login restoration passed.");
+
+  await send("Page.navigate", {
+    url: `${origin}/masalledereception/compte?retour=${encodeURIComponent("/salons/1?appointmentId=55&serviceIds=1%2C1")}`,
+  });
+  await waitFor("!!document.querySelector('.auth-form input[name=email]')");
+  await evaluate(`(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    for (const [name, value] of [['email', 'client@example.test'], ['password', 'test-password']]) {
+      const input = document.querySelector('.auth-form input[name=' + name + ']');
+      setValue.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  })()`);
+  await waitFor("!document.querySelector('.auth-form button[type=submit]').disabled");
+  await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("window.location.pathname === '/masalledereception/espace-client'");
 
   await send("Page.navigate", {
     url: `${origin}/masalledereception/salons/1?serviceId=1&date=2026-11-19&time=17%3A00`,
