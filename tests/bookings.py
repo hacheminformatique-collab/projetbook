@@ -129,6 +129,29 @@ def main():
     assert not expect(guest.request("salons.php?categorie=cadeau"), 200)["salons"]
     expect(guest.request("salons.php?wilaya=99"), 422)
 
+    search_services = [
+        {**service_payload, "name": "Brushing test", "price": 800},
+        {**service_payload, "name": "Soin visage test", "category": "institut", "price": 500},
+        {**service_payload, "name": "Coupe archivee", "price": 100, "isActive": False},
+    ]
+    for payload in search_services:
+        rows = expect(professional.request("professional-services.php", payload), 200)["services"]
+        payload["id"] = rows[-1]["id"]
+
+    def starting_price(filters):
+        rows = expect(guest.request(f"salons.php?wilaya=19&{filters}"), 200)["salons"]
+        assert [int(row["id"]) for row in rows] == [salon_id]
+        return int(rows[0]["from_price"])
+
+    assert starting_price(f"q={SUFFIX}") == 500
+    assert starting_price(f"q={SUFFIX}&categorie=coiffeur") == 800
+    assert starting_price("q=Coupe") == 1500
+    assert starting_price("q=Coupe&categorie=coiffeur") == 1500
+    assert starting_price("q=Setif&categorie=coiffeur") == 800
+    assert not expect(guest.request("salons.php?q=visage&categorie=coiffeur"), 200)["salons"]
+    for payload in search_services[:2]:
+        expect(professional.request("professional-services.php", {**payload, "isActive": False}), 200)
+
     tomorrow = (datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=1))).date() + datetime.timedelta(days=1)).isoformat()
     booking_day = (datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=1))).date() + datetime.timedelta(days=30)).isoformat()
     notification_before = expect(admin.request("admin-notifications.php"), 200)["counts"]

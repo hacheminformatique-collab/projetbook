@@ -281,8 +281,11 @@ prestation, ville, wilaya et catégorie, avec pagination. La saisie de ville
 propose les villes d'Algérie où des établissements publics sont répertoriés ;
 elle reste libre et n'exige pas de géolocalisation. Depuis les résultats,
 le formulaire permet de modifier le salon ou la prestation recherchée, la
-ville et la wilaya sans revenir à l’accueil. Les nouveaux filtres conservent
-la catégorie sélectionnée et repartent à la première page. La fiche
+ville et la wilaya sans revenir à l’accueil. Le tarif « À partir de » est le
+prix le plus bas parmi les prestations actives qui correspondent aux filtres.
+Si le mot-clé correspond au nom du salon ou à sa ville, toutes ses prestations
+actives dans la catégorie sélectionnée sont prises en compte. Les nouveaux
+filtres conservent la catégorie sélectionnée et repartent à la première page. La fiche
 `/salons/ID` présente les prestations, l'adresse, le téléphone et les
 disponibilités. Les comptes suspendus et les salons masqués ne sont pas
 réservables.

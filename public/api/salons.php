@@ -72,19 +72,18 @@ try {
                    (SELECT photo.id FROM salon_photos photo
                     WHERE photo.salon_id = s.id AND photo.status = 'approved'
                     ORDER BY photo.position, photo.id LIMIT 1) AS presentation_photo_id,
-                   (SELECT MIN(price_dzd) FROM services WHERE salon_id = s.id AND is_active = 1) AS from_price
+                   MIN(v.price_dzd) AS from_price
             FROM salons s
             INNER JOIN professional_profiles p ON p.id = s.professional_profile_id
             INNER JOIN accounts a ON a.id = p.account_id
+            INNER JOIN services v ON v.salon_id = s.id AND v.is_active = 1
             WHERE s.is_public = 1 AND a.status = 'active' AND a.role = 'professional'
-            AND EXISTS (SELECT 1 FROM salon_hours h WHERE h.salon_id = s.id)
-            AND EXISTS (SELECT 1 FROM services v WHERE v.salon_id = s.id AND v.is_active = 1";
+            AND EXISTS (SELECT 1 FROM salon_hours h WHERE h.salon_id = s.id)";
     $params = [];
     if ($category !== '') {
         $sql .= ' AND v.category = :category';
         $params['category'] = $category;
     }
-    $sql .= ')';
     if ($wilaya !== '') {
         $sql .= ' AND s.wilaya_code = :wilaya';
         $params['wilaya'] = $wilaya;
@@ -95,11 +94,12 @@ try {
     }
     if (trim($query) !== '') {
         $sql .= " AND (s.name LIKE :salon_query ESCAPE '!' OR s.city LIKE :city_query ESCAPE '!'
-                 OR EXISTS (SELECT 1 FROM services v WHERE v.salon_id = s.id AND v.is_active = 1 AND v.name LIKE :service_query ESCAPE '!'))";
+                 OR v.name LIKE :service_query ESCAPE '!')";
         $pattern = '%' . strtr(trim($query), ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
         $params += ['salon_query' => $pattern, 'city_query' => $pattern, 'service_query' => $pattern];
     }
-    $sql .= ' ORDER BY s.name, s.id LIMIT 21 OFFSET ' . (($page - 1) * 20);
+    $sql .= ' GROUP BY s.id, s.name, s.city, s.wilaya_code, s.address
+              ORDER BY s.name, s.id LIMIT 21 OFFSET ' . (($page - 1) * 20);
     $statement = $pdo->prepare($sql);
     $statement->execute($params);
     $salons = $statement->fetchAll();
