@@ -174,6 +174,7 @@ try {
             services: [{ id: 1, name: "Coupe", duration_minutes: 30, price_dzd: 1000 }],
             starts_at: date + " 11:00:00", ends_at: date + " 11:30:00",
             first_name: "Test", last_name: "Client", service_name: "Coupe", private_note: "",
+            ...window.agendaAppointmentOverride,
           }, {
             id: 4, client_id: 8, staff_id: 1, service_id: 1, cash_sale_id: 20,
             price_dzd: 1000,
@@ -337,6 +338,48 @@ try {
   await waitFor("document.querySelector('.agenda-client-info')?.textContent.includes('Ancien soin')");
   await key("Escape");
   await waitFor("!document.querySelector('[role=dialog]')");
+  await evaluate(`(() => {
+    window.agendaAppointmentOverride = { services: [], service_name: 'Détail manquant' };
+    Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click();
+  })()`);
+  await waitFor("document.querySelector('.agenda-booking')?.textContent.includes('Détail manquant')");
+  await evaluate("document.querySelector('.agenda-booking').click()");
+  await waitFor("document.querySelector('.agenda-detail [role=alert]')?.textContent.includes('détail enregistré')");
+  assert.equal(await evaluate("!!document.querySelector('.agenda-detail .agenda-service-lines')"), false);
+  assert.equal(await evaluate("document.querySelector('.agenda-cash-button').disabled"), true);
+  await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(button => button.textContent === 'Modifier le rendez-vous').click()");
+  assert.match(await evaluate("document.querySelector('.agenda-edit [role=status]').textContent"), /Sélectionnez à nouveau/);
+  assert.equal(await evaluate("document.querySelectorAll('.agenda-edit .agenda-service-picker input:checked').length"), 0);
+  assert.equal(await evaluate("document.querySelector('.agenda-edit button[type=submit]').disabled"), true);
+  await evaluate("document.querySelector('.agenda-edit .agenda-service-picker input').click()");
+  await waitFor("document.querySelectorAll('.agenda-edit .booking-time-option').length === 3");
+  await key("Escape");
+  await evaluate(`(() => {
+    window.agendaAppointmentOverride = { service_name: 'Coupe + Soin partiel',
+      services: [{ id: 1, name: 'Coupe', duration_minutes: 30, price_dzd: 1000 }] };
+    Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click();
+  })()`);
+  await waitFor("document.querySelector('.agenda-booking')?.textContent.includes('Soin partiel')");
+  await evaluate("document.querySelector('.agenda-booking').click()");
+  await waitFor("document.querySelector('.agenda-detail [role=alert]')?.textContent.includes('incohérent')");
+  assert.equal(await evaluate("document.querySelector('.agenda-cash-button').disabled"), true);
+  await key("Escape");
+  await evaluate(`(() => {
+    window.agendaAppointmentOverride = { service_name: 'Coupe + Soin indisponible',
+      services: [{ id: 1, name: 'Coupe', duration_minutes: 15, price_dzd: 300 },
+                 { id: 2, name: 'Soin indisponible', duration_minutes: 15, price_dzd: 700 }] };
+    Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click();
+  })()`);
+  await waitFor("document.querySelector('.agenda-booking')?.textContent.includes('Soin indisponible')");
+  await evaluate("document.querySelector('.agenda-booking').click()");
+  await waitFor("document.querySelectorAll('.agenda-detail .agenda-service-lines li').length === 2");
+  assert.equal(await evaluate("document.querySelector('.agenda-cash-button').disabled"), false);
+  await evaluate("Array.from(document.querySelectorAll('.agenda-detail button')).find(button => button.textContent === 'Modifier le rendez-vous').click()");
+  assert.match(await evaluate("document.querySelector('.agenda-edit [role=status]').textContent"), /Sélectionnez à nouveau/);
+  assert.equal(await evaluate("document.querySelectorAll('.agenda-edit .agenda-service-picker input:checked').length"), 0);
+  await key("Escape");
+  await evaluate("window.agendaAppointmentOverride = null; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
+  await waitFor("document.querySelector('.agenda-booking')?.textContent.includes('Coupe') && !document.querySelector('.agenda-booking').textContent.includes('indisponible')");
   assert.equal(await evaluate("document.querySelectorAll('.agenda-booking')[1].draggable"), false);
   await evaluate(`(() => {
     window.agendaDrag = new DataTransfer();

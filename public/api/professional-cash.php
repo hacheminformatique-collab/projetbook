@@ -318,7 +318,7 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
     $appointmentServices = [];
     if ($appointmentId !== null) {
         $statement = $pdo->prepare(
-            "SELECT id, service_id, service_name, price_dzd, status FROM appointments
+            "SELECT id, service_id, service_name, price_dzd, starts_at, ends_at, status FROM appointments
              WHERE id = :id AND salon_id = :salon FOR UPDATE"
         );
         $statement->execute(['id' => $appointmentId, 'salon' => $salonId]);
@@ -326,17 +326,10 @@ function bookili_cash_record(PDO $pdo, int $actorId, array $data): never
         if (!$appointment || $appointment['status'] !== 'confirmed') {
             bookili_cash_conflict($pdo, 'Ce rendez-vous n’est plus disponible pour l’encaissement.');
         }
-        $statement = $pdo->prepare(
-            'SELECT service_id, service_name, price_dzd FROM appointment_services
-             WHERE appointment_id = :id ORDER BY position'
-        );
-        $statement->execute(['id' => $appointmentId]);
-        $appointmentServices = $statement->fetchAll();
-        if (!$appointmentServices) {
-            $appointmentServices = [[
-                'service_id' => $appointment['service_id'], 'service_name' => $appointment['service_name'],
-                'price_dzd' => $appointment['price_dzd'],
-            ]];
+        $appointmentServices = bookili_appointment_services($pdo, $appointmentId);
+        if (!bookili_consistent_service_details($appointment, $appointmentServices)
+            || (int) $appointmentServices[0]['service_id'] !== (int) $appointment['service_id']) {
+            bookili_cash_conflict($pdo, 'Encaissement impossible : le détail des prestations est absent ou incohérent. Vérifiez le rendez-vous.');
         }
         $statement = $pdo->prepare('SELECT id FROM cash_sales WHERE appointment_id = :id FOR UPDATE');
         $statement->execute(['id' => $appointmentId]);

@@ -96,6 +96,9 @@ et le détail des prestations, sans accéder à une base ou envoyer de message.
 Après `tests/professional-agenda.py`, `php tests/notification-services.php`
 vérifie les messages enregistrés dans la même base jetable, avec
 `BOOKILI_CONFIG_PATH` pointant vers sa configuration PHP de test.
+`BOOKILI_DISPOSABLE_TEST=1 BOOKILI_TEST_URL=http://localhost:8765 php tests/professional-agenda-integrity.php`
+vérifie dans la même installation jetable les détails absents et incomplets
+avant encaissement. Ce test modifie temporairement des données.
 Le test `tests/professional-clients.py` couvre la recherche, la fiche et
 l’historique des rendez-vous, les notes privées permanentes et l’isolation
 des données entre salons. `tests/professional-agenda.py` vérifie également
@@ -349,6 +352,12 @@ avec les détails du rendez-vous. Après confirmation, un message rappelle la
 mise à jour manuelle du calendrier et l’envoi différé de l’e-mail.
 Le professionnel consulte la grille de la journée, ouvre les détails et les coordonnées du client, enregistre une note
 privée par rendez-vous et peut modifier ou annuler les rendez-vous futurs.
+Si les prestations enregistrées sont absentes ou incohérentes, la fiche conserve
+le résumé global, signale le problème et bloque l’encaissement lié au rendez-vous.
+Pour modifier un rendez-vous dont le détail ne peut pas être vérifié ou dont
+une prestation n’est plus au catalogue, le professionnel doit sélectionner à
+nouveau les prestations. Si nécessaire, contactez l’assistance pour vérifier les
+données avant l’encaissement.
 La modification utilise les disponibilités et les prix actuels. Sur ordinateur,
 un glisser-déposer vers un créneau visible en vue jour ou semaine prépare le
 déplacement, à confirmer depuis la fiche ; sur mobile, la fiche permet de

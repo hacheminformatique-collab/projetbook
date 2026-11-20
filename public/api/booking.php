@@ -241,22 +241,21 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
 function bookili_appointment_services(PDO $pdo, int $appointmentId): array
 {
     $statement = $pdo->prepare(
-        'SELECT service_name, duration_minutes, price_dzd FROM appointment_services
+        'SELECT service_id, service_name, duration_minutes, price_dzd FROM appointment_services
          WHERE appointment_id = :id ORDER BY position'
     );
     $statement->execute(['id' => $appointmentId]);
     return $statement->fetchAll();
 }
 
-function bookili_notification_service_details(array $appointment): string
+function bookili_consistent_service_details(array $appointment, array $services): bool
 {
-    $services = $appointment['services'];
-    if (!$services) return '';
-
+    if (!$services || count($services) > 6) return false;
     $duration = 0;
     $price = 0;
     $names = [];
     foreach ($services as $service) {
+        if (trim($service['service_name']) === '' || (int) $service['duration_minutes'] < 1 || (int) $service['price_dzd'] < 0) return false;
         $duration += (int) $service['duration_minutes'];
         $price += (int) $service['price_dzd'];
         $names[] = $service['service_name'];
@@ -264,9 +263,16 @@ function bookili_notification_service_details(array $appointment): string
     $timezone = new DateTimeZone('Africa/Algiers');
     $start = new DateTimeImmutable($appointment['starts_at'], $timezone);
     $end = new DateTimeImmutable($appointment['ends_at'], $timezone);
-    if (implode(' + ', $names) !== $appointment['service_name']
-        || $duration * 60 !== $end->getTimestamp() - $start->getTimestamp()
-        || $price !== (int) $appointment['price_dzd']) {
+    return implode(' + ', $names) === $appointment['service_name']
+        && $duration * 60 === $end->getTimestamp() - $start->getTimestamp()
+        && $price === (int) $appointment['price_dzd'];
+}
+
+function bookili_notification_service_details(array $appointment): string
+{
+    $services = $appointment['services'];
+    if (!$services) return '';
+    if (!bookili_consistent_service_details($appointment, $services)) {
         error_log('BOOKILI notification: inconsistent service details for appointment ' . $appointment['id']);
         return "\nLe détail des prestations est indisponible. Consultez votre espace client ou contactez l’établissement.\n";
     }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { algerianDate, apiRequest, appointmentDate, priceLabel } from "./api-client.js";
 import { currentTimePosition } from "./lib/agenda-time.js";
+import { validServiceDetails } from "./lib/appointment-services.js";
 import { ClientProfile } from "./ProfessionalClients.jsx";
 
 const minutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
@@ -43,11 +44,17 @@ function TimeSlotPicker({ slots, time, onChange, disabled }) {
 }
 
 function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged, onCheckout, onViewSale, destination }) {
+  const duration = (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000;
+  const hasDetails = validServiceDetails(appointment.services, appointment.services?.length, duration, Number(appointment.price_dzd))
+    && appointment.services.length <= 6
+    && String(appointment.services[0].id) === String(appointment.service_id)
+    && appointment.services.map((item) => item.name).join(" + ") === appointment.service_name;
+  const servicesAvailable = hasDetails && appointment.services.every((item) => agenda.services.some((service) => String(service.id) === String(item.id)));
   const [note, setNote] = useState(appointment.private_note);
   const [showClient, setShowClient] = useState(false);
   const [history, setHistory] = useState(null);
   const [editing, setEditing] = useState(!!destination);
-  const [serviceIds, setServiceIds] = useState((appointment.services || [{ id: appointment.service_id }]).map((item) => String(item.id)));
+  const [serviceIds, setServiceIds] = useState(servicesAvailable ? appointment.services.map((item) => String(item.id)) : []);
   const [staffId, setStaffId] = useState(destination?.staffId ?? (agenda.staff.some((item) => Number(item.is_active) && String(item.id) === String(appointment.staff_id)) ? String(appointment.staff_id) : ""));
   const [staffOptions, setStaffOptions] = useState([]);
   const [date, setDate] = useState(destination?.date ?? appointment.starts_at.slice(0, 10));
@@ -170,11 +177,12 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         <button ref={closeRef} type="button" className="admin-nav-link" onClick={onClose}>Fermer</button>
       </header>
       <p><strong>{appointment.service_name}</strong><br />{appointmentDate(appointment.starts_at)} · {priceLabel(appointment.price_dzd)}<br />
-        Durée : {(new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000} min<br />
+        Durée : {duration} min<br />
         Collaborateur : {agenda.staff.find((member) => String(member.id) === String(appointment.staff_id))?.name || "Non attribué"}
       </p>
-      <ul className="agenda-service-lines">{(appointment.services || [{ name: appointment.service_name, duration_minutes: (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000, price_dzd: appointment.price_dzd }]).map((item) =>
-        <li key={item.id || item.name}>{item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</li>)}</ul>
+      {hasDetails ? <ul className="agenda-service-lines">{appointment.services.map((item) =>
+        <li key={item.id}>{item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</li>)}</ul>
+        : <p className="form-message form-error" role="alert">Le détail enregistré des prestations est indisponible ou incohérent. L’encaissement est impossible tant que le détail ne peut pas être vérifié. Vérifiez le rendez-vous ou contactez l’assistance.</p>}
       <button type="button" className="agenda-client-link" onClick={() => setShowClient(!showClient)} aria-expanded={showClient} aria-controls={`agenda-client-${appointment.id}`}>
         {appointment.first_name} {appointment.last_name}
       </button>
@@ -207,10 +215,11 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
           <p className="field-hint">Ce rendez-vous possède déjà une vente dans le journal{appointment.voided_at ? " (annulée)" : ""}.</p>
           <button className="admin-nav-link" type="button" disabled={busy} onClick={() => onViewSale(appointment.cash_sale_id)}>Voir la vente n° {appointment.cash_sale_id}</button>
         </>
-        : <button className="auth-submit agenda-cash-button" type="button" disabled={busy} onClick={() => onCheckout(appointment)}>Encaisser · {priceLabel(appointment.price_dzd)}</button>}
+        : <button className="auth-submit agenda-cash-button" type="button" disabled={busy || !hasDetails} onClick={() => onCheckout(appointment)}>Encaisser · {priceLabel(appointment.price_dzd)}</button>}
       {editing && <form className="auth-form agenda-edit" onSubmit={reschedule}>
         {suggestedTime && <p className="field-hint">Déplacement proposé à {suggestedTime}. {loadingSlots ? "" : slots.includes(suggestedTime) ? "Confirmez pour enregistrer." : "Ce créneau ne convient pas à la prestation. Choisissez un autre horaire."}</p>}
         <p className="field-hint">La prestation sera enregistrée au tarif et à la durée affichés ci-dessous. Le rendez-vous initial reste inchangé si le créneau est indisponible.</p>
+        {!servicesAvailable && <p className="form-message" role="status">Les prestations initiales sont indisponibles ou ne peuvent pas être vérifiées. Sélectionnez à nouveau les prestations à conserver.</p>}
         <fieldset className="agenda-service-picker"><legend>Prestations</legend>
           {agenda.services.map((item) => <label key={item.id}><input type="checkbox" checked={serviceIds.includes(String(item.id))}
             onChange={(event) => { setSuggestedTime(""); setServiceIds((ids) => event.target.checked ? [...ids, String(item.id)] : ids.filter((id) => id !== String(item.id))); }} />

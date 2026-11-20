@@ -116,11 +116,7 @@ try {
             ];
         }
         foreach ($appointments as &$appointment) {
-            $appointment['services'] = $serviceRows[$appointment['id']] ?? [[
-                'id' => (int) $appointment['service_id'], 'name' => $appointment['service_name'],
-                'duration_minutes' => (int) ((strtotime($appointment['ends_at']) - strtotime($appointment['starts_at'])) / 60),
-                'price_dzd' => (int) $appointment['price_dzd'],
-            ]];
+            $appointment['services'] = $serviceRows[$appointment['id']] ?? [];
             $appointment['id'] = (int) $appointment['id'];
             $appointment['service_id'] = (int) $appointment['service_id'];
         }
