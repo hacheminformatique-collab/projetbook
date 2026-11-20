@@ -80,14 +80,24 @@ try {
     window.cashRequests = [];
     window.staffSaveBody = null;
     window.agendaPauses = false;
+    window.clientBookingTest = location.pathname.startsWith("/masalledereception/salons/");
     let appointmentSaleId = null;
     window.fetch = async (input, options) => {
       const url = new URL(typeof input === "string" ? input : input.url, location.href);
       let data;
       if (url.pathname.endsWith("/api/session.php")) {
-        data = { authenticated: true, account: { role: "professional" }, csrfToken: "test" };
+        data = { authenticated: true, account: { role: window.clientBookingTest ? "client" : "professional" }, csrfToken: "test" };
       } else if (url.pathname.endsWith("/api/salons.php")) {
-        if (url.searchParams.get("view") === "cities") {
+        if (url.searchParams.has("id")) {
+          data = {
+            salon: {
+              id: 1, name: "Salon test", city: "Sétif", wilaya_code: "19",
+              address: "10 rue de test", phone_number: "0550123456", booking_message: "",
+            },
+            services: [{ id: 1, name: "Coupe test", category: "coiffeur", duration_minutes: 30, price_dzd: 1000 }],
+            hours: [], profileEntries: [], photos: [],
+          };
+        } else if (url.searchParams.get("view") === "cities") {
           window.citySuggestionQuery = url.searchParams.get("q");
           data = { cities: ["Sétif", "Setif", "Oran"].filter((city) => city.toLowerCase().startsWith(window.citySuggestionQuery.toLowerCase())) };
         } else {
@@ -198,7 +208,7 @@ try {
           }] };
         }
       } else if (url.pathname.endsWith("/api/availability.php")) {
-        data = { slots: ["10:45", "11:30", "11:45"], staff: [
+        data = { slots: window.clientBookingTest ? ["09:00", "09:15", "10:30", "11:00"] : ["10:45", "11:30", "11:45"], staff: window.clientBookingTest ? [] : [
           { id: 1, name: "Sonia", is_absent: false }, { id: 2, name: "Lina", is_absent: true },
         ] };
       } else if (url.pathname.endsWith("/api/appointments.php")) {
@@ -463,6 +473,23 @@ try {
   assert.equal(await evaluate("document.querySelector('.search-panel .location-field input').list.options[0]?.value"), "Oran");
   assert.equal(await evaluate("document.querySelector('.search-panel .location-field input').value"), "Ora", "suggestions must not replace the manually entered value");
   console.log("Algerian city suggestions passed.");
+
+  await send("Page.navigate", { url: `${origin}/masalledereception/salons/1` });
+  await waitFor("document.querySelector('.booking-content h1')?.textContent === 'Salon test'");
+  await evaluate(`(() => {
+    const select = document.querySelector('.booking-content select');
+    select.value = '1';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
+  assert.equal(await evaluate("document.querySelector('.booking-time-picker legend').textContent"), "Horaire · 4 créneaux disponibles");
+  assert.equal(await evaluate("document.querySelector('.booking-time-options').scrollWidth <= document.querySelector('.booking-time-options').clientWidth"), true);
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), true);
+  await evaluate("Array.from(document.querySelectorAll('.booking-time-option input')).find(input => input.value === '10:30').click()");
+  assert.equal(await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').checked"), true);
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), false);
+  assert.equal(await evaluate("document.querySelector('.booking-time-selected span').textContent"), "10:30");
+  console.log("Mobile booking time selection passed.");
 } finally {
   const closed = once(chrome, "exit");
   chrome.kill("SIGTERM");

@@ -308,7 +308,9 @@ ou refusées ne sont jamais affichées au public. Sans photo validée, la carte
 conserve un emplacement gris. Cette évolution réutilise la galerie existante
 et ne nécessite pas de nouvelle migration.
 
-Un client connecté peut confirmer un créneau, retrouver ses rendez-vous à
+Sur la fiche d'un salon, les créneaux disponibles sont proposés sous forme de
+boutons radio accessibles et faciles à toucher, avec le nombre d'options
+affiché. Un client connecté peut confirmer un créneau, retrouver ses rendez-vous à
 venir ou passés dans `/espace-client`, puis modifier la prestation et le
 créneau ou annuler avant le début. Le professionnel consulte la grille de la
 journée, ouvre les détails et les coordonnées du client, enregistre une note

@@ -243,12 +243,22 @@ function BookingForm({ salonId, services, session, appointmentId, bookingMessage
         {loading && <p role="status">Recherche des créneaux…</p>}
         {slotError && <p className="form-message form-error" role="alert">{slotError}</p>}
         {!loading && serviceId && !slotError && slots.length === 0 && <p>Aucun créneau disponible ce jour. Choisissez une autre date.</p>}
-        {slots.length > 0 && <label>Horaire
-          <select required value={time} onChange={(event) => setTime(event.target.value)} disabled={saving || loading}>
-            <option value="">Choisir un horaire</option>
-            {slots.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
-          </select>
-        </label>}
+        {slots.length > 0 && <fieldset className="booking-time-picker" disabled={saving || loading}>
+          <legend>Horaire · {slots.length} créneaux disponibles</legend>
+          <div className="booking-time-options">
+            {slots.map((slot, index) => <label className={`booking-time-option${time === slot ? " booking-time-selected" : ""}`} key={slot}>
+              <input
+                type="radio"
+                name="bookingTime"
+                value={slot}
+                checked={time === slot}
+                required={index === 0}
+                onChange={() => setTime(slot)}
+              />
+              <span>{slot}</span>
+            </label>)}
+          </div>
+        </fieldset>}
         {selected && <p>{selected.name} · {selected.duration_minutes} minutes · <strong>{priceLabel(selected.price_dzd)}</strong><br />Paiement sur place. Aucun paiement en ligne.</p>}
         {time && bookingMessage && <p className="field-hint booking-message"><strong>Message de l’établissement</strong><br />{bookingMessage}</p>}
         {client ? <button className="auth-submit" disabled={!time || loading || saving || !!slotError} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
