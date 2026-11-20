@@ -40,6 +40,7 @@ export function createBookingCalendarEvent({
   durationMinutes,
   staffName,
   priceLabel,
+  serviceDetails = [],
 }) {
   const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
     && new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date;
@@ -56,6 +57,7 @@ export function createBookingCalendarEvent({
   const end = new Date(start.getTime() + Number(durationMinutes) * 60000);
   const description = [
     `Prestation : ${serviceName}`,
+    ...serviceDetails,
     `Collaborateur : ${staffName}`,
     `Tarif : ${priceLabel}, paiement sur place`,
   ].join("\n");

@@ -197,6 +197,13 @@ function ServiceBreakdown({ services }) {
   </ul>;
 }
 
+function calendarServiceDetails(services) {
+  return services.length > 1 ? [
+    "Détail des prestations :",
+    ...services.map((service) => `- ${service.name} : ${service.duration_minutes} min, ${priceLabel(service.price_dzd)}`),
+  ] : [];
+}
+
 function CalendarDownloadButton({ details }) {
   const [error, setError] = useState("");
 
@@ -356,6 +363,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         appointmentId: confirmedAppointmentId, salonId, salonName, salonAddress,
         serviceName: confirmedName, date, time, durationMinutes: Number(selected.duration_minutes),
         staffName: selectedStaff?.name || "Non attribué", priceLabel: priceLabel(selected.price_dzd),
+        serviceDetails: calendarServiceDetails(confirmedServices),
       }} />}
       <Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link>
     </>;
@@ -508,7 +516,8 @@ export function Appointments({ csrfToken, professional = false }) {
         {result?.appointments.map((appointment) => {
           const editable = appointment.status === "confirmed" && new Date(appointment.starts_at.replace(" ", "T") + "+01:00") > new Date();
           const duration = (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000;
-          const hasDetails = validServiceDetails(appointment.services, Number(appointment.service_count), duration, Number(appointment.price_dzd));
+          const hasDetails = validServiceDetails(appointment.services, Number(appointment.service_count), duration, Number(appointment.price_dzd))
+            && (appointment.services.length === 1 || appointment.services.map((service) => service.name).join(" + ") === appointment.service_name);
           return (
             <article className="appointment-card" key={appointment.id}>
               <p className={`application-status ${appointment.status === "cancelled" ? "status-rejected" : "status-approved"}`}>{appointment.status === "cancelled" ? "Annulé" : "Confirmé"}</p>
@@ -528,6 +537,8 @@ export function Appointments({ csrfToken, professional = false }) {
                   date: appointment.starts_at.slice(0, 10), time: appointment.starts_at.slice(11, 16),
                   durationMinutes: duration,
                   staffName: appointment.staff_name || "Non attribué", priceLabel: priceLabel(appointment.price_dzd),
+                  serviceDetails: hasDetails ? calendarServiceDetails(appointment.services)
+                    : Number(appointment.service_count) > 1 ? ["Le détail des prestations est indisponible. Consultez votre espace client ou contactez l’établissement."] : [],
                 }} />}
                 <button className="review-reject" type="button" disabled={working} onClick={() => cancel(appointment)}>Annuler</button>
               </div>}

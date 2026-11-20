@@ -98,7 +98,7 @@ try {
       { id: 56, salon_id: 1, service_count: 2, services: [
         { id: 1, name: "Coupe annulée", duration_minutes: 30, price_dzd: 1000 },
         { id: 2, name: "Soin annulé", duration_minutes: 45, price_dzd: 1500 },
-      ], status: "cancelled", starts_at: "2026-11-20 12:00:00", ends_at: "2026-11-20 13:15:00", service_name: "Annulé", price_dzd: 2500, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: null },
+      ], status: "cancelled", starts_at: "2026-11-20 12:00:00", ends_at: "2026-11-20 13:15:00", service_name: "Coupe annulée + Soin annulé", price_dzd: 2500, salon_name: "Salon test", address: "10 rue de test", city: "Sétif", salon_phone: "0550123456", staff_name: null },
     ];
     window.calendarFiles = [];
     URL.createObjectURL = (blob) => {
@@ -663,6 +663,7 @@ try {
     window.staffUnavailable = '';
     window.extraServices = [{ id: 2, name: 'Soin test', category: 'coiffeur', duration_minutes: 45, price_dzd: 1500 }];
     window.clientAppointments[0].service_count = 2;
+    window.clientAppointments[0].service_name = 'Coupe test + Soin test';
     window.clientAppointments[0].ends_at = '2026-11-20 11:45:00';
     window.clientAppointments[0].services = [
       { id: 1, name: 'Coupe test', duration_minutes: 30, price_dzd: 1000 },
@@ -678,7 +679,22 @@ try {
   await evaluate("window.clientAppointments[0].services[1].price_dzd = null; document.querySelector('.booking-toolbar button').click()");
   await waitFor("document.querySelector('.appointment-list .appointment-card [role=alert]')?.textContent.includes('détail des prestations est indisponible')");
   assert.equal(await evaluate("!!document.querySelector('.appointment-list .appointment-card:first-child .booking-service-breakdown')"), false);
+  await evaluate("Array.from(document.querySelectorAll('.appointment-list button')).find(button => button.textContent.includes('calendrier')).click()");
+  await waitFor("window.calendarFiles.length === 2");
+  const invalidDetailsCalendar = await evaluate("window.calendarFiles[1].text.replace(/\\r\\n[ \\t]/g, '')");
+  assert.match(invalidDetailsCalendar, /détail des prestations est indisponible/);
+  assert.doesNotMatch(invalidDetailsCalendar, /- Coupe test/);
+  await evaluate("window.calendarFiles.pop()");
   await evaluate("window.clientAppointments[0].services[1].price_dzd = 1500; document.querySelector('.booking-toolbar button').click()");
+  await waitFor("document.querySelectorAll('.appointment-list .appointment-card:first-child .booking-service-breakdown li').length === 2");
+  await evaluate("Array.from(document.querySelectorAll('.appointment-list button')).find(button => button.textContent.includes('calendrier')).click()");
+  await waitFor("window.calendarFiles.length === 2");
+  const savedDetailsCalendar = await evaluate("window.calendarFiles[1].text.replace(/\\r\\n[ \\t]/g, '')");
+  assert.match(savedDetailsCalendar, /- Coupe test : 30 min\\, 1.?000 DA\\n- Soin test : 45 min\\, 1.?500 DA/);
+  await evaluate("window.calendarFiles.pop()");
+  await evaluate("window.clientAppointments[0].service_name = 'Résumé incohérent'; document.querySelector('.booking-toolbar button').click()");
+  await waitFor("document.querySelector('.appointment-list .appointment-card:first-child [role=alert]')?.textContent.includes('détail des prestations est indisponible')");
+  await evaluate("window.clientAppointments[0].service_name = 'Coupe test + Soin test'; document.querySelector('.booking-toolbar button').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card:first-child .booking-service-breakdown li').length === 2");
   await evaluate("document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.booking-time-option').length === 4");
@@ -715,6 +731,7 @@ try {
   assert.match(multiCalendar, /SUMMARY:Coupe test \+ Soin test - Salon test/);
   assert.match(multiCalendar, /DTSTART:20261120T093000Z/);
   assert.match(multiCalendar, /DTEND:20261120T104500Z/);
+  assert.match(multiCalendar, /- Coupe test : 30 min\\, 1.?000 DA\\n- Soin test : 45 min\\, 1.?500 DA/);
   await evaluate("window.calendarFiles.pop()");
   await evaluate("document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
@@ -731,7 +748,7 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('.booking-content input[name=bookingService]:checked').length"), 0);
   await evaluate("document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
-  await evaluate("window.clientAppointments[0].service_count = 1; window.clientAppointments[0].services = [{ id: 1, name: 'Coupe test', duration_minutes: 45, price_dzd: 2500 }]; window.clientAppointments[0].ends_at = '2026-11-20 11:15:00'; window.hideService = true; document.querySelector('.booking-toolbar button').click()");
+  await evaluate("window.clientAppointments[0].service_count = 1; window.clientAppointments[0].service_name = 'Coupe et soin'; window.clientAppointments[0].services = [{ id: 1, name: 'Coupe test', duration_minutes: 45, price_dzd: 2500 }]; window.clientAppointments[0].ends_at = '2026-11-20 11:15:00'; window.hideService = true; document.querySelector('.booking-toolbar button').click()");
   await waitFor("document.querySelector('.appointment-list .appointment-card a.admin-nav-link')?.href.includes('serviceId=1')");
   await evaluate("document.querySelector('.appointment-list .appointment-card a.admin-nav-link').click()");
   await waitFor("document.querySelector('.booking-content [role=status]')?.textContent.includes('Certaines prestations initiales')");
@@ -929,6 +946,7 @@ try {
   assert.match(bookingMultiCalendar, /SUMMARY:Coupe enregistrée \+ Soin enregistré - Salon test/);
   assert.match(bookingMultiCalendar, /DTSTART:20261119T093000Z/);
   assert.match(bookingMultiCalendar, /DTEND:20261119T101500Z/);
+  assert.match(bookingMultiCalendar, /- Coupe enregistrée : 35 min\\, 800 DA\\n- Soin enregistré : 10 min\\, 700 DA/);
   console.log("Multi-service client booking and calendar passed.");
 
   await send("Page.navigate", {

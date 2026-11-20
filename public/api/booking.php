@@ -238,6 +238,16 @@ function bookili_slots(PDO $pdo, int $salonId, array $service, DateTimeImmutable
     return $slots;
 }
 
+function bookili_appointment_services(PDO $pdo, int $appointmentId): array
+{
+    $statement = $pdo->prepare(
+        'SELECT service_name, duration_minutes, price_dzd FROM appointment_services
+         WHERE appointment_id = :id ORDER BY position'
+    );
+    $statement->execute(['id' => $appointmentId]);
+    return $statement->fetchAll();
+}
+
 function bookili_notification_service_details(array $appointment): string
 {
     $services = $appointment['services'];
@@ -341,8 +351,10 @@ function bookili_appointment_calendar_event(array $appointment): string
     $end = (new DateTimeImmutable($appointment['ends_at'], $algiers))->setTimezone($utc);
     $staffName = trim((string) ($appointment['staff_name'] ?? '')) ?: 'Non attribué';
     $price = number_format((int) $appointment['price_dzd'], 0, ',', ' ') . ' DA';
+    $serviceDetails = isset($appointment['services']) ? trim(bookili_notification_service_details($appointment)) : '';
     $description = implode("\n", [
         'Prestation : ' . $appointment['service_name'],
+        ...($serviceDetails !== '' ? [$serviceDetails] : []),
         'Collaborateur : ' . $staffName,
         'Tarif : ' . $price . ', paiement sur place',
     ]);
@@ -384,12 +396,7 @@ function bookili_queue_appointment_emails(PDO $pdo, int $appointmentId, string $
     if (!$appointment || !filter_var($appointment['email'], FILTER_VALIDATE_EMAIL)) {
         throw new RuntimeException('Appointment notification recipient is invalid.');
     }
-    $statement = $pdo->prepare(
-        'SELECT service_name, duration_minutes, price_dzd FROM appointment_services
-         WHERE appointment_id = :id ORDER BY position'
-    );
-    $statement->execute(['id' => $appointmentId]);
-    $appointment['services'] = $statement->fetchAll();
+    $appointment['services'] = bookili_appointment_services($pdo, $appointmentId);
     $appointment['service_details'] = bookili_notification_service_details($appointment);
 
     $now = bookili_now();

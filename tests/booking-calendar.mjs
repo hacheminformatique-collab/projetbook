@@ -27,6 +27,15 @@ assert.match(unfolded, /LOCATION:10 rue de l\\, Sétif\r\n/);
 assert.match(unfolded, /DESCRIPTION:Prestation : Coupe\\, couleur\\nCollaborateur : Sonia\\nTarif : 1 000 DA\\, paiement sur place\r\n/);
 assert.match(unfolded, /STATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n$/);
 
+const multiCalendar = createBookingCalendarEvent({
+  ...appointment,
+  durationMinutes: 75,
+  serviceDetails: ["Détail des prestations :", "- Coupe, couleur : 30 min, 1 000 DA", "- Soin; éclat : 45 min, 1 500 DA"],
+});
+const multiUnfolded = multiCalendar.replace(/\r\n[ \t]/g, "");
+assert.match(multiUnfolded, /Détail des prestations :\\n- Coupe\\, couleur : 30 min\\, 1 000 DA\\n- Soin\\; éclat : 45 min\\, 1 500 DA/);
+assert.ok(multiCalendar.split("\r\n").filter(Boolean).every((line) => Buffer.byteLength(line, "utf8") <= 75));
+
 const longCalendar = createBookingCalendarEvent({ ...appointment, salonName: "é".repeat(100) });
 assert.ok(longCalendar.split("\r\n").filter(Boolean).every((line) => Buffer.byteLength(line, "utf8") <= 75));
 assert.throws(() => createBookingCalendarEvent({ ...appointment, date: "2026-02-30" }), RangeError);

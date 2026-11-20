@@ -41,9 +41,15 @@ try {
     ];
     $details = bookili_notification_service_details($appointment);
     verify(str_contains($details, "- Coupe : 30 min, 1 000 DA\n- Soin : 45 min, 1 500 DA"), 'Service details are missing or incorrectly ordered.');
+    $multiCalendar = bookili_appointment_calendar_event($appointment);
+    $multiUnfolded = preg_replace("/\r\n[ \t]/", '', $multiCalendar);
+    verify(str_contains($multiUnfolded, 'Détail des prestations :\n- Coupe : 30 min\, 1 000 DA\n- Soin : 45 min\, 1 500 DA'), 'Calendar does not include saved service details.');
+    verify(count(array_filter(explode("\r\n", $multiCalendar), static fn(string $line): bool => strlen($line) > 75)) === 0, 'Multi-service calendar line exceeds the limit.');
     $appointment['services'][1]['price_dzd'] = 1400;
     $details = bookili_notification_service_details($appointment);
     verify(str_contains($details, 'détail des prestations est indisponible') && !str_contains($details, '- Coupe'), 'Inconsistent details were presented as valid.');
+    $invalidCalendar = preg_replace("/\r\n[ \t]/", '', bookili_appointment_calendar_event($appointment));
+    verify(str_contains($invalidCalendar, 'détail des prestations est indisponible') && !str_contains($invalidCalendar, '- Coupe'), 'Calendar presented inconsistent details as valid.');
     $appointment['services'] = [];
     verify(bookili_notification_service_details($appointment) === '', 'Legacy appointments should retain their aggregate summary.');
     $appointment['service_name'] = 'Coupe';

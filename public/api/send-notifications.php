@@ -91,6 +91,7 @@ try {
             }
 
             if (in_array($email['kind'], ['confirmation', 'rescheduled'], true)) {
+                $appointment['services'] = bookili_appointment_services($pdo, (int) $appointment['id']);
                 $email['calendar_attachment'] = bookili_appointment_calendar_event($appointment);
             }
             bookili_send_email($email, $sender);

@@ -251,11 +251,14 @@ Les courriels de confirmation et de modification comprennent désormais
 l’invitation `.ics` du rendez-vous ; les rappels et annulations restent des
 messages texte. Pour plusieurs prestations, les nouveaux e-mails indiquent la
 durée et le tarif enregistrés pour chacune, y compris dans les rappels et les
-annulations. Les messages déjà en attente ne sont pas modifiés.
+annulations. Le corps des messages déjà en attente n’est pas modifié ; leur
+éventuelle invitation calendrier est générée au moment de l’envoi.
 Pour tester le worker sans envoyer de vrais e-mails, `tests/fake-sendmail.sh`
 capture les messages dans le fichier défini par `BOOKILI_TEST_MAILBOX` et
 `BOOKILI_TEST_MAIL_FAIL=1` simule un refus temporaire. Utilisez exclusivement
-une base jetable et des comptes de test.
+une base jetable et des comptes de test. Après `tests/professional-agenda.py`,
+le contenu capturé peut être vérifié par
+`python3 tests/notification-calendar-mail.py < fichier-de-capture`.
 
 L'API sert un jeton CSRF de session, chiffre les mots de passe avec
 `password_hash`, utilise des requêtes SQL préparées, limite les tentatives de
@@ -329,7 +332,8 @@ connecté voit un récapitulatif de l’établissement, de la prestation, de la 
 de l’horaire, du collaborateur et du tarif après confirmation et peut télécharger
 une invitation `.ics` pour l’ajouter à son calendrier. Lorsque plusieurs
 prestations sont réservées, le détail de chacune avec sa durée et son tarif
-enregistrés apparaît dans le récapitulatif et dans l’espace client. Il peut aussi
+enregistrés apparaît dans le récapitulatif, dans l’espace client et dans les
+invitations calendrier. Il peut aussi
 télécharger l’invitation d’un rendez-vous confirmé à venir depuis `/espace-client`. Les
 fichiers téléchargés ne se mettent pas à jour automatiquement après modification
 ou annulation : le client doit actualiser son calendrier lui-même.
