@@ -153,10 +153,19 @@ try {
       } else if (url.pathname.endsWith("/api/admin-campaigns.php")) {
         if (options?.method === "POST") {
           window.campaignPayload = JSON.parse(options.body);
-          if (window.campaignFail) return new Response(JSON.stringify({ error: "Cette campagne ne comporte plus d’e-mails en échec." }), { status: 409, headers: { "Content-Type": "application/json" } });
-          const item = window.campaignItems.find(entry => entry.id === window.campaignPayload.campaignId);
-          item.status = "sending"; item.completed_at = null; item.failed = 0; item.pending = 1; item.retrying = 1; item.next_retry = "2026-11-19 12:00:00";
-          data = { retried: 1, message: "1 e-mail(s) remis en attente. Le consentement sera vérifié avant l’envoi." };
+          if (window.campaignPayload.action === "preview") {
+            const subject = window.campaignPayload.subject.trim(), body = window.campaignPayload.body.trim();
+            data = { subject, body, recipients: window.previewRecipients ?? 4, previewBody: body + "\\n\\n---\\nPour vous désinscrire : [lien-personnel]" };
+          } else if (window.campaignPayload.action === "create") {
+            if (window.campaignAudienceChanged) return new Response(JSON.stringify({ code: "campaign_audience_changed", error: "Le nombre de destinataires a changé. Vérifiez un nouvel aperçu avant de confirmer." }), { status: 409, headers: { "Content-Type": "application/json" } });
+            window.createdCampaigns = (window.createdCampaigns || 0) + 1;
+            data = { message: "Campagne mise en file." };
+          } else {
+            if (window.campaignFail) return new Response(JSON.stringify({ error: "Cette campagne ne comporte plus d’e-mails en échec." }), { status: 409, headers: { "Content-Type": "application/json" } });
+            const item = window.campaignItems.find(entry => entry.id === window.campaignPayload.campaignId);
+            item.status = "sending"; item.completed_at = null; item.failed = 0; item.pending = 1; item.retrying = 1; item.next_retry = "2026-11-19 12:00:00";
+            data = { retried: 1, message: "1 e-mail(s) remis en attente. Le consentement sera vérifié avant l’envoi." };
+          }
         } else {
           if (window.campaignLoadFails) return new Response(JSON.stringify({ error: "Campagnes indisponibles." }), { status: 503, headers: { "Content-Type": "application/json" } });
           const page = Number(url.searchParams.get("page") || 1);
@@ -1273,6 +1282,49 @@ try {
   await evaluate("window.campaignLoadFails = false; Array.from(document.querySelectorAll('.client-card button')).find(b => b.textContent === 'Actualiser les campagnes').click()");
   await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités')");
   console.log("Super-admin campaign tracking and retries passed.");
+  await evaluate(`(() => {
+    const form = document.querySelector('.client-card .auth-form');
+    const subject = form.querySelector('input[name=subject]');
+    const body = form.querySelector('textarea[name=body]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(subject, '  Offre spéciale  ');
+    subject.dispatchEvent(new Event('input', { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(body, '  Bonjour <b>client</b>  ');
+    body.dispatchEvent(new Event('input', { bubbles: true }));
+    window.previewRecipients = 0;
+    form.querySelector('button[type=submit]').click();
+  })()`);
+  await waitFor("!!document.querySelector('.campaign-preview')");
+  assert.equal(await evaluate("document.querySelector('.campaign-preview button').disabled"), true);
+  assert.equal(await evaluate("window.createdCampaigns || 0"), 0);
+  await evaluate("window.previewRecipients = 5001; document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("document.querySelector('.campaign-preview')?.textContent.includes('5 000')");
+  assert.equal(await evaluate("document.querySelector('.campaign-preview button').disabled"), true);
+  await evaluate("window.previewRecipients = 5000; document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("document.querySelector('.campaign-preview')?.textContent.includes('5000')");
+  assert.equal(await evaluate("document.querySelector('.campaign-preview button').disabled"), false);
+  assert.match(await evaluate("document.querySelector('.campaign-preview').textContent"), /Offre spéciale.*Bonjour <b>client<\/b>.*lien-personnel/s);
+  assert.equal(await evaluate("!!document.querySelector('.campaign-preview pre b')"), false);
+  await evaluate(`(() => {
+    const body = document.querySelector('.auth-form textarea[name=body]');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(body, 'Message corrigé');
+    body.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
+  await evaluate("window.previewRecipients = 4; document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("document.querySelector('.campaign-preview')?.textContent.includes('Message corrigé')");
+  await evaluate("window.campaignAudienceChanged = true; document.querySelector('.campaign-preview button').click()");
+  await waitFor("document.querySelector('.client-card [role=alert]')?.textContent.includes('destinataires a changé')");
+  assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
+  assert.equal(await evaluate("window.createdCampaigns || 0"), 0);
+  await evaluate("window.campaignAudienceChanged = false; document.querySelector('.auth-form button[type=submit]').click()");
+  await waitFor("!!document.querySelector('.campaign-preview')");
+  await evaluate("document.querySelector('.campaign-preview button').click()");
+  await waitFor("document.querySelector('.client-card [role=status]')?.textContent.includes('mise en file')");
+  assert.deepEqual(await evaluate("window.campaignPayload"), { action: "create", subject: "Offre spéciale", body: "Message corrigé", expectedRecipients: 4 });
+  assert.equal(await evaluate("window.createdCampaigns"), 1);
+  assert.equal(await evaluate("document.querySelector('.auth-form input[name=subject]').value"), "");
+  assert.equal(await evaluate("!!document.querySelector('.campaign-preview')"), false);
+  console.log("Campaign preview and audience confirmation passed.");
 } finally {
   const closed = once(chrome, "exit");
   chrome.kill("SIGTERM");

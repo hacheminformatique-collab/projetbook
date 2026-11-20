@@ -248,6 +248,12 @@ acceptés. Le consentement et l'état du compte sont revérifiés avant chaque
 envoi ; le cron reste nécessaire pour effectuer la reprise. Une interruption
 après acceptation par le transport mais avant confirmation en base peut
 exceptionnellement provoquer un envoi en double.
+Avant la mise en file, l'aperçu montre l'objet, le texte et un exemple de lien
+de désinscription ainsi que le nombre de clients actifs consentants. Modifier
+le texte exige un nouvel aperçu. Si le nombre de destinataires change avant
+confirmation, la mise en file est refusée : il faut vérifier un nouvel aperçu.
+La composition de l'audience peut évoluer même si le nombre reste identique ;
+le consentement est toujours vérifié à nouveau avant l'envoi.
 
 Ajoutez des tâches cron cPanel, par exemple :
 

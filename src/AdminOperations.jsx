@@ -277,6 +277,8 @@ export function AdminBilling({ csrfToken }) {
 
 export function AdminCampaigns({ csrfToken }) {
   const [result, setResult] = useState(null);
+  const [draft, setDraft] = useState({ subject: "", body: "" });
+  const [preview, setPreview] = useState(null);
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState(null);
@@ -299,9 +301,27 @@ export function AdminCampaigns({ csrfToken }) {
       setRevision((value) => value + 1);
       return true;
     } catch (cause) {
-      setNotice({ kind: "error", text: cause.message });
+      if (action === "create") setPreview(null);
+      const uncertain = action === "create" && (!cause.status || cause.status >= 500);
+      setNotice({ kind: "error", text: `${cause.message}${uncertain ? " Vérifiez l’historique avant de créer une autre campagne." : ""}` });
       return false;
     } finally { setWorking(false); }
+  }
+  async function previewDraft(event) {
+    event.preventDefault();
+    setWorking(true);
+    setNotice(null);
+    setPreview(null);
+    try {
+      setPreview(await apiRequest("admin-campaigns.php", { csrfToken, body: { action: "preview", ...draft } }));
+    } catch (cause) {
+      setNotice({ kind: "error", text: cause.message });
+    } finally { setWorking(false); }
+  }
+  function changeDraft(event) {
+    setDraft((current) => ({ ...current, [event.target.name]: event.target.value }));
+    setPreview(null);
+    setNotice(null);
   }
   const statuses = { queued: "En attente", sending: "En cours", completed: "Terminée", cancelled: "Annulée" };
   return <section className="client-card">
@@ -309,17 +329,24 @@ export function AdminCampaigns({ csrfToken }) {
     <p>Les campagnes sont envoyées uniquement aux comptes clients actifs ayant explicitement accepté les communications. Elles sont en texte brut, limitées à 5 000 destinataires et comportent un lien de désinscription. Configurez l’adresse publique HTTPS du site et le cron d’envoi avant de les lancer.</p>
     <p>Clients actuellement consentants : <strong>{result?.consentingClients ?? "…"}</strong></p>
     {notice && <Feedback notice={notice} />}
-    <form className="auth-form" onSubmit={async (event) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const fields = new FormData(form);
-      const created = await submit("create", { subject: fields.get("subject"), body: fields.get("body") });
-      if (created) form.reset();
-    }}>
+    <form className="auth-form" onSubmit={previewDraft}>
       <fieldset className="form-fieldset" disabled={working}>
-        <label>Objet<input name="subject" required maxLength={200} /></label>
-        <label>Message<textarea name="body" required maxLength={10000} rows={8} /></label>
-        <button className="auth-submit" type="submit" disabled={working || !csrfToken}>{working ? "Mise en file…" : "Créer et mettre en file"}</button>
+        <label>Objet<input name="subject" required maxLength={200} value={draft.subject} onChange={changeDraft} /></label>
+        <label>Message<textarea name="body" required maxLength={10000} rows={8} value={draft.body} onChange={changeDraft} /></label>
+        <button className="admin-nav-link" type="submit" disabled={working || !csrfToken}>Afficher l’aperçu</button>
+        {preview && <section className="campaign-preview" aria-labelledby="campaign-preview-title" aria-live="polite">
+          <h3 id="campaign-preview-title">Aperçu de la campagne</h3>
+          <p>Destinataires actuellement éligibles : <strong>{preview.recipients}</strong>. Le nombre est revérifié à la confirmation ; le consentement est vérifié à nouveau avant chaque envoi.</p>
+          {preview.recipients === 0 && <p className="form-message form-error">Aucun client actif n’a accepté les communications marketing.</p>}
+          {preview.recipients > 5000 && <p className="form-message form-error">Une campagne est limitée à 5 000 destinataires consentants.</p>}
+          <p><strong>Objet :</strong> {preview.subject}</p>
+          <pre>{preview.previewBody}</pre>
+          <p className="field-hint">Le lien indiqué est un exemple : chaque destinataire recevra son propre lien de désinscription. La mise en file ne garantit pas la réception.</p>
+          <button className="auth-submit" type="button" disabled={working || preview.recipients < 1 || preview.recipients > 5000} onClick={async () => {
+            const created = await submit("create", { subject: preview.subject, body: preview.body, expectedRecipients: preview.recipients });
+            if (created) { setDraft({ subject: "", body: "" }); setPreview(null); }
+          }}>Confirmer la mise en file</button>
+        </section>}
       </fieldset>
     </form>
     <h3>Historique des campagnes</h3>

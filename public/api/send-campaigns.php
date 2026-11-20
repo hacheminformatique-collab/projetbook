@@ -105,9 +105,7 @@ try {
                 'recipient' => $recipient['id'], 'hash' => hash('sha256', $token),
                 'created' => $nowText,
             ]);
-            $body = $recipient['message_body'] . "\n\n---\n"
-                . "Vous recevez cet e-mail car vous avez accepté les communications marketing BOOKILI.\n"
-                . "Pour vous désinscrire : " . $unsubscribeBase . $token;
+            $body = bookili_campaign_message($recipient['message_body'], $unsubscribeBase . $token);
             bookili_send_email([
                 'recipient' => $recipient['recipient'],
                 'subject' => $recipient['subject'],

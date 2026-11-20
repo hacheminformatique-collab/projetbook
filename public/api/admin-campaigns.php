@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/booking.php';
+require_once __DIR__ . '/mailer.php';
 
 $method = bookili_booking_method();
 $data = $method === 'POST' ? bookili_read_json() : [];
@@ -10,7 +11,7 @@ try {
     $admin = bookili_require_role($pdo, ['super_admin']);
     if ($method === 'POST') {
         $action = $data['action'] ?? null;
-        if ($action === 'create') {
+        if (in_array($action, ['preview', 'create'], true)) {
             $configuration = bookili_configuration();
             $publicUrl = $configuration['public_url'] ?? '';
             $urlParts = is_string($publicUrl) ? parse_url($publicUrl) : false;
@@ -26,18 +27,37 @@ try {
             if (preg_match('/[\r\n\x00-\x1f\x7f]/', $subject)) {
                 bookili_json_response(422, ['error' => 'L’objet du courriel ne peut pas contenir de saut de ligne.']);
             }
-            $pdo->beginTransaction();
-            $count = (int) $pdo->query(
+            if ($action === 'preview') {
+                $count = (int) $pdo->query(
                 "SELECT COUNT(*) FROM client_marketing_preferences mp
                  INNER JOIN accounts a ON a.id = mp.account_id
                  INNER JOIN client_profiles c ON c.account_id = a.id
                  WHERE mp.consent = 1 AND a.status = 'active'"
-            )->fetchColumn();
-            if ($count === 0 || $count > 5000) {
+                )->fetchColumn();
+                bookili_json_response(200, [
+                    'subject' => $subject, 'body' => $body, 'recipients' => $count,
+                    'previewBody' => bookili_campaign_message(
+                        $body, rtrim($publicUrl, '/') . '/api/unsubscribe.php?token=[lien-personnel]'
+                    ),
+                ]);
+            }
+            if (!is_int($data['expectedRecipients'] ?? null) || $data['expectedRecipients'] < 1 || $data['expectedRecipients'] > 5000) {
+                bookili_json_response(422, ['error' => 'Vérifiez l’aperçu et le nombre de destinataires avant de confirmer.']);
+            }
+            $pdo->beginTransaction();
+            $recipients = $pdo->query(
+                "SELECT a.id, a.email FROM client_marketing_preferences mp
+                 INNER JOIN accounts a ON a.id = mp.account_id
+                 INNER JOIN client_profiles c ON c.account_id = a.id
+                 WHERE mp.consent = 1 AND a.status = 'active' ORDER BY a.id LIMIT 5001"
+            )->fetchAll();
+            $count = count($recipients);
+            if ($count !== $data['expectedRecipients']) {
                 $pdo->rollBack();
-                bookili_json_response(422, ['error' => $count === 0
-                    ? 'Aucun client actif n’a accepté les communications marketing.'
-                    : 'Une campagne est limitée à 5 000 destinataires consentants. Réduisez son audience.']);
+                bookili_json_response(409, [
+                    'code' => 'campaign_audience_changed',
+                    'error' => 'Le nombre de destinataires a changé. Vérifiez un nouvel aperçu avant de confirmer.',
+                ]);
             }
             $now = bookili_now()->format('Y-m-d H:i:s');
             $pdo->prepare(
@@ -45,17 +65,11 @@ try {
                  VALUES (:admin, :subject, :body, 'queued', :created)"
             )->execute(['admin' => $admin['id'], 'subject' => $subject, 'body' => $body, 'created' => $now]);
             $campaignId = (int) $pdo->lastInsertId();
-            $statement = $pdo->query(
-                "SELECT a.id, a.email FROM client_marketing_preferences mp
-                 INNER JOIN accounts a ON a.id = mp.account_id
-                 INNER JOIN client_profiles c ON c.account_id = a.id
-                 WHERE mp.consent = 1 AND a.status = 'active' ORDER BY a.id"
-            );
             $insert = $pdo->prepare(
                 "INSERT INTO marketing_campaign_recipients (campaign_id, account_id, recipient, send_after)
                  VALUES (:campaign, :account, :recipient, :send_after)"
             );
-            foreach ($statement->fetchAll() as $recipient) {
+            foreach ($recipients as $recipient) {
                 $insert->execute([
                     'campaign' => $campaignId, 'account' => $recipient['id'],
                     'recipient' => $recipient['email'], 'send_after' => $now,
@@ -141,6 +155,7 @@ try {
     $consentingClients = (int) $pdo->query(
         "SELECT COUNT(*) FROM client_marketing_preferences mp
          INNER JOIN accounts a ON a.id = mp.account_id
+         INNER JOIN client_profiles c ON c.account_id = a.id
          WHERE mp.consent = 1 AND a.status = 'active'"
     )->fetchColumn();
     bookili_json_response(200, [

@@ -6,6 +6,7 @@ if (getenv('BOOKILI_DISPOSABLE_TEST') !== '1' || !getenv('BOOKILI_TEST_URL')) {
     throw new RuntimeException('An explicitly disposable test installation and BOOKILI_TEST_URL are required.');
 }
 require_once __DIR__ . '/../public/api/booking.php';
+require_once __DIR__ . '/../public/api/mailer.php';
 
 function verify(bool $condition, string $message): void
 {
@@ -88,7 +89,10 @@ function awaitAttempts(PDO $pdo, int $campaignId, int $attempts): void
 
 function createCampaign(CurlHandle $admin, string $token, string $subject, int $expectedRecipients = 1): int
 {
-    [$code, $result] = request($admin, 'admin-campaigns.php', ['action' => 'create', 'subject' => $subject, 'body' => 'Message de test'], $token);
+    $draft = ['subject' => $subject, 'body' => 'Message de test'];
+    [$code, $preview] = request($admin, 'admin-campaigns.php', ['action' => 'preview'] + $draft, $token);
+    verify($code === 200 && $preview['recipients'] === $expectedRecipients, 'Campaign preview failed.');
+    [$code, $result] = request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => $preview['recipients']] + $draft, $token);
     verify($code === 201 && $result['recipients'] === $expectedRecipients, 'Campaign creation failed.');
     return (int) $result['campaignId'];
 }
@@ -106,11 +110,35 @@ try {
     [$admin, $adminToken, $adminId] = session($pdo, 'super_admin');
     [$professional, $professionalToken] = session($pdo, 'professional');
     $sessions = [$client, $admin, $professional];
+    $draft = ['subject' => '  Offre spéciale  ', 'body' => "  Bonjour\nTexte <b>brut</b>  "];
+    [$code, $emptyPreview] = request($admin, 'admin-campaigns.php', ['action' => 'preview'] + $draft, $adminToken);
+    verify($code === 200 && $emptyPreview['recipients'] === 0, 'Empty audience preview failed.');
     verify(request($client, 'client-profile.php', ['marketingConsent' => true], $clientToken)[0] === 200, 'Could not enable test consent.');
     verify(request($client, 'admin-campaigns.php')[0] === 403, 'Client can read campaigns.');
+    verify(request($client, 'admin-campaigns.php', ['action' => 'preview'] + $draft, $clientToken)[0] === 403, 'Client can preview campaigns.');
     verify(request($professional, 'admin-campaigns.php', ['action' => 'retry-failed', 'campaignId' => 1], $professionalToken)[0] === 403, 'Professional can retry campaigns.');
     verify(request($admin, 'admin-campaigns.php', ['action' => 'retry-failed', 'campaignId' => 1])[0] === 403, 'Missing CSRF token was accepted.');
     verify(request($admin, 'admin-campaigns.php?page=0')[0] === 422, 'Invalid page was accepted.');
+    $before = (int) $pdo->query('SELECT COUNT(*) FROM marketing_campaigns')->fetchColumn();
+    [$code, $preview] = request($admin, 'admin-campaigns.php', ['action' => 'preview'] + $draft, $adminToken);
+    verify($code === 200 && $preview['recipients'] === 1 && $preview['subject'] === 'Offre spéciale' && $preview['body'] === "Bonjour\nTexte <b>brut</b>", 'Preview did not show normalized content.');
+    verify($preview['previewBody'] === bookili_campaign_message($preview['body'], 'https://example.test/api/unsubscribe.php?token=[lien-personnel]'), 'Preview footer does not match the delivered format.');
+    verify((int) $pdo->query('SELECT COUNT(*) FROM marketing_campaigns')->fetchColumn() === $before, 'Preview created a campaign.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'create'] + $draft, $adminToken)[0] === 422, 'Missing preview count was accepted.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => '1'] + $draft, $adminToken)[0] === 422, 'Invalid preview count was accepted.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => 5001] + $draft, $adminToken)[0] === 422, 'Audience above 5000 was accepted.');
+    verify(request($admin, 'admin-campaigns.php', ['action' => 'preview', 'subject' => "Offre\nmalformée", 'body' => 'Test'], $adminToken)[0] === 422, 'Invalid preview subject was accepted.');
+    $otherClient = (int) $pdo->query("SELECT id FROM accounts WHERE role = 'client' AND status = 'active' AND id <> {$clientId} ORDER BY id LIMIT 1")->fetchColumn();
+    verify($otherClient > 0, 'Expected a second client.');
+    $consent = $pdo->prepare(
+        'INSERT INTO client_marketing_preferences (account_id, consent, updated_at) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE consent = VALUES(consent), updated_at = VALUES(updated_at)'
+    );
+    $consent->execute([$otherClient, 1, bookili_now()->format('Y-m-d H:i:s')]);
+    [$code, $changed] = request($admin, 'admin-campaigns.php', ['action' => 'create', 'expectedRecipients' => $preview['recipients']] + $draft, $adminToken);
+    verify($code === 409 && $changed['code'] === 'campaign_audience_changed', 'Changed audience was not rejected.');
+    verify((int) $pdo->query('SELECT COUNT(*) FROM marketing_campaigns')->fetchColumn() === $before, 'A stale audience created a campaign.');
+    $consent->execute([$otherClient, 0, bookili_now()->format('Y-m-d H:i:s')]);
 
     $raceId = createCampaign($admin, $adminToken, 'Campagne concurrence');
     $lockPdo->beginTransaction();
@@ -126,6 +154,7 @@ try {
     verify(recipient($pdo, $raceId)['status'] === 'sent', 'Recovered campaign was not sent.');
     $captured = file_get_contents($mailbox);
     verify(substr_count($captured, '--- BOOKILI TEST MESSAGE ---') === 1, 'Recovered campaign was sent more than once.');
+    verify(str_contains($captured, "Message de test\n\n---\nVous recevez cet e-mail car vous avez accepté les communications marketing BOOKILI.\nPour vous désinscrire : https://example.test/api/unsubscribe.php?token="), 'Delivered campaign differs from the preview format.');
     $tokens = $pdo->prepare('SELECT COUNT(*) FROM marketing_unsubscribe_tokens WHERE recipient_id = ?');
     $tokens->execute([recipient($pdo, $raceId)['id']]);
     verify((int) $tokens->fetchColumn() === 1, 'Recovered campaign created duplicate unsubscribe tokens.');
@@ -189,8 +218,6 @@ try {
     verify(recipient($pdo, $revokedId)['status'] === 'cancelled' && substr_count(file_get_contents($mailbox), '--- BOOKILI TEST MESSAGE ---') === 2, 'Retry ignored withdrawn consent.');
 
     verify(request($client, 'client-profile.php', ['marketingConsent' => true], $clientToken)[0] === 200, 'Could not restore first client consent.');
-    $otherClient = (int) $pdo->query("SELECT id FROM accounts WHERE role = 'client' AND status = 'active' AND id <> {$clientId} ORDER BY id LIMIT 1")->fetchColumn();
-    verify($otherClient > 0, 'Expected a second client.');
     $pdo->prepare(
         'INSERT INTO client_marketing_preferences (account_id, consent, updated_at) VALUES (?, 1, ?)
          ON DUPLICATE KEY UPDATE consent = 1, updated_at = VALUES(updated_at)'

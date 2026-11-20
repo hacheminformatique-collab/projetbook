@@ -406,8 +406,11 @@ def main():
 
     campaigns = expect(admin.request("admin-campaigns.php"), 200)
     assert campaigns["consentingClients"] == 1
+    draft = {"subject": f"Test {SUFFIX}", "body": "Message de test"}
+    preview = expect(admin.request("admin-campaigns.php", {"action": "preview", **draft}), 200)
+    assert preview["recipients"] == 1
     campaign = expect(admin.request("admin-campaigns.php", {
-        "action": "create", "subject": f"Test {SUFFIX}", "body": "Message de test",
+        "action": "create", **draft, "expectedRecipients": preview["recipients"],
     }), 201)
     assert campaign["recipients"] == 1
     expect(first.request("admin-campaigns.php"), 403)

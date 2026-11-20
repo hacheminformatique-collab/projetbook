@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
 
+function bookili_campaign_message(string $body, string $unsubscribeUrl): string
+{
+    return $body . "\n\n---\n"
+        . "Vous recevez cet e-mail car vous avez accepté les communications marketing BOOKILI.\n"
+        . "Pour vous désinscrire : " . $unsubscribeUrl;
+}
+
 function bookili_prepare_email(array $email, string $sender): array
 {
     $fromName = bookili_configuration()['mail_from_name'] ?? 'BOOKILI';
