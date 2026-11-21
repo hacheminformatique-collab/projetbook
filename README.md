@@ -423,6 +423,9 @@ durée et tarif en DA), renseigne ses horaires et publie le salon. Un salon
 reste masqué par défaut ; sa publication exige au moins une prestation
 active et un jour d'ouverture. Une prestation peut être modifiée ou masquée
 sans supprimer l'historique.
+Dans **Admin → Salon et horaires**, la liste des étapes indique l’état de
+publication et les prérequis remplis. Enregistrez d’abord vos horaires, puis
+cochez l’ouverture de la réservation en ligne et enregistrez pour publier.
 
 L'annuaire `/recherche` filtre les salons publiés par nom de salon,
 prestation, ville, wilaya et catégorie, avec pagination. La saisie de ville

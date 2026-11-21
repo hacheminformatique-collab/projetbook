@@ -214,7 +214,14 @@ try {
           data = { salons: [], hasMore: window.directoryQuery.tri === "prix" && !window.directoryQuery.page };
         }
       } else if (url.pathname.endsWith("/api/professional-salon.php")) {
-        data = { salon: { id: 1, name: "Salon test", city: "Sétif", wilaya_code: "19", is_public: 1 }, hours: [] };
+        if (options?.method === "POST") {
+          (window.salonSaves ||= []).push(JSON.parse(options.body));
+        }
+        const saved = window.salonSaves?.at(-1);
+        data = { salon: { id: 1, name: "Salon test", city: saved?.city || "Sétif", wilaya_code: "19", is_public: saved?.isPublic ? 1 : 0, address: "10 rue de test", phone_number: "0550123456" }, hours: saved?.hours || [] };
+      } else if (url.pathname.endsWith("/api/professional-services.php")) {
+        if (options?.method === "POST") window.savedSalonService = JSON.parse(options.body);
+        data = { services: window.savedSalonService ? [{ id: 1, name: window.savedSalonService.name, category: "coiffeur", duration_minutes: 30, price_dzd: 1000, is_active: 1 }] : [] };
       } else if (url.pathname.endsWith("/api/professional-staff.php")) {
         const hours = Array.from({ length: 7 }, (_, index) => ({
           weekday: index + 1, opens_at: "09:00:00", closes_at: "18:00:00",
@@ -572,6 +579,19 @@ try {
   assert.equal(await evaluate("window.staffSaveBody.hours[0].pause_ends_at"), "13:15");
   await evaluate("Array.from(document.querySelectorAll('.pro-sidebar nav button')).find(b => b.textContent === 'Salon et horaires').click()");
   await waitFor("document.querySelector('.pro-panel h2')?.textContent === 'Mon salon et mes horaires'");
+  await waitFor("document.querySelector('.salon-publication-steps')?.textContent.includes('Aucune prestation active.')");
+  assert.equal(await evaluate("document.querySelector('.salon-settings input[name=isPublic]').disabled"), true);
+  await evaluate("void Array.from(document.querySelectorAll('.salon-publication-steps button')).find(b => b.textContent === 'Voir les prestations').click()");
+  await waitFor("document.querySelector('.pro-panel .auth-form input')?.required");
+  await evaluate(`(() => {
+    const input = document.querySelector('.pro-panel .auth-form input');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Coupe');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.pro-panel .auth-form button[type=submit]').click();
+  })()`);
+  await waitFor("window.savedSalonService?.name === 'Coupe'");
+  await evaluate("void Array.from(document.querySelectorAll('.pro-sidebar nav button')).find(b => b.textContent === 'Salon et horaires').click()");
+  await waitFor("document.querySelector('.salon-step-marker').dataset.complete === 'true'");
   assert.equal(await evaluate("document.querySelector('.pro-panel input[name=city]').value"), "Sétif");
   await evaluate(`(() => {
     const input = document.querySelector('.pro-panel input[name=city]');
@@ -581,6 +601,25 @@ try {
   await waitFor("window.citySuggestionQuery === 'Ora'");
   assert.equal(await evaluate("document.querySelector('.pro-panel input[name=city]').list.options[0]?.value"), "Oran");
   assert.equal(await evaluate("document.querySelector('.pro-panel input[name=city]').value"), "Ora", "the professional can keep an unlisted Algerian city");
+  await evaluate("void Array.from(document.querySelectorAll('.salon-publication-steps button')).find(b => b.textContent === 'Définir les horaires').click()");
+  assert.equal(await evaluate("document.activeElement.textContent"), "Horaires hebdomadaires");
+  await evaluate("void document.querySelector('.salon-settings .hours-row input[type=checkbox]').click()");
+  assert.equal(await evaluate("document.querySelector('.salon-settings input[name=isPublic]').disabled"), true, "draft hours do not make the salon publishable");
+  await evaluate("void document.querySelector('.salon-settings button[type=submit]').click()");
+  await waitFor("document.querySelector('.salon-settings input[name=isPublic]').disabled === false");
+  assert.equal(await evaluate("window.salonSaves[0].isPublic"), false);
+  assert.deepEqual(await evaluate("window.salonSaves[0].hours.map(hour => hour.weekday)"), [1]);
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
+  await evaluate("void document.querySelector('.salon-settings input[name=isPublic]').click()");
+  assert.equal(await evaluate("window.salonSaves.length"), 1, "checking the option does not publish without saving");
+  await evaluate("void document.querySelector('.salon-settings button[type=submit]').click()");
+  await waitFor("document.querySelector('.salon-publication-status').textContent === 'Salon publié'");
+  assert.equal(await evaluate("window.salonSaves[1].isPublic"), true);
+  await evaluate("void document.querySelector('.salon-settings input[name=isPublic]').click(); void document.querySelector('.salon-settings button[type=submit]').click()");
+  await waitFor("document.querySelector('.salon-publication-status').textContent === 'Salon non publié'");
+  assert.equal(await evaluate("window.salonSaves[2].isPublic"), false);
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
   await waitFor("!!document.querySelector('.agenda-day-column')");
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });

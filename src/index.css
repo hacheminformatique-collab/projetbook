@@ -403,6 +403,30 @@ a.pro-public-link { color: var(--pro-accent); text-decoration: underline; }
 .auth-form .checkbox-label { display: flex; align-items: center; gap: 10px; line-height: 1.5; }
 .auth-form .checkbox-label input { width: 18px; min-height: 18px; flex-shrink: 0; }
 .hours-list { display: grid; gap: 12px; }
+.salon-settings-heading, .salon-step-actions, .salon-settings-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.salon-settings-heading { justify-content: space-between; }
+.salon-publication-status { padding: 5px 9px; border-radius: 999px; background: #f7e6c9; color: #72480b; font-size: 13px; font-weight: 700; }
+.salon-publication-live { background: #e8f5ec; color: #2e5c44; }
+.salon-settings-card { min-width: 0; padding: 14px; border: 1px solid #e8dfe5; border-radius: 10px; }
+.salon-settings-card h3 { margin: 0 0 8px; }
+.salon-settings-details { display: grid; gap: 12px; }
+.salon-settings-details p { margin: 0; }
+.salon-publication-steps { list-style: none; margin: 0; padding: 0; }
+.salon-publication-steps li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 9px; border-top: 1px solid #e8dfe5; padding: 10px 0; }
+.salon-publication-steps p { margin: 4px 0; color: #59616b; overflow-wrap: anywhere; }
+.salon-step-marker { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: var(--rose-ink); background: var(--rose-soft); font-weight: 700; }
+.salon-step-marker[data-complete="true"] { background: #e8f5ec; color: #2e5c44; }
+.salon-publication-steps .checkbox-label { margin-top: 8px; }
+.salon-publication-steps li > div:last-child:not(.salon-step-actions) { grid-column: 2 / -1; }
+.salon-settings .hours-list { gap: 0; }
+.salon-hours-closed { color: #59616b; }
+.salon-settings-links { margin-top: 16px; }
+@media (max-width: 760px) {
+  .salon-publication-steps li { grid-template-columns: auto minmax(0, 1fr); }
+  .salon-publication-steps li > button, .salon-step-actions { grid-column: 2; justify-self: start; }
+  .salon-settings .hours-row:has(.salon-hours-closed) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .salon-settings .hours-row:has(.salon-hours-closed) > .checkbox-label { grid-column: auto; }
+}
 .hours-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: end; gap: 14px; padding: 12px 0; border-bottom: 1px solid #e6e8eb; }
 .service-list { display: grid; gap: 12px; margin-top: 20px; }
 .service-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid #e6e8eb; line-height: 1.7; overflow-wrap: anywhere; }

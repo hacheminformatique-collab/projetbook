@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import ProfessionalAgenda from "./ProfessionalAgenda.jsx";
 import AgendaCalendar from "./AgendaCalendar.jsx";
@@ -122,7 +122,7 @@ export default function ProfessionalSpace() {
             {view === "services" && <ServiceSettings csrfToken={session.csrfToken} />}
             {view === "staff" && <StaffSettings csrfToken={session.csrfToken} salonHours={configuration.hours} />}
             {view === "agenda-display" && <AgendaDisplaySettings csrfToken={session.csrfToken} />}
-            {view === "salon" && <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} />}
+            {view === "salon" && <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} onNavigate={setView} />}
             {view === "profile" && <ProfessionalProfile csrfToken={session.csrfToken} />}
             {view === "photos" && <ProfessionalPhotos csrfToken={session.csrfToken} />}
           </>}
@@ -280,7 +280,7 @@ function ClosureSettings({ csrfToken }) {
     </section>
   );
 }
-function SalonSettings({ configuration, csrfToken, onSaved }) {
+function SalonSettings({ configuration, csrfToken, onSaved, onNavigate }) {
   const [hours, setHours] = useState(() => weekDays.map((_, index) => {
     const row = configuration.hours.find((hour) => Number(hour.weekday) === index + 1);
     return {
@@ -293,31 +293,112 @@ function SalonSettings({ configuration, csrfToken, onSaved }) {
   }));
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [serviceStatus, setServiceStatus] = useState(null);
+  const [serviceRetry, setServiceRetry] = useState(0);
+  const hoursHeading = useRef(null);
   const salon = configuration.salon;
+  const published = Number(salon.is_public) === 1;
+  const [publish, setPublish] = useState(published);
+  const activeCount = serviceStatus?.activeCount;
+  const savedDays = configuration.hours.length;
+  const canPublish = activeCount > 0 && savedDays > 0 && hours.some((hour) => hour.enabled);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    apiRequest("professional-services.php", { signal: controller.signal })
+      .then(({ services }) => {
+        if (!controller.signal.aborted) setServiceStatus({ activeCount: services.filter((service) => Number(service.is_active) === 1).length });
+      })
+      .catch((cause) => { if (!controller.signal.aborted) setServiceStatus({ error: cause.message }); });
+    return () => controller.abort();
+  }, [serviceRetry]);
+
   const changeHour = (index, changes) => setHours((current) => current.map((hour, i) => i === index ? { ...hour, ...changes } : hour));
   async function submit(event) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = Object.fromEntries(new FormData(form).entries());
+    if (!published && publish && !canPublish) {
+      setNotice({ kind: "error", text: "Ajoutez une prestation active et enregistrez vos horaires avant de publier." });
+      return;
+    }
     setSaving(true);
     setNotice(null);
     try {
       const result = await apiRequest("professional-salon.php", {
         csrfToken,
-        body: { ...data, isPublic: data.isPublic === "on", hours: hours.filter((hour) => hour.enabled).map(({ weekday, opens_at, closes_at, pause_starts_at, pause_ends_at }) => ({ weekday, opens_at, closes_at, pause_starts_at, pause_ends_at })) },
+        body: { ...data, isPublic: publish, hours: hours.filter((hour) => hour.enabled).map(({ weekday, opens_at, closes_at, pause_starts_at, pause_ends_at }) => ({ weekday, opens_at, closes_at, pause_starts_at, pause_ends_at })) },
       });
       onSaved(result);
-      setNotice({ kind: "success", text: "Votre salon et ses horaires ont été enregistrés." });
+      setNotice({ kind: "success", text: publish !== published
+        ? publish ? "Votre salon est publié dans l’annuaire BOOKILI." : "Votre salon a été retiré de l’annuaire BOOKILI."
+        : "Votre salon et ses horaires ont été enregistrés." });
     } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
     finally { setSaving(false); }
   }
   return (
-    <section className="client-card">
-      <h2>Mon salon et mes horaires</h2>
-      <p className="field-hint">Une plage d’ouverture et une pause facultative par jour. Renseignez les deux horaires de pause, à l’intérieur de l’ouverture. Les rendez-vous confirmés restent visibles si vous changez vos horaires.</p>
+    <section className="client-card salon-settings">
+      <div className="salon-settings-heading">
+        <h2>Mon salon et mes horaires</h2>
+        <span className={`salon-publication-status${published ? " salon-publication-live" : ""}`}>{published ? "Salon publié" : "Salon non publié"}</span>
+      </div>
+      <p>{published ? "Votre salon apparaît dans l’annuaire BOOKILI." : "Votre salon n’apparaît pas encore dans l’annuaire BOOKILI."}</p>
       {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
       <form className="auth-form" onSubmit={submit}>
         <fieldset disabled={saving} className="form-fieldset">
+          <section className="salon-settings-card">
+            <h3>Ouvrir la réservation en ligne</h3>
+            <ol className="salon-publication-steps">
+              <li>
+                <span className="salon-step-marker" data-complete={activeCount > 0} aria-hidden="true">{activeCount > 0 ? "✓" : "1"}</span>
+                <div><strong>Au moins une prestation active</strong>
+                  {serviceStatus?.error ? <p role="alert">Impossible de vérifier les prestations : {serviceStatus.error}</p>
+                    : activeCount == null ? <p role="status">Vérification des prestations…</p>
+                    : <p>{activeCount > 0 ? `${activeCount} prestation(s) active(s)` : "Aucune prestation active."}</p>}
+                </div>
+                <div className="salon-step-actions">
+                  {serviceStatus?.error && <button className="admin-nav-link" type="button" onClick={() => {
+                    setServiceStatus(null);
+                    setServiceRetry((value) => value + 1);
+                  }}>Réessayer</button>}
+                  <button className="admin-nav-link" type="button" onClick={() => onNavigate("services")}>Voir les prestations</button>
+                </div>
+              </li>
+              <li>
+                <span className="salon-step-marker" data-complete={savedDays > 0} aria-hidden="true">{savedDays > 0 ? "✓" : "2"}</span>
+                <div><strong>Au moins un jour d’ouverture</strong><p>{savedDays ? `${savedDays} jour(s) d’ouverture enregistré(s)` : "Aucun horaire enregistré."}</p></div>
+                <button className="admin-nav-link" type="button" onClick={() => hoursHeading.current?.focus()}>Définir les horaires</button>
+              </li>
+              <li>
+                <span className="salon-step-marker" data-complete={published} aria-hidden="true">{published ? "✓" : "3"}</span>
+                <div><strong>Publier le salon</strong>
+                  <p>{published ? "Décochez puis enregistrez pour retirer votre salon de l’annuaire."
+                    : canPublish ? "Cochez puis enregistrez pour ouvrir la réservation en ligne."
+                    : "Disponible après l’ajout d’une prestation active et l’enregistrement des horaires."}</p>
+                  <label className="checkbox-label"><input type="checkbox" name="isPublic" checked={publish} disabled={!published && !canPublish && !publish} onChange={(event) => setPublish(event.target.checked)} />Publier mon salon et ouvrir la réservation en ligne</label>
+                </div>
+              </li>
+            </ol>
+          </section>
+          <section className="salon-settings-card">
+          <h3 tabIndex={-1} ref={hoursHeading}>Horaires hebdomadaires</h3>
+          <p className="field-hint">Une plage d’ouverture et une pause facultative par jour. Les deux horaires de pause doivent être à l’intérieur de l’ouverture. Les rendez-vous confirmés restent visibles après une modification.</p>
+          <div className="hours-list">
+            {hours.map((hour, index) => (
+              <div className="hours-row" key={hour.weekday}>
+                <label className="checkbox-label"><input type="checkbox" checked={hour.enabled} onChange={(event) => changeHour(index, { enabled: event.target.checked })} />{weekDays[index]}</label>
+                {hour.enabled ? <>
+                <label>Ouverture<input aria-label={`Ouverture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.opens_at} onChange={(event) => changeHour(index, { opens_at: event.target.value })} /></label>
+                <label>Fermeture<input aria-label={`Fermeture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.closes_at} onChange={(event) => changeHour(index, { closes_at: event.target.value })} /></label>
+                <label>Début pause<input aria-label={`Début pause ${weekDays[index]}`} type="time" min={hour.opens_at} max={hour.closes_at} required={hour.enabled && !!hour.pause_ends_at} disabled={!hour.enabled} value={hour.pause_starts_at} onChange={(event) => changeHour(index, { pause_starts_at: event.target.value })} /></label>
+                <label>Fin pause<input aria-label={`Fin pause ${weekDays[index]}`} type="time" min={hour.pause_starts_at || hour.opens_at} max={hour.closes_at} required={hour.enabled && !!hour.pause_starts_at} disabled={!hour.enabled} value={hour.pause_ends_at} onChange={(event) => changeHour(index, { pause_ends_at: event.target.value })} /></label>
+                </> : <span className="salon-hours-closed">Fermé</span>}
+              </div>
+            ))}
+          </div>
+          </section>
+          <section className="salon-settings-card salon-settings-details">
+          <h3>Coordonnées et message de réservation</h3>
           <label>Nom du salon<input name="name" required maxLength={180} defaultValue={salon.name} /></label>
           <div className="auth-grid">
             <label>Wilaya<select name="wilaya" required defaultValue={salon.wilaya_code}>{algerianWilayas.map((wilaya) => <option key={wilaya.code} value={wilaya.code}>{wilaya.name}</option>)}</select></label>
@@ -327,21 +408,14 @@ function SalonSettings({ configuration, csrfToken, onSaved }) {
           <label>Téléphone<input name="phone" type="tel" required maxLength={24} defaultValue={salon.phone_number || ""} /></label>
           <label>Message pour vos clients<textarea name="bookingMessage" maxLength={1000} rows={4} defaultValue={salon.booking_message || ""} placeholder="Informations utiles à lire avant le rendez-vous" /></label>
           <p className="field-hint">Ce message sera affiché après le choix du créneau et ajouté aux e-mails de confirmation ou de modification.</p>
-          <div className="hours-list">
-            {hours.map((hour, index) => (
-              <div className="hours-row" key={hour.weekday}>
-                <label className="checkbox-label"><input type="checkbox" checked={hour.enabled} onChange={(event) => changeHour(index, { enabled: event.target.checked })} />{weekDays[index]}</label>
-                <label>Ouverture<input aria-label={`Ouverture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.opens_at} onChange={(event) => changeHour(index, { opens_at: event.target.value })} /></label>
-                <label>Fermeture<input aria-label={`Fermeture ${weekDays[index]}`} type="time" required={hour.enabled} disabled={!hour.enabled} value={hour.closes_at} onChange={(event) => changeHour(index, { closes_at: event.target.value })} /></label>
-                <label>Début pause<input aria-label={`Début pause ${weekDays[index]}`} type="time" min={hour.opens_at} max={hour.closes_at} required={hour.enabled && !!hour.pause_ends_at} disabled={!hour.enabled} value={hour.pause_starts_at} onChange={(event) => changeHour(index, { pause_starts_at: event.target.value })} /></label>
-                <label>Fin pause<input aria-label={`Fin pause ${weekDays[index]}`} type="time" min={hour.pause_starts_at || hour.opens_at} max={hour.closes_at} required={hour.enabled && !!hour.pause_starts_at} disabled={!hour.enabled} value={hour.pause_ends_at} onChange={(event) => changeHour(index, { pause_ends_at: event.target.value })} /></label>
-              </div>
-            ))}
-          </div>
-          <label className="checkbox-label"><input type="checkbox" name="isPublic" defaultChecked={Number(salon.is_public) === 1} />Publier mon salon et ouvrir la réservation en ligne</label>
-          <button type="submit" className="auth-submit">{saving ? "Enregistrement…" : "Enregistrer le salon"}</button>
+          </section>
+          <div className="salon-save"><button type="submit" className="auth-submit">{saving ? "Enregistrement…" : publish && !published ? "Enregistrer et publier le salon" : "Enregistrer le salon"}</button></div>
         </fieldset>
       </form>
+      <nav className="salon-settings-links" aria-label="Autres réglages du salon">
+        <button className="admin-nav-link" type="button" onClick={() => onNavigate("profile")}>Descriptif établissement</button>
+        <button className="admin-nav-link" type="button" onClick={() => onNavigate("photos")}>Gestion des photos</button>
+      </nav>
     </section>
   );
 }
