@@ -66,6 +66,9 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
   const closeRef = useRef(null);
+  const clientBackRef = useRef(null);
+  const clientLinkRef = useRef(null);
+  const returningFromClient = useRef(false);
   const selectedServices = serviceIds.map((id) => agenda.services.find((item) => String(item.id) === id)).filter(Boolean);
   const service = selectedServices.length === serviceIds.length && selectedServices.length > 0 ? {
     id: selectedServices[0].id,
@@ -87,10 +90,14 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
     const previous = document.activeElement;
     closeRef.current?.focus();
     const handleKey = (event) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        if (clientBackRef.current) clientBackRef.current.click();
+        else onClose();
+      }
       if (event.key !== "Tab") return;
-      const dialog = closeRef.current?.closest("[role=dialog]");
-      const focusable = dialog?.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary');
+      const dialog = (clientBackRef.current || closeRef.current)?.closest("[role=dialog]");
+      const focusable = dialog && [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary')]
+        .filter((item) => item.getClientRects().length && !item.closest("details:not([open]) :not(summary)"));
       if (!focusable?.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -100,6 +107,13 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
     document.addEventListener("keydown", handleKey);
     return () => { document.removeEventListener("keydown", handleKey); previous?.focus(); };
   }, [onClose]);
+  useEffect(() => {
+    if (showClient) clientBackRef.current?.focus();
+    else if (returningFromClient.current) {
+      returningFromClient.current = false;
+      clientLinkRef.current?.focus();
+    }
+  }, [showClient]);
   useEffect(() => {
     setTime("");
     setSlots([]);
@@ -175,9 +189,18 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   return <div className="agenda-backdrop">
     <section className="agenda-detail" role="dialog" aria-modal="true" aria-labelledby="agenda-detail-title">
       <header className="agenda-detail-header">
-        <h2 id="agenda-detail-title">Fiche rendez-vous</h2>
-        <button ref={closeRef} type="button" className="admin-nav-link" onClick={onClose}>Fermer</button>
+        <h2 id="agenda-detail-title" className={showClient ? "visually-hidden" : undefined}>{showClient ? "Fiche client" : "Fiche rendez-vous"}</h2>
+        {showClient
+          ? <button key="back" ref={clientBackRef} type="button" className="admin-nav-link" onClick={() => {
+              returningFromClient.current = true;
+              setShowClient(false);
+            }}>‹ Retour au rendez-vous</button>
+          : <button key="close" ref={closeRef} type="button" className="admin-nav-link" onClick={onClose}>Fermer</button>}
       </header>
+      {showClient && <div className="agenda-client-info">
+        <ClientProfile key={appointment.client_id} clientId={appointment.client_id} csrfToken={csrfToken} />
+      </div>}
+      <div hidden={showClient}>
       <p><strong>{appointment.service_name}</strong><br />{appointmentDate(appointment.starts_at)} · {appointmentPrice}<br />
         Durée : {duration} min<br />
         Collaborateur : {agenda.staff.find((member) => String(member.id) === String(appointment.staff_id))?.name || "Non attribué"}
@@ -185,12 +208,9 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
       {hasDetails ? <ul className="agenda-service-lines">{appointment.services.map((item) =>
         <li key={item.id}>{item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</li>)}</ul>
         : <p className="form-message form-error" role="alert">Le détail enregistré des prestations est indisponible ou incohérent. L’encaissement est impossible tant que le détail ne peut pas être vérifié. Vérifiez le rendez-vous ou contactez l’assistance.</p>}
-      <button type="button" className="agenda-client-link" onClick={() => setShowClient(!showClient)} aria-expanded={showClient} aria-controls={`agenda-client-${appointment.id}`}>
+      <button ref={clientLinkRef} type="button" className="agenda-client-link" onClick={() => setShowClient(true)}>
         {appointment.first_name} {appointment.last_name}
       </button>
-      {showClient && <section className="agenda-client-info" id={`agenda-client-${appointment.id}`}>
-        <ClientProfile key={appointment.client_id} clientId={appointment.client_id} csrfToken={csrfToken} />
-      </section>}
       {notice && <p className={`form-message ${notice.error ? "form-error" : "form-success"}`} role={notice.error ? "alert" : "status"}>{notice.text}</p>}
       {(!hasVersion || stale) && <div>
         {!hasVersion && <p className="form-message form-error" role="alert">Impossible de vérifier la version du rendez-vous. Actualisez l’agenda avant de continuer.</p>}
@@ -243,6 +263,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         <TimeSlotPicker slots={slots} time={time} onChange={setTime} disabled={loadingSlots || busy} />
         <button className="auth-submit" type="submit" disabled={busy || !service || !time || !!slotError || !hasVersion || stale}>Enregistrer la modification</button>
       </form>}
+      </div>
     </section>
   </div>;
 }

@@ -260,7 +260,7 @@ try {
           const body = JSON.parse(options.body);
           if (body.clientId !== 7 || body.action !== "save_note") throw Error("Unexpected client mutation");
           clientNote = body.note;
-          data = { message: "Note enregistrée." };
+          data = { message: "Note enregistrée.", updatedAt: "2026-11-19 10:30:45" };
         } else if (!url.searchParams.has("clientId")) {
           data = { total: 1, hasMore: false, clients: [{
             id: 7, first_name: "Test", last_name: "Client", email: "client@example.test",
@@ -282,7 +282,7 @@ try {
               service_name: secondPage ? "Ancien soin" : "Coupe", status: "confirmed",
               price_dzd: 1000, private_note: "", sale_total_dzd: null,
             }],
-            hasMoreHistory: !secondPage,
+            historyPage: secondPage ? 2 : 1, hasMoreHistory: !secondPage,
           };
         }
       } else if (url.pathname.endsWith("/api/professional-cash.php")) {
@@ -422,6 +422,9 @@ try {
   await waitFor("!!document.querySelector('.agenda-client-link')");
   await evaluate("document.querySelector('.agenda-client-link').click()");
   await waitFor("!!document.querySelector('.agenda-client-info textarea')");
+  assert.equal(await evaluate("document.activeElement.textContent.trim()"), "‹ Retour au rendez-vous");
+  assert.equal(await evaluate("document.querySelector('.agenda-client-info button[aria-pressed=true]').textContent"), "Historique");
+  await evaluate("void Array.from(document.querySelectorAll('.agenda-client-info .client-profile-switch button')).find(b => b.textContent === 'Note privée').click()");
   assert.equal(await evaluate("document.querySelector('.agenda-client-info textarea').value"), "Préférence salon");
   await evaluate(`(() => {
     const textarea = document.querySelector('.agenda-client-info textarea');
@@ -429,9 +432,14 @@ try {
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   })()`);
   await evaluate("document.querySelector('.client-private-note button').click()");
-  await waitFor("document.querySelector('.agenda-client-info textarea')?.value === 'Nouvelle préférence'");
+  await waitFor("document.querySelector('.agenda-client-info [role=status]')?.textContent === 'Note enregistrée.'");
+  await evaluate("void Array.from(document.querySelectorAll('.agenda-client-info .client-profile-switch button')).find(b => b.textContent === 'Historique').click()");
   await evaluate("Array.from(document.querySelectorAll('.agenda-client-info button')).find(b => b.textContent.includes('plus anciens')).click()");
   await waitFor("document.querySelector('.agenda-client-info')?.textContent.includes('Ancien soin')");
+  assert.equal(await evaluate("document.querySelector('.agenda-client-info textarea').value"), "Nouvelle préférence");
+  await key("Escape");
+  await waitFor("!document.querySelector('.agenda-client-info')");
+  assert.equal(await evaluate("document.activeElement.matches('.agenda-client-link')"), true);
   await key("Escape");
   await waitFor("!document.querySelector('[role=dialog]')");
   await evaluate(`(() => {
@@ -607,6 +615,21 @@ try {
   await evaluate("Array.from(document.querySelectorAll('.client-directory-actions button')).find(b => b.textContent === 'Ouvrir la fiche').click()");
   await waitFor("!!document.querySelector('.client-profile-panel textarea')");
   assert.equal(await evaluate("document.querySelector('.client-profile-panel textarea').value"), "Nouvelle préférence");
+  assert.equal(await evaluate("document.querySelector('.client-directory-list').getBoundingClientRect().width"), 0);
+  assert.equal(await evaluate("document.querySelector('.client-profile-switch button[aria-pressed=true]').textContent"), "Historique");
+  await evaluate("void Array.from(document.querySelectorAll('.client-profile-switch button')).find(b => b.textContent === 'Infos').click()");
+  assert.equal(await evaluate("document.querySelector('.client-profile-info').open"), true);
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  assert.equal(await evaluate(`(() => {
+    const list = document.querySelector('.client-directory-list').getBoundingClientRect();
+    const profile = document.querySelector('.client-profile-panel').getBoundingClientRect();
+    const history = document.querySelector('.client-appointment-history').getBoundingClientRect();
+    const note = document.querySelector('.client-private-note').getBoundingClientRect();
+    return list.width > 0 && list.right < profile.left && history.width > 0 && history.right < note.left;
+  })()`), true, "on desktop the client list stays beside the profile and the note stays beside the history");
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate("void document.querySelector('.client-directory-profile-bar button').click()");
+  assert.equal(await evaluate("document.activeElement.textContent"), "Ouvrir la fiche");
   await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
   await waitFor("!!document.querySelector('.agenda-booking')");
   await evaluate("document.querySelector('.agenda-booking').click()");
