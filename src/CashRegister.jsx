@@ -12,10 +12,12 @@ function useCashData(query, revision = 0, api = endpoint) {
     const controller = new AbortController();
     apiRequest(`${api}?${query}`, { signal: controller.signal })
       .then((data) => { if (!controller.signal.aborted) setResponse({ query, revision, data }); })
-      .catch((cause) => { if (!controller.signal.aborted) setResponse({ query, revision, error: cause.message }); });
+      .catch((cause) => {
+        if (!controller.signal.aborted) setResponse((last) => ({ query, revision, error: cause.message, previousData: last?.data ?? last?.previousData }));
+      });
     return () => controller.abort();
   }, [api, query, revision]);
-  return response?.query === query && response.revision === revision ? response : {};
+  return response?.query === query && response.revision === revision ? response : { previousData: response?.data ?? response?.previousData };
 }
 
 function Feedback({ notice }) {
@@ -30,16 +32,46 @@ export default function CashRegister({ csrfToken, appointment = null, initialSal
   const [saleId, setSaleId] = useState(initialSaleId);
   const [recorded, setRecorded] = useState(null);
   const [activeTicket, setActiveTicket] = useState(null);
+  const [mobileMenu, setMobileMenu] = useState(!appointment && initialSaleId === null);
   const refresh = () => setRevision((value) => value + 1);
+  function canOpen(value) {
+    return !(busy && view !== value) && !(appointment && value === "tickets");
+  }
+  function open(value) {
+    if (value !== "journal") setRecorded(null);
+    setView(value);
+  }
+  const mobileGroups = [
+    ["Encaissement", [["sale", "Nouveau ticket"], ["tickets", "Tickets en attente"]]],
+    ["Transactions", [["journal", "Tickets et règlements"], ["gift-cards", "Cartes cadeaux en salon"]]],
+    ["Gestion des stocks", [["inventory", "État des stocks"]]],
+  ];
   return <>
-    <nav className="workspace-tabs" aria-label="Caisse professionnelle">
+    <nav className="workspace-tabs cash-desktop-nav" aria-label="Caisse professionnelle">
       {[["sale", "Vente"], ["tickets", "Tickets en attente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
-        <button key={value} type="button" disabled={(busy && view !== value) || (appointment && value === "tickets")} aria-current={view === value ? "page" : undefined} onClick={() => {
-          if (value !== "journal") setRecorded(null);
-          setView(value);
-        }}>{name}</button>
+        <button key={value} type="button" disabled={!canOpen(value)} aria-current={view === value ? "page" : undefined} onClick={() => open(value)}>{name}</button>
       )}
     </nav>
+    <details className="cash-mobile-nav" open={mobileMenu} onToggle={(event) => setMobileMenu(event.currentTarget.open)}>
+      <summary>Menu de caisse</summary>
+      <nav aria-label="Rubriques de caisse">
+        {mobileGroups.map(([name, links]) => <section className="cash-menu-group" key={name}>
+          <h2>{name}</h2>
+          {links.map(([value, label]) => <button key={value} type="button" disabled={!canOpen(value)} aria-current={view === value ? "page" : undefined} onClick={(event) => {
+            event.currentTarget.closest("details").querySelector("summary").focus();
+            setMobileMenu(false);
+            open(value);
+          }}>{label}</button>)}
+        </section>)}
+        <section className="cash-menu-group">
+          <h2>Paiements à venir</h2>
+          <p>Tap to Pay sur iPhone (bientôt disponible)</p>
+          <p>Terminal de paiement (bientôt disponible)</p>
+          <p>Paiement en ligne (bientôt disponible)</p>
+          <p>Achat public de cartes cadeaux (bientôt disponible)</p>
+        </section>
+      </nav>
+    </details>
     <div hidden={view !== "sale"}>
       <SaleForm key={`${appointment?.id || "regular"}:${activeTicket?.id || "new"}:${activeTicket?.revision || 0}`} csrfToken={csrfToken} revision={revision} appointment={appointment} ticket={activeTicket} onBusy={setBusy} onTicketSaved={refresh} onRecorded={(result) => {
         setSaleId(result.saleId);
@@ -124,17 +156,41 @@ function PendingTickets({ csrfToken, revision, onBusy, onChanged, onResume }) {
   </section>;
 }
 
-function CashOverview({ revision }) {
-  const [dates, setDates] = useState(() => ({ from: algerianDate(), to: algerianDate() }));
+function currentCashPeriod(unit) {
+  const today = algerianDate();
+  let from = today;
+  if (unit === "week") {
+    const monday = new Date(`${today}T12:00:00Z`);
+    monday.setUTCDate(monday.getUTCDate() - (monday.getUTCDay() + 6) % 7);
+    from = monday.toISOString().slice(0, 10);
+  } else if (unit === "month") from = `${today.slice(0, 7)}-01`;
+  else if (unit === "year") from = `${today.slice(0, 4)}-01-01`;
+  return { from, to: today };
+}
+
+export function CashOverview({ revision = 0, statistics = false }) {
+  const [dates, setDates] = useState(() => currentCashPeriod(statistics ? "month" : "day"));
   const [period, setPeriod] = useState(dates);
-  const query = new URLSearchParams({ view: "overview", ...period }).toString();
-  const { data, error } = useCashData(query, revision);
+  const [staff, setStaff] = useState("all");
+  const filters = statistics ? { ...period, staff } : period;
+  const query = new URLSearchParams({ view: statistics ? "statistics" : "overview", ...filters }).toString();
+  const { data, error, previousData } = useCashData(query, revision);
+  const team = (data ?? previousData)?.staff ?? [];
   const maximum = Math.max(1, ...(data?.days || []).map((day) => Math.abs(day.net_dzd)));
   return <section className="client-card cash-overview">
     <header className="cash-overview-header">
-      <div><h2>Synthèse de caisse</h2><p>Ventes, annulations et règlements enregistrés pour la période choisie.</p></div>
+      <div><h2>{statistics ? "Statistiques" : "Synthèse de caisse"}</h2><p>Ventes, annulations et règlements enregistrés pour la période choisie.</p></div>
       <button className="admin-nav-link" type="button" onClick={() => window.print()}>Imprimer</button>
     </header>
+    {statistics && <div className="booking-toolbar" role="group" aria-label="Période en cours">
+      {[["day", "Jour"], ["week", "Semaine"], ["month", "Mois"], ["year", "Année"]].map(([unit, label]) => (
+        <button className="admin-nav-link" key={unit} type="button" onClick={() => {
+          const next = currentCashPeriod(unit);
+          setDates(next);
+          setPeriod(next);
+        }}>{label}</button>
+      ))}
+    </div>}
     <form className="booking-toolbar" onSubmit={(event) => {
       event.preventDefault();
       const fields = new FormData(event.currentTarget);
@@ -144,6 +200,14 @@ function CashOverview({ revision }) {
       <label>Au<input name="to" type="date" required max={algerianDate()} value={dates.to} onChange={(event) => setDates({ ...dates, to: event.target.value })} /></label>
       <button className="admin-nav-link" type="submit">Afficher la période</button>
     </form>
+    {statistics && <div className="booking-toolbar">
+      <label>Équipe<select value={staff} onChange={(event) => setStaff(event.target.value)}>
+        <option value="all">Toute l’équipe</option>
+        <option value="unassigned">Non attribué</option>
+        {team.map((member) => <option key={member.id} value={member.id}>{member.name}{Number(member.is_active) ? "" : " (inactif)"}</option>)}
+      </select></label>
+      <p className="field-hint">Les ventes sont rattachées au collaborateur du rendez-vous. Une vente sans rendez-vous ou sans collaborateur est non attribuée.</p>
+    </div>}
     {error && <Feedback notice={{ kind: "error", text: error }} />}
     {!data && !error && <p role="status">Calcul de la synthèse…</p>}
     {data && <>
@@ -153,7 +217,17 @@ function CashOverview({ revision }) {
         <article><span>Net sur la période</span><strong>{priceLabel(data.summary.net_dzd)}</strong><small>Ventes moins annulations</small></article>
         <article><span>Règlements encaissés</span><strong>{priceLabel(data.summary.received_dzd)}</strong><small>Espèces, carte, virement et autres</small></article>
         <article><span>Cartes cadeaux utilisées</span><strong>{priceLabel(data.summary.gift_card_dzd)}</strong><small>Montant consommé sur les ventes</small></article>
+        {statistics && <article><span>Panier moyen brut</span><strong>{data.average_basket_dzd === null ? "—" : priceLabel(data.average_basket_dzd)}</strong><small>Ventes brutes divisées par le nombre de ventes, avant annulations</small></article>}
       </div>
+      {statistics && <section className="cash-report-section">
+        <h3>Ventes nettes par catégorie</h3>
+        <p className="field-hint">Les annulations sont déduites à la date de leur enregistrement. Les cartes cadeaux émises sont comptées dans « Divers ».</p>
+        <div className="cash-kpis">
+          <article><span>Prestations</span><strong>{priceLabel(data.breakdown.services_dzd)}</strong></article>
+          <article><span>Produits</span><strong>{priceLabel(data.breakdown.products_dzd)}</strong></article>
+          <article><span>Divers</span><strong>{priceLabel(data.breakdown.other_dzd)}</strong></article>
+        </div>
+      </section>}
       <section className="cash-report-section">
         <h3>Répartition des règlements</h3>
         {data.payments.length === 0 ? <p>Aucun règlement enregistré sur cette période.</p> :
@@ -177,6 +251,9 @@ function CashOverview({ revision }) {
             </div>
           </article>)}</div>}
       </section>
+      {statistics && <a className="admin-nav-link cash-stats-export" href={apiUrl(`${endpoint}?${new URLSearchParams({ ...filters, view: "statistics-csv" })}`)}>
+        Exporter les statistiques (CSV)
+      </a>}
     </>}
   </section>;
 }

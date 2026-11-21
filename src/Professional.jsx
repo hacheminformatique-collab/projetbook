@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import ProfessionalAgenda from "./ProfessionalAgenda.jsx";
 import AgendaCalendar from "./AgendaCalendar.jsx";
-import CashRegister from "./CashRegister.jsx";
+import CashRegister, { CashOverview } from "./CashRegister.jsx";
 import ProfessionalClients from "./ProfessionalClients.jsx";
 import AgendaDisplaySettings from "./AgendaDisplaySettings.jsx";
 import ProfessionalProfile from "./ProfessionalProfile.jsx";
@@ -14,10 +14,15 @@ import { algerianDate, apiRequest, priceLabel, serviceCategories, weekDays } fro
 import { algerianWilayas } from "./data/algerian-wilayas.js";
 
 const workspaceTabs = [["agenda", "Agenda"], ["caisse", "Caisse"], ["clients", "Clients"], ["admin", "Admin"]];
+const mobileTabs = [
+  ["agenda", "Agenda", "▦"], ["caisse", "Caisse", "▤"],
+  ["stats", "Statistiques", "↗"], ["admin", "Réglages", "⚙"],
+];
 const workspaceViews = {
   agenda: [["planning", "Planning"], ["closures", "Fermetures exceptionnelles"], ["staff-absences", "Absences collaborateurs"]],
   caisse: [["cash", "Caisse et suivi des ventes"]],
   clients: [["directory", "Fichier clients"]],
+  stats: [["stats", "Statistiques"]],
   admin: [["services", "Prestations"], ["staff", "Collaborateurs"], ["agenda-display", "Affichage agenda"], ["salon", "Salon et horaires"], ["profile", "Descriptif établissement"], ["photos", "Gestion des photos"]],
 };
 
@@ -60,6 +65,17 @@ export default function ProfessionalSpace() {
       navigate("/professionnels", { replace: true });
     } catch (cause) { setError(cause.message); }
   }
+
+  function openTab(value) {
+    if (value !== tab) {
+      setCashSaleId(null);
+      setTab(value);
+      setView(workspaceViews[value][0][0]);
+    }
+    setMobileMenu(value === "admin");
+  }
+
+  const mobileTab = tab === "clients" ? "admin" : tab;
   return (
     <div className={`pro-workspace${view === "planning" ? " pro-planning" : ""}${mobileMenu ? " pro-menu-open" : ""}`}>
       <header className="pro-topbar">
@@ -68,14 +84,14 @@ export default function ProfessionalSpace() {
         </Link>
         {configuration && <nav className="pro-tabs" aria-label="Espace professionnel">
           {workspaceTabs.map(([value, name]) => (
-            <button key={value} type="button" aria-current={tab === value ? "page" : undefined} onClick={() => {
-              if (value !== tab) {
-                setCashSaleId(null);
-                setTab(value);
-                setView(workspaceViews[value][0][0]);
-              }
-              setMobileMenu(false);
-            }}>{name}</button>
+            <button key={value} type="button" aria-current={tab === value || (tab === "stats" && value === "caisse") ? "page" : undefined} onClick={() => openTab(value)}>{name}</button>
+          ))}
+        </nav>}
+        {configuration && <nav className="pro-mobile-tabs" aria-label="Navigation professionnelle mobile">
+          {mobileTabs.map(([value, name, icon]) => (
+            <button key={value} type="button" aria-current={mobileTab === value ? "page" : undefined} onClick={() => openTab(value)}>
+              <span aria-hidden="true">{icon}</span>{name}
+            </button>
           ))}
         </nav>}
         <div className="pro-session">
@@ -89,10 +105,11 @@ export default function ProfessionalSpace() {
             <AgendaCalendar key={agendaDate.slice(0, 7)} date={agendaDate} onChange={setAgendaDate} />
             <div className="agenda-sidebar-filters" ref={setAgendaFilters} />
           </>}
-          <nav aria-label={`Rubriques ${workspaceTabs.find(([value]) => value === tab)[1]}`}>
+          <nav aria-label={`Rubriques ${workspaceTabs.find(([value]) => value === tab)?.[1] ?? "Statistiques"}`}>
             {workspaceViews[tab].map(([value, label]) => (
               <button key={value} type="button" aria-current={view === value ? "page" : undefined} onClick={() => { setView(value); setMobileMenu(false); }}>{label}</button>
             ))}
+            {tab === "admin" && <button className="pro-mobile-clients" type="button" onClick={() => openTab("clients")}>Fichier clients</button>}
           </nav>
           {Number(configuration.salon.is_public)
             ? <Link className="pro-public-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link>
@@ -118,6 +135,7 @@ export default function ProfessionalSpace() {
             {view === "closures" && <ClosureSettings csrfToken={session.csrfToken} />}
             {view === "staff-absences" && <StaffAbsences csrfToken={session.csrfToken} />}
             {view === "cash" && <CashRegister csrfToken={session.csrfToken} appointment={cashAppointment} initialSaleId={cashSaleId} onAppointmentHandled={() => setCashAppointment(null)} />}
+            {view === "stats" && <CashOverview statistics />}
             {view === "directory" && <ProfessionalClients csrfToken={session.csrfToken} />}
             {view === "services" && <ServiceSettings csrfToken={session.csrfToken} />}
             {view === "staff" && <StaffSettings csrfToken={session.csrfToken} salonHours={configuration.hours} />}

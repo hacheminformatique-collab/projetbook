@@ -528,16 +528,22 @@ function bookili_cash_period(): array
     return [$from, $to, $page];
 }
 
-function bookili_cash_event_sql(): string
+function bookili_cash_event_sql(string $staffScope = 'all'): string
 {
+    $filter = static function (string $parameter) use ($staffScope): string {
+        $appointment = 'SELECT 1 FROM appointments a WHERE a.id = cash_sales.appointment_id AND a.salon_id = cash_sales.salon_id';
+        if ($staffScope === 'unassigned') return " AND NOT EXISTS ($appointment AND a.staff_id IS NOT NULL)";
+        if ($staffScope !== 'all') return " AND EXISTS ($appointment AND a.staff_id = :$parameter)";
+        return '';
+    };
     return "(SELECT id, payment_method, CAST(total_dzd AS SIGNED) AS amount_dzd, recorded_at AS event_at,
                     'sale' AS event_kind, voided_at, NULL AS reason, collected_dzd, gift_card_applied_dzd
-             FROM cash_sales WHERE salon_id = :sale_salon AND recorded_at >= :sale_from AND recorded_at < :sale_to)
+             FROM cash_sales WHERE salon_id = :sale_salon AND recorded_at >= :sale_from AND recorded_at < :sale_to" . $filter('sale_staff') . ")
             UNION ALL
             (SELECT id, payment_method, -CAST(total_dzd AS SIGNED) AS amount_dzd, voided_at AS event_at,
                     'void' AS event_kind, voided_at, void_reason AS reason, -CAST(collected_dzd AS SIGNED) AS collected_dzd,
                     -CAST(gift_card_applied_dzd AS SIGNED) AS gift_card_applied_dzd
-             FROM cash_sales WHERE salon_id = :void_salon AND voided_at >= :void_from AND voided_at < :void_to)";
+             FROM cash_sales WHERE salon_id = :void_salon AND voided_at >= :void_from AND voided_at < :void_to" . $filter('void_staff') . ")";
 }
 
 function bookili_cash_event_params(int $salonId, DateTimeImmutable $from, DateTimeImmutable $to): array
@@ -548,11 +554,36 @@ function bookili_cash_event_params(int $salonId, DateTimeImmutable $from, DateTi
     return $params;
 }
 
-function bookili_cash_overview(PDO $pdo, int $salonId): never
+function bookili_cash_overview(PDO $pdo, int $salonId, bool $statistics = false, bool $csv = false): never
 {
     [$from, $to] = bookili_cash_period();
-    $sql = bookili_cash_event_sql();
+    $staffScope = 'all';
+    $staffLabel = 'Toute l’équipe';
+    $staff = [];
+    if ($statistics) {
+        $scope = $_GET['staff'] ?? 'all';
+        $staffScope = in_array($scope, ['all', 'unassigned'], true) ? $scope : (string) bookili_id($scope);
+        $statement = $pdo->prepare('SELECT id, name, is_active FROM staff_members WHERE salon_id = :salon ORDER BY is_active DESC, name, id');
+        $statement->execute(['salon' => $salonId]);
+        $staff = $statement->fetchAll();
+        if ($staffScope === 'unassigned') $staffLabel = 'Non attribué';
+        elseif ($staffScope !== 'all') {
+            $staffLabel = array_column($staff, 'name', 'id')[$staffScope] ?? null;
+            if ($staffLabel === null) bookili_json_response(404, ['error' => 'Collaborateur introuvable.']);
+        }
+    }
+    $sql = bookili_cash_event_sql($staffScope);
     $params = bookili_cash_event_params($salonId, $from, $to);
+    $visitParams = [
+        'salon' => $salonId, 'from' => $params['sale_from'], 'to' => $params['sale_to'],
+        'now' => bookili_now()->format('Y-m-d H:i:s'),
+    ];
+    $visitFilter = '';
+    if ($staffScope === 'unassigned') $visitFilter = ' AND staff_id IS NULL';
+    elseif ($staffScope !== 'all') {
+        $params['sale_staff'] = $params['void_staff'] = $visitParams['staff'] = (int) $staffScope;
+        $visitFilter = ' AND staff_id = :staff';
+    }
     $statement = $pdo->prepare(
         "SELECT COALESCE(SUM(CASE WHEN event_kind = 'sale' THEN amount_dzd ELSE 0 END), 0) AS gross_dzd,
                 COALESCE(SUM(CASE WHEN event_kind = 'void' THEN -amount_dzd ELSE 0 END), 0) AS void_dzd,
@@ -596,13 +627,10 @@ function bookili_cash_overview(PDO $pdo, int $salonId): never
     }
     $statement = $pdo->prepare(
         "SELECT DATE(ends_at) AS day, COUNT(*) AS visit_count FROM appointments
-         WHERE salon_id = :salon AND status = 'confirmed' AND ends_at >= :from AND ends_at < :to AND ends_at <= :now
+         WHERE salon_id = :salon AND status = 'confirmed' AND ends_at >= :from AND ends_at < :to AND ends_at <= :now$visitFilter
          GROUP BY DATE(ends_at)"
     );
-    $statement->execute([
-        'salon' => $salonId, 'from' => $from->format('Y-m-d 00:00:00'),
-        'to' => $to->modify('+1 day')->format('Y-m-d 00:00:00'), 'now' => bookili_now()->format('Y-m-d H:i:s'),
-    ]);
+    $statement->execute($visitParams);
     foreach ($statement->fetchAll() as $row) {
         if (!isset($days[$row['day']])) {
             $days[$row['day']] = ['day' => $row['day'], 'gross_dzd' => 0, 'void_dzd' => 0, 'net_dzd' => 0, 'sale_count' => 0, 'void_count' => 0];
@@ -610,10 +638,67 @@ function bookili_cash_overview(PDO $pdo, int $salonId): never
         $days[$row['day']]['visit_count'] = (int) $row['visit_count'];
     }
     krsort($days);
-    bookili_json_response(200, [
+    $report = [
         'from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d'),
         'summary' => $summary, 'payments' => $payments, 'days' => array_values($days),
-    ]);
+    ];
+    if ($statistics) {
+        $statement = $pdo->prepare(
+            "SELECT line.item_kind, SUM(CASE WHEN journal.event_kind = 'void' THEN -1 ELSE 1 END
+                    * CAST(line.quantity AS SIGNED) * CAST(line.unit_price_dzd AS SIGNED)) AS net_dzd
+             FROM ($sql) AS journal JOIN cash_sale_lines line ON line.sale_id = journal.id
+             GROUP BY line.item_kind"
+        );
+        $statement->execute($params);
+        $net = array_map('intval', array_column($statement->fetchAll(), 'net_dzd', 'item_kind'));
+        $report['breakdown'] = [
+            'services_dzd' => $net['service'] ?? 0,
+            'products_dzd' => $net['product'] ?? 0,
+            'other_dzd' => $net['gift_card'] ?? 0,
+        ];
+        $report['average_basket_dzd'] = $summary['sale_count'] > 0 ? round($summary['gross_dzd'] / $summary['sale_count'], 2) : null;
+        $report['staff'] = $staff;
+        $report['staffLabel'] = $staffLabel;
+    }
+    if ($csv) bookili_cash_statistics_csv($report);
+    bookili_json_response(200, $report);
+}
+
+function bookili_cash_statistics_csv(array $report): never
+{
+    $output = fopen('php://output', 'wb');
+    if ($output === false) throw new RuntimeException('Cannot open statistics CSV output.');
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="bookili-statistiques.csv"');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+    fwrite($output, "\xEF\xBB\xBF");
+    $write = static function (array $row) use ($output): void {
+        fputcsv($output, $row, ';', '"', '');
+    };
+    $write(['Du', 'Au', 'Équipe']);
+    $write([$report['from'], $report['to'], bookili_csv_text($report['staffLabel'])]);
+    $write(['Indicateur', 'Valeur']);
+    foreach ([
+        'Ventes brutes (DA)' => 'gross_dzd', 'Annulations (DA)' => 'void_dzd', 'Net sur la période (DA)' => 'net_dzd',
+        'Règlements encaissés nets (DA)' => 'received_dzd', 'Cartes cadeaux utilisées nettes (DA)' => 'gift_card_dzd',
+        'Ventes' => 'sale_count', 'Annulations' => 'void_count',
+    ] as $label => $key) $write([$label, $report['summary'][$key]]);
+    $average = $report['average_basket_dzd'];
+    $write(['Panier moyen brut (DA)', $average === null ? '' : number_format($average, 2, ',', '')]);
+    $write(['Prestations nettes (DA)', $report['breakdown']['services_dzd']]);
+    $write(['Produits nets (DA)', $report['breakdown']['products_dzd']]);
+    $write(['Divers nets, dont cartes cadeaux émises (DA)', $report['breakdown']['other_dzd']]);
+    $write(['Mode de règlement', 'Net (DA)', 'Encaissé (DA)', 'Carte cadeau (DA)', 'Ventes']);
+    foreach ($report['payments'] as $row) {
+        $write([BOOKILI_CASH_METHODS[$row['payment_method']], $row['net_dzd'], $row['received_dzd'], $row['gift_card_dzd'], $row['sale_count']]);
+    }
+    $write(['Jour (Algérie)', 'RDV confirmés passés', 'Ventes', 'Annulations', 'Net (DA)']);
+    foreach ($report['days'] as $row) {
+        $write([$row['day'], $row['visit_count'], $row['sale_count'], $row['void_count'], $row['net_dzd']]);
+    }
+    fclose($output);
+    exit;
 }
 
 function bookili_cash_journal(PDO $pdo, int $salonId, bool $csv): never
@@ -671,6 +756,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === 'professional-cas
         if ($view === 'tickets') bookili_cash_tickets($pdo, $salonId);
         if ($view === 'ticket') bookili_json_response(200, bookili_cash_ticket($pdo, $salonId, bookili_id($_GET['ticketId'] ?? null)));
         if ($view === 'overview') bookili_cash_overview($pdo, $salonId);
+        if ($view === 'statistics' || $view === 'statistics-csv') bookili_cash_overview($pdo, $salonId, true, $view === 'statistics-csv');
         if ($view === 'cards') {
             $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;
             if ($page > 10000) bookili_json_response(422, ['error' => 'Page invalide.']);

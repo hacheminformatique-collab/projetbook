@@ -333,6 +333,14 @@ try {
           }
           appointmentSaleId = 21;
           data = { saleId: appointmentSaleId, duplicate: true };
+        } else if (["overview", "statistics"].includes(url.searchParams.get("view"))) {
+          data = { summary: { gross_dzd: 1000, net_dzd: 1000, received_dzd: 1000, void_dzd: 0, gift_card_dzd: 0, sale_count: 1, void_count: 0 }, payments: [], days: [] };
+          if (url.searchParams.get("view") === "statistics") {
+            const assigned = url.searchParams.get("staff") !== "unassigned";
+            data.staff = [{ id: 1, name: "Sonia", is_active: 1 }];
+            data.average_basket_dzd = assigned ? 1000 : null;
+            data.breakdown = { services_dzd: assigned ? 1000 : 0, products_dzd: 0, other_dzd: 0 };
+          }
         } else if (url.searchParams.get("view") === "catalog") {
           data = { items: [], hasMore: false };
         } else if (url.searchParams.get("view") === "sale") {
@@ -705,7 +713,33 @@ try {
   await waitFor("document.querySelectorAll('.agenda-day-column').length === 1");
   assert.equal(await evaluate("document.querySelector('.agenda-scroll').scrollWidth <= document.querySelector('.agenda-scroll').clientWidth"), true);
   assert.equal(await evaluate("document.querySelector('.agenda-scroll').getBoundingClientRect().height > innerHeight * .65"), true);
-  assert.equal(await evaluate("getComputedStyle(document.querySelector('.pro-tabs')).position"), "fixed");
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.pro-mobile-tabs')).position"), "fixed");
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.pro-mobile-tabs button'), b => b.lastChild.textContent)"), ["Agenda", "Caisse", "Statistiques", "Réglages"]);
+  await evaluate("document.querySelectorAll('.pro-mobile-tabs button')[2].click()");
+  await waitFor("document.querySelector('.cash-overview')?.textContent.includes('Ventes brutes')");
+  assert.equal(await evaluate("document.querySelector('.cash-overview input[name=from]').value"), "2026-11-01");
+  for (const [label, from] of [["Jour", "2026-11-19"], ["Semaine", "2026-11-16"], ["Année", "2026-01-01"], ["Mois", "2026-11-01"]]) {
+    await evaluate(`Array.from(document.querySelectorAll('[aria-label="Période en cours"] button')).find(button => button.textContent === ${JSON.stringify(label)}).click()`);
+    await waitFor(`(() => {
+      const link = document.querySelector('.cash-stats-export');
+      if (!link) return false;
+      const params = new URL(link.href).searchParams;
+      return params.get('view') === 'statistics-csv' && params.get('from') === ${JSON.stringify(from)} && params.get('to') === '2026-11-19';
+    })()`);
+    assert.equal(await evaluate("document.querySelector('.cash-overview input[name=from]').value"), from);
+  }
+  await evaluate(`(() => {
+    const select = document.querySelector('.cash-overview select');
+    select.value = 'unassigned';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelector('.cash-stats-export')?.href.includes('staff=unassigned')");
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('.cash-kpis article')).find(card => card.textContent.includes('Panier moyen brut')).querySelector('strong').textContent`), "—");
+  assert.equal(await evaluate("document.querySelector('.cash-overview select option[value=\"1\"]').textContent"), "Sonia");
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
+  await evaluate("document.querySelector('.pro-mobile-tabs button').click()");
+  await waitFor("document.querySelectorAll('.agenda-day-column').length === 1");
+  assert.equal(await evaluate("document.querySelector('[aria-label=\"Période en cours\"]')"), null);
   assert.equal(await evaluate("!!document.querySelector('.agenda-add-button') && !document.querySelector('.agenda-toolbar-add')"), true);
   await evaluate("(() => { const select = document.querySelector('[aria-label=\"Collaborateur affiché\"]'); select.value = '2'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
   await waitFor("!!document.querySelector('.agenda-day-column-absent')");
@@ -728,7 +762,9 @@ try {
   await waitFor("!!document.querySelector('.agenda-create')");
   assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);
   await key("Escape");
-  await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Clients').click()");
+  await evaluate("document.querySelectorAll('.pro-mobile-tabs button')[3].click()");
+  await waitFor("!!document.querySelector('.pro-mobile-clients')?.getClientRects().length");
+  await evaluate("document.querySelector('.pro-mobile-clients').click()");
   await waitFor("!!document.querySelector('.client-directory-row')");
   await evaluate("Array.from(document.querySelectorAll('.client-directory-actions button')).find(b => b.textContent === 'Ouvrir la fiche').click()");
   await waitFor("!!document.querySelector('.client-profile-panel textarea')");
@@ -825,6 +861,11 @@ try {
   await waitFor("!!document.querySelector('.agenda-booking')");
   await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Caisse').click()");
   await waitFor("document.querySelector('.workspace-tabs [aria-current=page]')?.textContent === 'Vente'");
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await waitFor("!!document.querySelector('.cash-mobile-nav[open] nav')?.getClientRects().length");
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('.cash-mobile-nav p')).filter(p => p.textContent.endsWith('(bientôt disponible)') && !p.querySelector('a,button')).length"), 4);
+  await evaluate("Array.from(document.querySelectorAll('.cash-mobile-nav button')).find(b => b.textContent === 'Tickets et règlements').click()");
+  await waitFor("!!document.querySelector('.cash-journal') && !document.querySelector('.cash-mobile-nav').open");
   assert.equal(await evaluate("!!document.querySelector('.appointment-card')"), false, "normal cash navigation must not reopen an old sale");
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 

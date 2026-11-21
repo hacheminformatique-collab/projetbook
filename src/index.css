@@ -683,6 +683,7 @@ button:disabled { cursor: wait; opacity: .6; }
   .site-header, .faq-icon { transition: none; }
 }
 .pro-session .pro-mobile-menu, .agenda-mobile-heading { display: none; }
+.pro-mobile-tabs, .pro-sidebar .pro-mobile-clients, .cash-mobile-nav { display: none; }
 @media (width > 760px) {
   .pro-planning { display: flex; flex-direction: column; height: 100dvh; }
   .pro-planning .pro-topbar { flex: none; }
@@ -725,9 +726,21 @@ button:disabled { cursor: wait; opacity: .6; }
 }
 @media (max-width: 760px) {
   .pro-workspace { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
-  .pro-tabs { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; min-height: 60px; padding-bottom: env(safe-area-inset-bottom); background: #fff; border-top: 1px solid #e1e5e3; }
-  .pro-tabs button { border-bottom: 0; border-top: 3px solid transparent; }
-  .pro-tabs button[aria-current] { border-top-color: var(--rose-ink); }
+  .pro-tabs, .cash-desktop-nav { display: none; }
+  .pro-mobile-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); position: fixed; inset: auto 0 0; z-index: 20; min-height: 60px; padding-bottom: env(safe-area-inset-bottom); background: #fff; border-top: 1px solid #e1e5e3; }
+  .pro-mobile-tabs button { display: grid; place-content: center; gap: 2px; padding: 4px 0; border: 0; border-top: 3px solid transparent; background: transparent; color: #3d4943; text-align: center; font: inherit; font-size: 12px; cursor: pointer; }
+  .pro-mobile-tabs button span { font-size: 19px; line-height: 1; }
+  .pro-mobile-tabs button[aria-current] { border-top-color: var(--pro-accent); color: var(--pro-accent); font-weight: 700; }
+  .pro-sidebar .pro-mobile-clients { display: inline-block; }
+  .cash-mobile-nav { display: block; margin-bottom: 14px; }
+  .cash-mobile-nav summary { padding: 12px; border: 1px solid #e1e5e3; border-radius: 8px; background: #fff; font-weight: 700; cursor: pointer; }
+  .cash-mobile-nav nav { display: grid; gap: 10px; margin-top: 10px; }
+  .cash-menu-group { border: 1px solid #e1e5e3; border-radius: 8px; background: #fff; }
+  .cash-menu-group h2 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #e1e5e3; font-size: 16px; }
+  .cash-menu-group button { display: block; width: 100%; min-height: 44px; padding: 8px 14px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+  .cash-menu-group button[aria-current] { background: var(--rose-soft); color: var(--rose-ink); }
+  .cash-menu-group button:disabled { opacity: .55; cursor: not-allowed; }
+  .cash-menu-group p { margin: 0; padding: 8px 14px; color: #535b63; }
   .pro-session .pro-mobile-menu { display: inline-block; }
   .pro-planning { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .pro-planning .pro-topbar { flex: none; }

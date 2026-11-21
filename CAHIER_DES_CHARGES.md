@@ -10,15 +10,18 @@ jours ouvrés d’intégration et de tests locaux, hors dépendances externes.
 | Lot | Exigences et critères de validation | Estimation |
 | --- | --- | ---: |
 | Navigation | Barre fixe **Agenda / Caisse / Statistiques / Réglages** utilisable au clavier et adaptée à la zone de sécurité de l’écran. Fichier clients accessible depuis Réglages. Caisse organisée en Encaissement, Transactions et Stocks ; conserver les parcours depuis un rendez-vous, les tickets en cours et le bandeau PC. | 1–2 j |
-| Agenda | Panneau latéral avec **Jour / Semaine / Mois / Année** et sélection de plusieurs collaborateurs ou de toute l’équipe. Un changement de vue conserve la date de référence ; une journée reste accessible depuis les vues de synthèse. Vérifier les pauses, absences, créneaux et changements de date en heure d’Algérie. | 2–3 j |
-| Statistiques | Écran dédié : période, filtres d’équipe, panier moyen, ventilation prestations / produits / divers et export dont le périmètre correspond à l’écran. Afficher en DA et distinguer chiffre d’affaires, encaissements et annulations. Ne pas assimiler un rendez-vous passé à une visite effective. Ne pas afficher HT, TVA ou TTC tant que leur calcul et leur définition ne sont pas validés. | 2–4 j |
+| Agenda | Conserver le planning quotidien sur mobile et les vues existantes sur PC. Ajouter un panneau latéral de sélection de plusieurs collaborateurs ou de toute l’équipe. Vérifier les pauses, absences, créneaux et changements de date en heure d’Algérie. | À réestimer |
+| Statistiques | Les raccourcis **Jour / Semaine / Mois / Année** sont des filtres de statistiques, pas des vues de rendez-vous. Ils couvrent la période en cours jusqu’à aujourd’hui, en heure d’Algérie (semaine à partir du lundi). Prévoir aussi une période personnalisée, les filtres d’équipe, le panier moyen, la ventilation prestations / produits / divers et un export dont le périmètre correspond à l’écran. Afficher en DA et distinguer chiffre d’affaires, encaissements et annulations. Ne pas assimiler un rendez-vous passé à une visite effective. Ne pas afficher HT, TVA ou TTC tant que leur calcul et leur définition ne sont pas validés. | 2–4 j |
 
 Total prioritaire initial : **5–9 jours**, hors cadrage fiscal et services externes.
 
-Ordre de réalisation : navigation et regroupement de la caisse, nouvelles
-vues de l’agenda, puis statistiques détaillées. La synthèse de caisse
-existante peut servir de première version de l’écran Statistiques ; elle ne
-remplace pas les filtres, les indicateurs ni l’export demandés.
+L’écran Statistiques et son CSV utilisent la même période et le même filtre
+d’équipe. Une vente est attribuée d’après le collaborateur du rendez-vous
+associé, jamais d’après le compte qui l’a encaissée ; sans collaborateur elle
+est comptée dans « Non attribué ». Le panier moyen brut est calculé avant
+annulations. La ventilation nette déduit les annulations à leur date et
+classe notamment les cartes cadeaux émises dans « Divers ». Il s’agit de
+ventes de caisse, pas d’un chiffre d’affaires fiscal.
 
 ## Lots suivants
 

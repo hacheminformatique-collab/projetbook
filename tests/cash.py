@@ -2,12 +2,13 @@
 """Use a fresh disposable installation, with multiple PHP workers."""
 import concurrent.futures
 import csv
+import datetime
 import io
 import os
 import threading
 import uuid
 
-from bookings import Client, PASSWORD, SUFFIX, account_tests, expect, new_client, new_professional
+from bookings import Client, PASSWORD, SUFFIX, account_tests, expect, new_client, new_professional, salon_payload
 from inventory import PRODUCTS, history, move, product_payload
 
 ENDPOINT = "professional-cash.php"
@@ -21,7 +22,7 @@ def main():
         "setupToken": os.environ["BOOKILI_TEST_SETUP_TOKEN"], "email": email, "password": PASSWORD,
     }), 201)
     assert admin.login(email, PASSWORD) == 200
-    professional, _ = new_professional(admin, 1)
+    professional, salon = new_professional(admin, 1)
     other, _ = new_professional(admin, 2)
     customer = new_client(1)
     expect(guest.request(ENDPOINT), 401)
@@ -63,6 +64,12 @@ def main():
     }
     assert overview["payments"][0]["payment_method"] == "cash" and overview["payments"][0]["received_dzd"] == 2900
     assert overview["days"][0]["day"] == overview["to"] and overview["days"][0]["sale_count"] == 1
+    stats = ENDPOINT + "?view=statistics"
+    report = expect(professional.request(stats + "&staff=unassigned"), 200)
+    assert report["breakdown"] == {"services_dzd": 500, "products_dzd": 2400, "other_dzd": 0}
+    assert report["average_basket_dzd"] == 2900
+    expect(customer.request(stats), 403)
+    expect(professional.request(stats + "&staff[]=1"), 422)
     isolated = expect(other.request(ENDPOINT + "?view=overview"), 200)
     assert isolated["summary"]["gross_dzd"] == 0 and isolated["payments"] == [] and isolated["days"] == []
     void = {"action": "void", "saleId": sale_id, "reason": "=Produit rendu"}
@@ -180,6 +187,39 @@ def main():
     expect(professional.request(ENDPOINT, refund), 200)
     assert expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"] == 2000
     assert expect(professional.request(ENDPOINT + "?view=overview"), 200)["summary"]["gift_card_dzd"] == 0
+    report = expect(professional.request(stats), 200)
+    assert report["breakdown"]["other_dzd"] == 2000
+
+    expect(professional.request("professional-salon.php", salon_payload(salon)), 200)
+    staff = expect(professional.request("professional-staff.php", {
+        "action": "save", "name": "Équipe test", "isActive": True,
+    }), 200)["staff"][0]["id"]
+    tomorrow = datetime.date.fromisoformat(report["to"]) + datetime.timedelta(days=1)
+    booked = expect(professional.request("appointments.php", {
+        "action": "book", "staffId": int(staff), "serviceIds": [service], "date": tomorrow.isoformat(),
+        "time": "10:00", "expectedPrice": 500, "expectedDuration": 30,
+        "newClient": {
+            "firstName": "Client", "lastName": "Statistiques", "email": f"stats-{SUFFIX}@example.test",
+            "phone": "0550123456", "dateOfBirth": "1994-05-06",
+        },
+    }), 201)
+    assigned_sale = expect(professional.request(ENDPOINT, {
+        **sale, "requestKey": str(uuid.uuid4()), "lines": [service_line], "appointmentId": booked["appointmentId"],
+    }), 201)["saleId"]
+    filtered = expect(professional.request(f"{stats}&staff={staff}"), 200)
+    assert filtered["summary"]["sale_count"] == 1
+    assert filtered["breakdown"] == {"services_dzd": 500, "products_dzd": 0, "other_dzd": 0}
+    assert expect(professional.request(stats + "&staff=unassigned"), 200)["summary"] == report["summary"]
+    expect(other.request(f"{stats}&staff={staff}"), 404)
+    expect(professional.request(ENDPOINT, {"action": "void", "saleId": assigned_sale, "reason": "Correction"}), 200)
+    filtered = expect(professional.request(f"{stats}&staff={staff}"), 200)
+    assert filtered["summary"]["void_count"] == 1 and filtered["breakdown"]["services_dzd"] == 0
+    assert filtered["average_basket_dzd"] == 500
+    with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=statistics-csv&staff={staff}") as response:
+        rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
+    assert rows[1] == [filtered["from"], filtered["to"], "Équipe test"]
+    assert ["Prestations nettes (DA)", "0"] in rows
+    assert ["Panier moyen brut (DA)", "500,00"] in rows
     print("Cash checks passed: pending tickets, idempotency, revisions, checkout, stock, journal, gift cards and concurrency.")
 
 
