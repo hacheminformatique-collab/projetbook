@@ -181,6 +181,7 @@ export function CashOverview({ revision = 0, statistics = false }) {
   const { data, error, previousData } = useCashData(query, revision);
   const team = (data ?? previousData)?.staff ?? [];
   const maximum = Math.max(1, ...(data?.days || []).map((day) => Math.abs(day.net_dzd)));
+  const percent = (value) => value == null ? "—" : `${value.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %`;
   return <section className="client-card cash-overview">
     <header className="cash-overview-header">
       <div><h2>{statistics ? "Statistiques" : "Synthèse de caisse"}</h2><p>Ventes, annulations et règlements enregistrés pour la période choisie.</p></div>
@@ -222,8 +223,16 @@ export function CashOverview({ revision = 0, statistics = false }) {
         <article><span>Règlements encaissés</span><strong>{priceLabel(data.summary.received_dzd)}</strong><small>Espèces, carte, virement et autres</small></article>
         <article><span>Cartes cadeaux utilisées</span><strong>{priceLabel(data.summary.gift_card_dzd)}</strong><small>Montant consommé sur les ventes</small></article>
         {statistics && <article><span>Panier moyen brut</span><strong>{data.average_basket_dzd === null ? "—" : priceLabel(data.average_basket_dzd)}</strong><small>Ventes brutes divisées par le nombre de ventes, avant annulations</small></article>}
-        {statistics && <article><span>Rendez-vous non présentés</span><strong>{data.no_show_count}</strong><small>Marquages explicites, à la date du rendez-vous</small></article>}
       </div>
+      {statistics && <section className="cash-report-section">
+        <h3>Rendez-vous et retour des clients</h3>
+        <div className="cash-kpis">
+          <article><span>Taux de non-présentation</span><strong>{percent(data.no_show_rate)}</strong>
+            <small>{data.no_show_count} marqué(s) « Non présenté » sur {data.ended_count} rendez-vous terminés et non annulés. Un rendez-vous non marqué ne prouve pas une présence.</small></article>
+          <article><span>Taux de retour des clients</span><strong>{percent(data.returns.rate)}</strong>
+            <small>{data.returns.returning_count} sur {data.returns.client_count} clients distincts. Seuls les rendez-vous terminés avec une vente non annulée comptent. Le rendez-vous précédent peut être en dehors de la période ou avec un autre collaborateur du salon.</small></article>
+        </div>
+      </section>}
       {statistics && <section className="cash-report-section">
         <h3>Ventes nettes par catégorie</h3>
         <p className="field-hint">Les annulations sont déduites à la date de leur enregistrement. Les cartes cadeaux émises sont comptées dans « Divers ».</p>

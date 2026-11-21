@@ -660,11 +660,39 @@ function bookili_cash_overview(PDO $pdo, int $salonId, bool $statistics = false,
         $report['staff'] = $staff;
         $report['staffLabel'] = $staffLabel;
         $statement = $pdo->prepare(
-            "SELECT COUNT(*) FROM appointments WHERE salon_id = :salon AND status = 'no_show'
+            "SELECT COUNT(*) AS ended_count, COUNT(CASE WHEN status = 'no_show' THEN 1 END) AS no_show_count
+             FROM appointments WHERE salon_id = :salon AND status IN ('confirmed', 'no_show')
              AND starts_at >= :from AND starts_at < :to AND ends_at <= :now$visitFilter"
         );
         $statement->execute($visitParams);
-        $report['no_show_count'] = (int) $statement->fetchColumn();
+        $attendance = array_map('intval', $statement->fetch());
+        $report['no_show_count'] = $attendance['no_show_count'];
+        $report['ended_count'] = $attendance['ended_count'];
+        $report['no_show_rate'] = $attendance['ended_count'] > 0
+            ? round(100 * $attendance['no_show_count'] / $attendance['ended_count'], 2) : null;
+
+        $currentStaff = str_replace('staff_id', 'b.staff_id', $visitFilter);
+        $statement = $pdo->prepare(
+            "SELECT COUNT(*) AS client_count, COALESCE(SUM(returned), 0) AS returning_count FROM (
+                SELECT b.client_id, MAX(EXISTS (
+                    SELECT 1 FROM appointments previous
+                    JOIN cash_sales previous_sale ON previous_sale.appointment_id = previous.id
+                        AND previous_sale.salon_id = previous.salon_id AND previous_sale.voided_at IS NULL
+                    WHERE previous.client_id = b.client_id AND previous.salon_id = b.salon_id
+                        AND previous.status = 'confirmed' AND previous.ends_at <= b.starts_at
+                        AND previous.starts_at < b.starts_at
+                )) AS returned
+                FROM appointments b
+                JOIN cash_sales sale ON sale.appointment_id = b.id AND sale.salon_id = b.salon_id AND sale.voided_at IS NULL
+                WHERE b.salon_id = :salon AND b.status = 'confirmed'
+                    AND b.starts_at >= :from AND b.starts_at < :to AND b.ends_at <= :now$currentStaff
+                GROUP BY b.client_id
+             ) AS clients"
+        );
+        $statement->execute($visitParams);
+        $returns = array_map('intval', $statement->fetch());
+        $report['returns'] = $returns + ['rate' => $returns['client_count'] > 0
+            ? round(100 * $returns['returning_count'] / $returns['client_count'], 2) : null];
     }
     if ($csv) bookili_cash_statistics_csv($report);
     bookili_json_response(200, $report);
@@ -693,6 +721,12 @@ function bookili_cash_statistics_csv(array $report): never
     $average = $report['average_basket_dzd'];
     $write(['Panier moyen brut (DA)', $average === null ? '' : number_format($average, 2, ',', '')]);
     $write(['Rendez-vous non présentés', $report['no_show_count']]);
+    $percent = static fn(?float $value): string => $value === null ? '' : number_format($value, 2, ',', '') . ' %';
+    $write(['Rendez-vous terminés non annulés', $report['ended_count']]);
+    $write(['Taux de non-présentation', $percent($report['no_show_rate'])]);
+    $write(['Clients avec rendez-vous terminé et vente non annulée', $report['returns']['client_count']]);
+    $write(['Clients de retour', $report['returns']['returning_count']]);
+    $write(['Taux de retour des clients', $percent($report['returns']['rate'])]);
     $write(['Prestations nettes (DA)', $report['breakdown']['services_dzd']]);
     $write(['Produits nets (DA)', $report['breakdown']['products_dzd']]);
     $write(['Divers nets, dont cartes cadeaux émises (DA)', $report['breakdown']['other_dzd']]);

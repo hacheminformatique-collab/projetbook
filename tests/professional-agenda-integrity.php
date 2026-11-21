@@ -9,7 +9,7 @@ require_once __DIR__ . '/../public/api/booking.php';
 
 $pdo = bookili_database();
 $appointment = $pdo->query(
-    "SELECT b.id, b.starts_at, b.ends_at, b.price_dzd, b.notification_version, b.staff_id, a.email
+    "SELECT b.id, b.starts_at, b.ends_at, b.price_dzd, b.notification_version, b.staff_id, a.email, a.id AS actor_id
      FROM appointments b
      INNER JOIN salons s ON s.id = b.salon_id
      INNER JOIN professional_profiles p ON p.id = s.professional_profile_id
@@ -104,6 +104,8 @@ $changeDate = $pdo->prepare('UPDATE appointments SET starts_at = :start, ends_at
 $countNotifications = $pdo->prepare('SELECT COUNT(*) FROM notification_outbox WHERE appointment_id = :id');
 $countNotifications->execute(['id' => $id]);
 $notifications = (int) $countNotifications->fetchColumn();
+$priorId = null;
+$fixtureSales = [];
 try {
     $changeDate->execute(['start' => "$date 09:00:00", 'end' => "$date 10:15:00", 'id' => $id]);
     [$status] = $request('appointments.php', $mark, $token);
@@ -117,6 +119,8 @@ try {
     $period = "&from=$date&to=$date&staff=$scope";
     [$status, $report] = $request('professional-cash.php?view=statistics' . $period);
     $check($status === 200 && $report['no_show_count'] === 1, 'The correct appointment date and staff did not include the mark.');
+    $check($report['ended_count'] === 1 && $report['no_show_rate'] === 100, 'Incorrect denominator for non-presentation.');
+    $check($report['returns'] === ['client_count' => 0, 'returning_count' => 0, 'rate' => null], 'An appointment without a sale was counted as a visit.');
     [$status, $csv] = $request('professional-cash.php?view=statistics-csv' . $period, null, '', true);
     $check($status === 200 && str_contains($csv, '"Rendez-vous non présentés";1'), 'The CSV does not include the count.');
     $today = bookili_now()->format('Y-m-d');
@@ -132,8 +136,40 @@ try {
     $check($status === 200 && $report['no_show_count'] === 0, 'The corrected mark was kept in the report.');
     $countNotifications->execute(['id' => $id]);
     $check((int) $countNotifications->fetchColumn() === $notifications, 'Marking the appointment or correcting it queued a notification.');
-    echo "Non-presentation, correction, checkout and statistics checks passed.\n";
+    $saleFixture = $pdo->prepare(
+        "INSERT INTO cash_sales (salon_id, appointment_id, actor_id, request_key, request_hash, payment_method,
+           total_dzd, collected_dzd, recorded_at)
+         SELECT salon_id, id, :actor, :request_key, :hash, 'cash', price_dzd, price_dzd, ends_at
+         FROM appointments WHERE id = :id"
+    );
+    $recordFixture = static function (int $id) use ($pdo, $saleFixture, $appointment): int {
+        $saleFixture->execute(['actor' => $appointment['actor_id'], 'id' => $id,
+            'request_key' => bin2hex(random_bytes(16)), 'hash' => str_repeat('0', 64)]);
+        return (int) $pdo->lastInsertId();
+    };
+    $fixtureSales[] = $recordFixture($id);
+    [$status, $report] = $request('professional-cash.php?view=statistics' . $period);
+    $check($status === 200 && $report['returns'] === ['client_count' => 1, 'returning_count' => 0, 'rate' => 0], 'First paid visit should not count as a return.');
+    $previous = $past->modify('-1 day')->format('Y-m-d');
+    $pdo->prepare(
+        'INSERT INTO appointments (salon_id, client_id, service_id, service_name, price_dzd, starts_at, ends_at)
+         SELECT salon_id, client_id, service_id, service_name, price_dzd, :start, :end FROM appointments WHERE id = :id'
+    )->execute(['id' => $id, 'start' => "$previous 09:00:00", 'end' => "$previous 10:15:00"]);
+    $priorId = (int) $pdo->lastInsertId();
+    $priorSale = $recordFixture($priorId);
+    $fixtureSales[] = $priorSale;
+    [$status, $report] = $request('professional-cash.php?view=statistics' . $period);
+    $check($status === 200 && $report['returns'] === ['client_count' => 1, 'returning_count' => 1, 'rate' => 100], 'Prior sale outside the selected period was not counted.');
+    [$status, $csv] = $request('professional-cash.php?view=statistics-csv' . $period, null, '', true);
+    $check($status === 200 && str_contains($csv, '"Taux de retour des clients";"100,00 %"'), 'Return rate is missing from the CSV.');
+    $pdo->prepare('UPDATE cash_sales SET voided_at = recorded_at WHERE id = :id')->execute(['id' => $priorSale]);
+    [$status, $report] = $request('professional-cash.php?view=statistics' . $period);
+    $check($status === 200 && $report['returns']['returning_count'] === 0, 'A voided previous visit was counted.');
+    echo "Non-presentation, checkout, return rates and statistics CSV checks passed.\n";
 } finally {
+    $deleteSale = $pdo->prepare('DELETE FROM cash_sales WHERE id = :id');
+    foreach ($fixtureSales as $saleId) $deleteSale->execute(['id' => $saleId]);
+    if ($priorId !== null) $pdo->prepare('DELETE FROM appointments WHERE id = :id')->execute(['id' => $priorId]);
     $pdo->prepare("UPDATE appointments SET starts_at = :start, ends_at = :end, status = 'confirmed', no_show_at = NULL, notification_version = :version WHERE id = :id")
         ->execute(['start' => $appointment['starts_at'], 'end' => $appointment['ends_at'], 'version' => $appointment['notification_version'], 'id' => $id]);
     curl_close($curl);

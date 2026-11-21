@@ -412,6 +412,9 @@ try {
             data.staff = [{ id: 1, name: "Sonia", is_active: 1 }];
             data.average_basket_dzd = assigned ? 1000 : null;
             data.no_show_count = assigned ? 1 : 2;
+            data.ended_count = 8;
+            data.no_show_rate = assigned ? 12.5 : 25;
+            data.returns = assigned ? { rate: 50, returning_count: 1, client_count: 2 } : { rate: null, returning_count: 0, client_count: 0 };
             data.breakdown = { services_dzd: assigned ? 1000 : 0, products_dzd: 0, other_dzd: 0 };
           }
         } else if (url.searchParams.get("view") === "catalog") {
@@ -808,6 +811,9 @@ try {
   })()`);
   await waitFor("document.querySelector('.cash-stats-export')?.href.includes('staff=unassigned')");
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.cash-kpis article')).find(card => card.textContent.includes('Panier moyen brut')).querySelector('strong').textContent`), "—");
+  const metric = (label) => evaluate(`Array.from(document.querySelectorAll('.cash-kpis article')).find(card => card.textContent.includes(${JSON.stringify(label)})).querySelector('strong').textContent`);
+  assert.equal(await metric("Taux de non-présentation"), "25 %");
+  assert.equal(await metric("Taux de retour des clients"), "—");
   assert.equal(await evaluate("document.querySelector('.cash-overview select option[value=\"1\"]').textContent"), "Sonia");
   assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
   await evaluate("document.querySelector('.pro-mobile-tabs button').click()");

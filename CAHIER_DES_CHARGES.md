@@ -97,6 +97,15 @@ les statistiques et le CSV, à la date du rendez-vous et par collaborateur.
 Les rendez-vous passés non marqués ne sont pas automatiquement classés.
 Migration : `033_appointment_no_show.sql`.
 
+Publiés, sans migration supplémentaire : le taux de non-présentation (absences
+marquées rapportées aux rendez-vous terminés non annulés) et le taux de
+retour des clients (clients distincts ayant un rendez-vous terminé avec vente
+non annulée et un précédent rendez-vous de même nature dans le salon, divisés
+par tous les clients distincts avec rendez-vous terminé et vente non annulée
+sur la période). Les deux indicateurs et leurs effectifs suivent les filtres
+de période et d’équipe et figurent dans le CSV ; l’historique d’un client
+peut précéder la période et ne dépend pas du collaborateur filtré.
+
 ## Paiements à garder en attente
 
 **Tap to Pay sur iPhone**, **terminal de paiement**, **paiement en ligne** et
