@@ -28,17 +28,22 @@ export default function CashRegister({ csrfToken, appointment = null, initialSal
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [saleId, setSaleId] = useState(initialSaleId);
+  const [recorded, setRecorded] = useState(null);
   const [activeTicket, setActiveTicket] = useState(null);
   const refresh = () => setRevision((value) => value + 1);
   return <>
     <nav className="workspace-tabs" aria-label="Caisse professionnelle">
       {[["sale", "Vente"], ["tickets", "Tickets en attente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
-        <button key={value} type="button" disabled={(busy && view !== value) || (appointment && value === "tickets")} aria-current={view === value ? "page" : undefined} onClick={() => setView(value)}>{name}</button>
+        <button key={value} type="button" disabled={(busy && view !== value) || (appointment && value === "tickets")} aria-current={view === value ? "page" : undefined} onClick={() => {
+          if (value !== "journal") setRecorded(null);
+          setView(value);
+        }}>{name}</button>
       )}
     </nav>
     <div hidden={view !== "sale"}>
       <SaleForm key={`${appointment?.id || "regular"}:${activeTicket?.id || "new"}:${activeTicket?.revision || 0}`} csrfToken={csrfToken} revision={revision} appointment={appointment} ticket={activeTicket} onBusy={setBusy} onTicketSaved={refresh} onRecorded={(result) => {
         setSaleId(result.saleId);
+        setRecorded(result);
         setActiveTicket(null);
         refresh();
         setView("journal");
@@ -51,7 +56,7 @@ export default function CashRegister({ csrfToken, appointment = null, initialSal
     }} />}
     {view === "overview" && <CashOverview revision={revision} />}
     {view === "gift-cards" && <GiftCards csrfToken={csrfToken} onBusy={setBusy} onRecorded={refresh} />}
-    {view === "journal" && <Journal csrfToken={csrfToken} saleId={saleId} onSelect={setSaleId} revision={revision} onChanged={refresh} onBusy={setBusy} />}
+    {view === "journal" && <Journal csrfToken={csrfToken} saleId={saleId} recorded={recorded} onSelect={setSaleId} revision={revision} onChanged={refresh} onBusy={setBusy} busy={busy} />}
     {view === "inventory" && <Inventory csrfToken={csrfToken} />}
   </>;
 }
@@ -196,7 +201,7 @@ function SaleForm({ csrfToken, revision, appointment, ticket, onBusy, onTicketSa
   const [saving, setSaving] = useState(false);
   const [catalogRefresh, setCatalogRefresh] = useState(0);
   const active = useRef(false);
-  const { data: catalog, error } = useCashData(new URLSearchParams({ view: "catalog", q: search, kind }).toString(), `${revision}:${catalogRefresh}`);
+  const { data: catalog, error } = useCashData(appointment ? "" : new URLSearchParams({ view: "catalog", q: search, kind }).toString(), `${revision}:${catalogRefresh}`);
 
   function add(item) {
     if (cart.length >= 20 || cart.some((line) => line.kind === kind && String(line.id) === String(item.id))) return;
@@ -260,11 +265,43 @@ function SaleForm({ csrfToken, revision, appointment, ticket, onBusy, onTicketSa
       onBusy(false);
     }
   }
+  const total = cart.reduce((sum, line) => sum + line.quantity * line.expectedPrice, 0);
+  const paymentFields = <>
+    <label>{appointment && !giftCardCode.trim() ? "Mode de règlement" : "Mode de règlement du complément"}<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)} disabled={saving || !!pending || !!ticketRequest}>
+      {Object.entries(methods).filter(([key]) => key !== "gift_card").map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+    </select></label>
+    <label>Code carte cadeau (facultatif)<input autoComplete="off" maxLength={35} value={giftCardCode} onChange={(event) => setGiftCardCode(event.target.value.toUpperCase())} placeholder="32 caractères" disabled={saving || !!pending || !!ticketRequest} /></label>
+  </>;
+  const retryHint = pending && !saving && <p className="field-hint">La réponse est incertaine. Réessayez la même demande pour éviter un doublon. Vérifiez le journal avant de recréer la vente.</p>;
+  const submitButton = <button className="auth-submit" type="submit" disabled={saving || !!ticketRequest || cart.length === 0}>{saving ? "Enregistrement…" : pending ? "Réessayer la même vente" : "Confirmer le règlement reçu"}</button>;
+
+  if (appointment) return <section className="client-card cash-checkout">
+    <h2>Encaisser le rendez-vous</h2>
+    <p>{appointment.first_name} {appointment.last_name} · {appointmentDate(appointment.starts_at)}</p>
+    <Feedback notice={notice} />
+    <form className="auth-form cash-checkout-form" onSubmit={submit}>
+      <section className="cash-checkout-card">
+        <h3>Prestations du rendez-vous</h3>
+        <ul className="cash-line-list">
+          {cart.map((line) => <li key={`${line.kind}:${line.id}`}><span>{line.name}</span><strong>{priceLabel(line.expectedPrice)}</strong></li>)}
+        </ul>
+        <p className="cash-amount"><span>Total du rendez-vous</span><strong>{priceLabel(total)}</strong></p>
+        <p className="field-hint">Les prestations et le montant viennent de l’agenda.</p>
+      </section>
+      <section className="cash-checkout-card cash-payment-card">
+        <h3>Règlement reçu</h3>
+        {paymentFields}
+        <p className="field-hint">BOOKILI enregistre uniquement un règlement déjà reçu et ne débite pas le client.</p>
+        {retryHint}
+        {submitButton}
+      </section>
+    </form>
+  </section>;
+
   return <section className="client-card">
-    <h2>{appointment ? `Encaisser le rendez-vous de ${appointment.first_name} ${appointment.last_name}` : savedTicket ? `Ticket en attente n° ${savedTicket.id}` : "Enregistrer une vente"}</h2>
-    {appointment && <p>{appointment.service_name} · {appointment.starts_at.slice(0, 16)} · {priceLabel(appointment.price_dzd)}</p>}
+    <h2>{savedTicket ? `Ticket en attente n° ${savedTicket.id}` : "Enregistrer une vente"}</h2>
     <p>Enregistrez uniquement un règlement déjà reçu. BOOKILI ne débite ni carte ni compte bancaire.</p>
-    {!appointment && <form className="booking-toolbar" onSubmit={(event) => {
+    <form className="booking-toolbar" onSubmit={(event) => {
       event.preventDefault();
       setSearch(new FormData(event.currentTarget).get("q").trim());
       setCatalogRefresh((value) => value + 1);
@@ -272,23 +309,21 @@ function SaleForm({ csrfToken, revision, appointment, ticket, onBusy, onTicketSa
       <label>Catalogue<select value={kind} onChange={(event) => setKind(event.target.value)}><option value="product">Produits</option><option value="service">Prestations</option></select></label>
       <label>Nom ou référence<input name="q" maxLength={180} /></label>
       <button className="admin-nav-link" type="submit">Rechercher / actualiser</button>
-    </form>}
-    {!appointment && error && <Feedback notice={{ kind: "error", text: error }} />}
-    {!appointment && !catalog && !error && <p role="status">Chargement du catalogue…</p>}
-    {!appointment && catalog?.items.length === 0 && <p>Aucun article actif correspondant.</p>}
-    {!appointment && <div className="service-list">
+    </form>
+    {error && <Feedback notice={{ kind: "error", text: error }} />}
+    {!catalog && !error && <p role="status">Chargement du catalogue…</p>}
+    {catalog?.items.length === 0 && <p>Aucun article actif correspondant.</p>}
+    <div className="service-list">
       {catalog?.items.map((item) => <div className="service-row" key={item.id}>
         <span><strong>{item.name}</strong> · {priceLabel(item.price_dzd)}{kind === "product" && <> · Stock : {item.quantity}{item.reference && ` · ${item.reference}`}</>}</span>
         <button className="admin-nav-link" type="button" disabled={saving || !!pending || !!ticketRequest || cart.length >= 20 || (kind === "product" && Number(item.quantity) === 0) || cart.some((line) => line.kind === kind && String(line.id) === String(item.id))} onClick={() => add(item)}>Ajouter au panier</button>
       </div>)}
-    </div>}
-    {!appointment && catalog?.hasMore && <p>Plus de 50 résultats : affinez la recherche.</p>}
-    <h3>{appointment ? "Prestations à encaisser" : "Panier"}</h3>
+    </div>
+    {catalog?.hasMore && <p>Plus de 50 résultats : affinez la recherche.</p>}
+    <h3>Panier</h3>
     <Feedback notice={notice} />
     {cart.length === 0 ? <p>Ajoutez un produit ou une prestation au panier.</p> : <form className="auth-form" onSubmit={submit}>
-      {appointment ? <div className="agenda-service-lines">
-        {cart.map((line) => <p key={`${line.kind}:${line.id}`}>{line.name} · {priceLabel(line.expectedPrice)}</p>)}
-      </div> : <fieldset className="form-fieldset" disabled={saving || !!pending || !!ticketRequest}>
+      <fieldset className="form-fieldset" disabled={saving || !!pending || !!ticketRequest}>
         {cart.map((line, index) => <div className="service-row" key={`${line.kind}:${line.id}`}>
           <span>{line.name} · {priceLabel(line.expectedPrice)}</span>
           <label>Quantité<input type="number" min={1} max={100} step={1} required value={line.quantity} onChange={(event) => {
@@ -297,17 +332,13 @@ function SaleForm({ csrfToken, revision, appointment, ticket, onBusy, onTicketSa
           }} /></label>
           <button className="admin-nav-link" type="button" onClick={() => setCart((items) => items.filter((_, position) => position !== index))}>Retirer</button>
         </div>)}
-      </fieldset>}
-      <label>{appointment ? "Mode de règlement" : "Mode de règlement du complément"}<select value={paymentMethod} onChange={(event) => setPayment(event.target.value)} disabled={saving || !!pending || !!ticketRequest}>
-        {Object.entries(methods).filter(([key]) => key !== "gift_card").map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select></label>
-      <label>Code carte cadeau (facultatif)<input autoComplete="off" maxLength={35} value={giftCardCode} onChange={(event) => setGiftCardCode(event.target.value.toUpperCase())} placeholder="32 caractères" disabled={saving || !!pending || !!ticketRequest} /></label>
-      <p><strong>Total : {priceLabel(cart.reduce((sum, line) => sum + line.quantity * line.expectedPrice, 0))}</strong></p>
-      {appointment && <p className="field-hint">Les prestations et le montant correspondent au rendez-vous. Une seule vente peut être enregistrée par rendez-vous.</p>}
-      {!appointment && <p className="field-hint">Si le solde de la carte ne couvre pas toute la vente, le reste est enregistré selon le mode de règlement choisi.</p>}
-      {!appointment && <button className="admin-nav-link" type="button" disabled={saving || !!pending || !cart.length} onClick={saveTicket}>{saving && ticketRequest ? "Enregistrement…" : ticketRequest ? "Réessayer l’enregistrement du ticket" : savedTicket ? "Enregistrer les modifications du ticket" : "Mettre en attente"}</button>}
-      {pending && !saving && <p className="field-hint">La réponse est incertaine. Réessayez la même demande pour éviter un doublon. Vérifiez le journal avant de recréer la vente.</p>}
-      <button className="auth-submit" type="submit" disabled={saving || !!ticketRequest}>{saving ? "Enregistrement…" : pending ? "Réessayer la même vente" : "Confirmer le règlement reçu"}</button>
+      </fieldset>
+      {paymentFields}
+      <p><strong>Total : {priceLabel(total)}</strong></p>
+      <p className="field-hint">Si le solde de la carte ne couvre pas toute la vente, le reste est enregistré selon le mode de règlement choisi.</p>
+      <button className="admin-nav-link" type="button" disabled={saving || !!pending || !cart.length} onClick={saveTicket}>{saving && ticketRequest ? "Enregistrement…" : ticketRequest ? "Réessayer l’enregistrement du ticket" : savedTicket ? "Enregistrer les modifications du ticket" : "Mettre en attente"}</button>
+      {retryHint}
+      {submitButton}
     </form>}
   </section>;
 }
@@ -387,11 +418,16 @@ function GiftCards({ csrfToken, onBusy, onRecorded }) {
   </>;
 }
 
-function Journal({ csrfToken, saleId, onSelect, revision, onChanged, onBusy }) {
+function Journal({ csrfToken, saleId, recorded, onSelect, revision, onChanged, onBusy, busy }) {
   const [dates, setDates] = useState(() => ({ from: algerianDate(), to: algerianDate() }));
   const [page, setPage] = useState(1);
   const { data, error } = useCashData(new URLSearchParams({ ...dates, page }).toString(), revision);
-  return <section className="client-card">
+  const detailHeading = useRef(null);
+  useEffect(() => {
+    if (saleId !== null) detailHeading.current?.focus();
+  }, [saleId]);
+  return <section className="client-card cash-journal">
+    {recorded && <p className="form-message form-success cash-recorded" role="status"><strong>Règlement enregistré</strong> · Vente n° {recorded.saleId}{recorded.totalDzd != null && ` · ${priceLabel(recorded.totalDzd)}`}</p>}
     <h2>Journal de caisse</h2>
     <form className="booking-toolbar" onSubmit={(event) => {
       event.preventDefault();
@@ -403,26 +439,41 @@ function Journal({ csrfToken, saleId, onSelect, revision, onChanged, onBusy }) {
       <label>Au<input name="to" type="date" required defaultValue={dates.to} max={algerianDate()} /></label>
       <button className="admin-nav-link" type="submit">Afficher</button>
       {data && <a className="admin-nav-link" href={apiUrl(`${endpoint}?${new URLSearchParams({ ...dates, view: "csv" })}`)}>Exporter le journal (CSV)</a>}
+      {data && <strong className="cash-journal-net">Total net : {priceLabel(data.netDzd)}</strong>}
     </form>
-    {error && <Feedback notice={{ kind: "error", text: error }} />}
-    {!data && !error && <p role="status">Chargement du journal…</p>}
-    {data && <p><strong>Total net sur la période : {priceLabel(data.netDzd)}</strong></p>}
-    {data?.entries.length === 0 && <p>Aucune opération sur cette période.</p>}
-    <div className="service-list">
-      {data?.entries.map((row) => <div className="service-row" key={`${row.id}:${row.event_kind}`}>
-        <span><strong>{row.event_kind === "void" ? "Annulation" : "Vente"} n° {row.id} · {priceLabel(row.amount_dzd)}</strong><br />{appointmentDate(row.event_at)} · {methods[row.payment_method]}</span>
-        <button className="admin-nav-link" type="button" onClick={() => onSelect(row.id)}>Voir la vente n° {row.id}</button>
-      </div>)}
+    <div className={`cash-journal-layout${saleId !== null ? " cash-journal-split" : ""}`}>
+      {saleId !== null && <SaleDetail key={saleId} headingRef={detailHeading} saleId={saleId} revision={revision} csrfToken={csrfToken} onChanged={onChanged} onBusy={onBusy} />}
+      <div className="cash-journal-entries">
+        <h3>Opérations</h3>
+        {error && <Feedback notice={{ kind: "error", text: error }} />}
+        {!data && !error && <p role="status">Chargement du journal…</p>}
+        {data?.entries.length === 0 && <p>Aucune opération sur cette période.</p>}
+        {data?.entries.length > 0 && <div className="cash-journal-table">
+          <table>
+            <thead><tr><th scope="col">Vente</th><th scope="col">Opération</th><th scope="col">Mode</th><th scope="col">Montant</th></tr></thead>
+            <tbody>
+              {data.entries.map((row) => <tr key={`${row.id}:${row.event_kind}`} className={String(row.id) === String(saleId) ? "cash-journal-selected" : undefined}>
+                <th scope="row">
+                  <button className="cash-journal-sale-link" type="button" disabled={busy} aria-label={`Voir la vente n° ${row.id}`} onClick={() => String(row.id) === String(saleId) ? detailHeading.current?.focus() : onSelect(row.id)}>n° {row.id}</button>
+                  <small>{appointmentDate(row.event_at)}</small>
+                </th>
+                <td><span className={`cash-journal-event${row.event_kind === "void" ? " cash-journal-void" : ""}`}>{row.event_kind === "void" ? "Annulation" : "Vente"}</span></td>
+                <td>{methods[row.payment_method]}</td>
+                <td>{priceLabel(row.amount_dzd)}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
+        <nav className="pagination" aria-label="Pages du journal">
+          {page > 1 && <button className="admin-nav-link" type="button" onClick={() => setPage(page - 1)}>Précédent</button>}
+          {data?.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
+        </nav>
+      </div>
     </div>
-    <nav className="pagination" aria-label="Pages du journal">
-      {page > 1 && <button className="admin-nav-link" type="button" onClick={() => setPage(page - 1)}>Précédent</button>}
-      {data?.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
-    </nav>
-    {saleId !== null && <SaleDetail key={saleId} saleId={saleId} revision={revision} csrfToken={csrfToken} onChanged={onChanged} onBusy={onBusy} />}
   </section>;
 }
 
-function SaleDetail({ saleId, revision, csrfToken, onChanged, onBusy }) {
+function SaleDetail({ saleId, revision, csrfToken, onChanged, onBusy, headingRef }) {
   const { data: sale, error } = useCashData(`view=sale&saleId=${encodeURIComponent(saleId)}`, revision);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -439,20 +490,28 @@ function SaleDetail({ saleId, revision, csrfToken, onChanged, onBusy }) {
     } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
     finally { setSaving(false); onBusy(false); }
   }
-  return <div className="appointment-card">
-    <h3>Détail de la vente n° {saleId}</h3>
+  return <div className="appointment-card cash-sale-detail">
+    <h3 tabIndex={-1} ref={headingRef}>Détail de la vente n° {saleId}</h3>
     <Feedback notice={notice} />
     {error && <Feedback notice={{ kind: "error", text: error }} />}
     {!sale && !error && <p role="status">Chargement de la vente…</p>}
     {sale && <>
-      <p>{appointmentDate(sale.recorded_at)} · {methods[sale.payment_method]} · Vente : <strong>{priceLabel(sale.total_dzd)}</strong> · Encaissé : {priceLabel(sale.collected_dzd)}{Number(sale.gift_card_applied_dzd) > 0 && ` · Carte cadeau : ${priceLabel(sale.gift_card_applied_dzd)}`}</p>
-      <ul>{sale.lines.map((line) => <li key={`${line.item_kind}:${line.item_id}`}>{line.quantity} × {line.item_name} à {priceLabel(line.unit_price_dzd)}</li>)}</ul>
+      <p>{appointmentDate(sale.recorded_at)} · {methods[sale.payment_method]}</p>
+      <ul className="cash-line-list">{sale.lines.map((line) => <li key={`${line.item_kind}:${line.item_id}`}>
+        <span>{line.quantity} × {line.item_name}{Number(line.quantity) !== 1 && <small> · {priceLabel(line.unit_price_dzd)} l’unité</small>}</span>
+        <strong>{priceLabel(line.quantity * line.unit_price_dzd)}</strong>
+      </li>)}</ul>
+      <p className="cash-amount"><span>Total de la vente</span><strong>{priceLabel(sale.total_dzd)}</strong></p>
+      <p>Encaissé : {priceLabel(sale.collected_dzd)}{Number(sale.gift_card_applied_dzd) > 0 && ` · Carte cadeau : ${priceLabel(sale.gift_card_applied_dzd)}`}</p>
       {sale.voided_at ? <p>Annulée le {appointmentDate(sale.voided_at)} : {sale.void_reason}</p> :
-        <form className="auth-form" onSubmit={cancel}>
-          <p className="field-hint">Utilisez cette action pour une vente entièrement annulée et des produits effectivement remis en stock. Aucun remboursement bancaire n’est déclenché.</p>
-          <label>Motif d’annulation<input required maxLength={255} value={reason} disabled={saving} onChange={(event) => setReason(event.target.value)} /></label>
-          <button type="submit" className="admin-nav-link" disabled={saving}>{saving ? "Enregistrement…" : "Annuler la vente entière"}</button>
-        </form>}
+        <details className="cash-sale-void">
+          <summary>Annuler la vente entière</summary>
+          <form className="auth-form" onSubmit={cancel}>
+            <p className="field-hint">Utilisez cette action pour une vente entièrement annulée et des produits effectivement remis en stock. Aucun remboursement bancaire n’est déclenché.</p>
+            <label>Motif d’annulation<input required maxLength={255} value={reason} disabled={saving} onChange={(event) => setReason(event.target.value)} /></label>
+            <button type="submit" className="admin-nav-link" disabled={saving}>{saving ? "Enregistrement…" : "Confirmer l’annulation"}</button>
+          </form>
+        </details>}
     </>}
   </div>;
 }

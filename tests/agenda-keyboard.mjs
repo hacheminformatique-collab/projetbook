@@ -294,7 +294,7 @@ try {
             });
           }
           appointmentSaleId = 21;
-          data = { saleId: appointmentSaleId };
+          data = { saleId: appointmentSaleId, duplicate: true };
         } else if (url.searchParams.get("view") === "catalog") {
           data = { items: [], hasMore: false };
         } else if (url.searchParams.get("view") === "sale") {
@@ -613,8 +613,13 @@ try {
   await waitFor("!!document.querySelector('.agenda-cash-button')");
   await evaluate("document.querySelector('.agenda-cash-button').click()");
   await waitFor("document.querySelector('.pro-tabs [aria-current=page]')?.textContent === 'Caisse'");
-  await waitFor("document.querySelector('.pro-panel h2')?.textContent === 'Encaisser le rendez-vous de Test Client'");
-  assert.match(await evaluate("document.querySelector('.pro-panel .agenda-service-lines').textContent"), /Coupe.*1.?000 DA/);
+  await waitFor("document.querySelector('.cash-checkout h2')?.textContent === 'Encaisser le rendez-vous'");
+  assert.match(await evaluate("document.querySelector('.cash-checkout').textContent"), /Test Client.*Coupe.*Total du rendez-vous1.?000 DA/);
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  assert.equal(await evaluate(`(() => {
+    const [summary, payment] = document.querySelectorAll('.cash-checkout-card');
+    return summary.getBoundingClientRect().top === payment.getBoundingClientRect().top;
+  })()`), true, "the desktop checkout shows the total next to the payment");
   assert.equal(await evaluate("window.cashRequests.length"), 0, "opening checkout must not record a sale");
   assert.equal(await evaluate("Array.from(document.querySelectorAll('.workspace-tabs button')).find(b => b.textContent === 'Tickets en attente').disabled"), true);
   await evaluate("document.querySelector('.pro-panel .auth-form button[type=submit]').click()");
@@ -622,6 +627,20 @@ try {
   assert.match(await evaluate("document.querySelector('.pro-panel .auth-form button[type=submit]').textContent"), /Réessayer la même vente/);
   await evaluate("document.querySelector('.pro-panel .auth-form button[type=submit]').click()");
   await waitFor("document.querySelector('.appointment-card h3')?.textContent === 'Détail de la vente n° 21'");
+  await waitFor("!!document.querySelector('.cash-journal-selected')");
+  assert.equal(await evaluate("document.querySelector('.cash-recorded').textContent"), "Règlement enregistré · Vente n° 21");
+  assert.equal(await evaluate(`(() => {
+    const entries = document.querySelector('.cash-journal-entries').getBoundingClientRect();
+    const detail = document.querySelector('.cash-sale-detail').getBoundingClientRect();
+    return entries.top === detail.top && entries.right < detail.left;
+  })()`), true, "on desktop the journal keeps the selected sale beside the operations");
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  assert.equal(await evaluate(`(() => {
+    const entries = document.querySelector('.cash-journal-entries').getBoundingClientRect();
+    const detail = document.querySelector('.cash-sale-detail').getBoundingClientRect();
+    return detail.bottom < entries.top && document.documentElement.scrollWidth <= innerWidth;
+  })()`), true, "on mobile the sale detail appears first without page overflow");
+  assert.equal(await evaluate("document.querySelector('.cash-sale-void').open"), false);
   const cashRequests = await evaluate("window.cashRequests");
   assert.equal(cashRequests.length, 2);
   assert.deepEqual(cashRequests[0], cashRequests[1], "retrying an uncertain response must reuse the same request");
@@ -640,6 +659,7 @@ try {
   await waitFor("document.querySelector('.appointment-card h3')?.textContent === 'Détail de la vente n° 21'");
   assert.equal(await evaluate("document.querySelector('.workspace-tabs [aria-current=page]').textContent"), "Journal");
   await waitFor("document.querySelector('.appointment-card')?.textContent.includes('Coupe')");
+  assert.equal(await evaluate("!!document.querySelector('.cash-recorded')"), false, "consultation does not announce a new payment");
   assert.equal(await evaluate("window.cashRequests.length"), 2, "consulting a linked sale must not record a payment");
   await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
   await waitFor("document.querySelectorAll('.agenda-booking').length === 2");

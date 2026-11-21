@@ -624,10 +624,11 @@ ligne, et déduit les produits vendus dans la même transaction. Une réservatio
 ne crée pas de vente et ne modifie pas les stocks.
 
 Depuis la fiche d’un rendez-vous dans **Agenda**, le bouton **Encaisser** ouvre
-la caisse avec le client, les prestations et les tarifs du rendez-vous.
+la caisse avec le client, les prestations, les tarifs et le total du rendez-vous.
 Aucune vente n’est créée avant la confirmation du règlement reçu. Après
-enregistrement, la vente apparaît dans le journal et le rendez-vous ne propose
-plus d’encaissement. En cas de réponse serveur incertaine, utilisez
+enregistrement, le journal confirme le règlement et affiche le détail de la
+vente à côté des opérations sur ordinateur, et au-dessus sur mobile. Le
+rendez-vous ne propose plus d’encaissement. En cas de réponse serveur incertaine, utilisez
 **Réessayer la même vente** pour conserver la même demande sans doublon.
 Pour un rendez-vous déjà encaissé, **Voir la vente n° …** ouvre directement son
 détail dans **Caisse → Journal**, même si la vente est ancienne ou annulée.
