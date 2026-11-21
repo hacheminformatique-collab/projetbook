@@ -508,8 +508,16 @@ a.pro-public-link { color: var(--pro-accent); text-decoration: underline; }
 .profile-category h3 { margin: 0 0 6px; }
 .profile-entry-details summary { padding: 10px 0; color: var(--rose-ink); font-weight: 700; cursor: pointer; }
 .profile-entry-form { max-width: 680px; }
-.profile-review { align-items: flex-start; }
-.profile-review .review-buttons { flex-shrink: 0; }
+.profile-review { min-width: 0; margin-top: 14px; padding: 14px; border: 1px solid #e8dfe5; border-radius: 10px; overflow-wrap: anywhere; }
+.profile-review h3 { margin: 0; }
+.profile-review h4 { margin: 0; }
+.profile-review .profile-description-card p { margin-bottom: 0; white-space: pre-wrap; }
+.profile-review .review-buttons, .profile-review-dialog .review-buttons { margin-top: 12px; }
+.profile-review .review-buttons button, .profile-review-dialog button { min-height: 44px; }
+.profile-review-dialog { width: min(760px, calc(100% - 24px)); max-height: calc(100% - 24px); padding: 16px; border: 1px solid #e8dfe5; border-radius: 12px; color: inherit; }
+.profile-review-dialog::backdrop { background: #261b24aa; }
+.profile-review-dialog h3 { margin: 0; }
+.profile-review-dialog img { display: block; width: 100%; max-height: 62dvh; object-fit: contain; border-radius: 8px; background: #f4eef2; }
 .salon-photo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 20px; }
 .salon-photo-card { min-width: 0; overflow: hidden; border: 1px solid #e6e8eb; border-radius: 10px; background: #fff; }
 .salon-photo-preview { position: relative; aspect-ratio: 4 / 3; background: #f3f4f5; }
@@ -541,8 +549,8 @@ a.pro-public-link { color: var(--pro-accent); text-decoration: underline; }
 .photo-upload { position: relative; display: inline-flex; align-items: center; overflow: hidden; }
 .photo-upload input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .photo-upload:focus-within { outline: 2px solid var(--rose-ink); outline-offset: 2px; }
-.profile-review-photo { display: flex; align-items: center; gap: 14px; }
-.profile-review-photo img { width: 140px; aspect-ratio: 4 / 3; border-radius: 8px; object-fit: cover; background: #f3f4f5; }
+.profile-review-photo { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.profile-review-photo img { width: min(140px, 100%); aspect-ratio: 4 / 3; border-radius: 8px; object-fit: cover; background: #f3f4f5; }
 .public-salon-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 18px 0; }
 .public-salon-gallery img { width: 100%; aspect-ratio: 4 / 3; border-radius: 10px; object-fit: cover; background: #f3f4f5; }
 .client-directory-header, .client-profile-heading, .client-history-heading, .client-note-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }

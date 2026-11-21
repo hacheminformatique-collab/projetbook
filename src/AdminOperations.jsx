@@ -70,14 +70,53 @@ export function AdminAccounts({ csrfToken }) {
   </section>;
 }
 
+const reviewFilters = [
+  ["all", "Tous"], ["descriptions", "Descriptifs"], ["entries", "Rubriques"], ["photos", "Photos"],
+];
+const reviewCategoryNames = { access: "Accès", training: "Formation", experience: "Expérience" };
+
+function ReviewPhotoDialog({ photo, working, notice, onClose, onReview }) {
+  const dialog = useRef(null);
+  useEffect(() => {
+    if (!dialog.current.open) dialog.current.showModal();
+  }, []);
+  return <dialog className="profile-review-dialog" ref={dialog} aria-labelledby="review-photo-title"
+    onClose={onClose} onCancel={(event) => { if (working) event.preventDefault(); }}>
+    <div className="client-directory-header">
+      <h3 id="review-photo-title">Aperçu de la photo</h3>
+      <button className="admin-nav-link" type="button" disabled={working} onClick={() => dialog.current.close()}>Fermer</button>
+    </div>
+    <p>{photo.salon_name} · {photo.city}</p>
+    <img src={apiUrl(`salon-photo.php?id=${encodeURIComponent(photo.id)}`)} alt={`Photo proposée par ${photo.salon_name}`} />
+    <Feedback notice={notice} />
+    <p className="field-hint">Cette photo n’est pas visible par les clients avant validation.</p>
+    <ReviewActions kind="photo" label="la photo" item={photo} working={working} onReview={onReview} />
+  </dialog>;
+}
+
+function ReviewActions({ kind, label, item, working, onReview }) {
+  return <div className="review-buttons">
+    <button className="review-reject" aria-label={`Refuser ${label}`} type="button" disabled={working} onClick={() => onReview("reject", kind, item)}>Refuser</button>
+    <button className="auth-submit" type="button" disabled={working} onClick={() => onReview("approve", kind, item)}>Valider {label}</button>
+  </div>;
+}
+
 export function AdminProfileReviews({ csrfToken }) {
   const [result, setResult] = useState(null);
   const [refresh, setRefresh] = useState(0);
   const [notice, setNotice] = useState(null);
   const [working, setWorking] = useState(false);
+  const [filter, setFilter] = useState("all");
+  const [photo, setPhoto] = useState(null);
+  const refreshButton = useRef(null);
+  const restoreFocus = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
+    if (restoreFocus.current) {
+      refreshButton.current?.focus();
+      restoreFocus.current = false;
+    }
     setResult(null);
     apiRequest("admin-profile-reviews.php", { signal: controller.signal })
       .then((data) => { if (!controller.signal.aborted) setResult(data); })
@@ -85,47 +124,80 @@ export function AdminProfileReviews({ csrfToken }) {
     return () => controller.abort();
   }, [refresh]);
 
-  async function review(action, id) {
+  async function review(decision, kind, item) {
     setWorking(true);
     setNotice(null);
     try {
-      const response = await apiRequest("admin-profile-reviews.php", { csrfToken, body: { action, id: Number(id) } });
+      const response = await apiRequest("admin-profile-reviews.php", { csrfToken, body: {
+        action: `${decision}-${kind}`, id: Number(item.id),
+        ...(kind === "description" ? { expectedDescription: item.profile_description } : {}),
+      } });
+      restoreFocus.current = true;
+      setPhoto(null);
       setNotice({ kind: "success", text: response.message });
       setRefresh((value) => value + 1);
     } catch (cause) {
+      if (cause.status === 409 || cause.status === 404) {
+        restoreFocus.current = true;
+        setPhoto(null);
+        setRefresh((value) => value + 1);
+      }
       setNotice({ kind: "error", text: cause.message });
     } finally {
       setWorking(false);
     }
   }
 
-  const categoryNames = { access: "Accès", training: "Formation", experience: "Expérience" };
-  return <section className="client-card">
-    <h2>Contenus en attente</h2>
-    <Feedback notice={notice} />
+  const count = result ? result.descriptions.length + result.entries.length + result.photos.length : 0;
+  return <section className="client-card profile-review-queue">
+    <div className="client-directory-header">
+      <h2>Contenus en attente</h2>
+      <button ref={refreshButton} className="admin-nav-link" type="button" aria-disabled={working} onClick={() => {
+        if (working) return;
+        setNotice(null);
+        setRefresh((value) => value + 1);
+      }}>Actualiser</button>
+    </div>
+    {!photo && <Feedback notice={notice} />}
     {!result && !notice && <p role="status">Chargement des contenus…</p>}
-    {result && result.descriptions.length === 0 && result.entries.length === 0 && result.photos.length === 0 && <p>Aucun contenu à valider.</p>}
-    {result?.descriptions.map((item) => <article className="service-row profile-review" key={`description-${item.id}`}>
-      <span><strong>{item.name} · {item.city}</strong><br /><span className="booking-message">{item.profile_description}</span></span>
-      <div className="review-buttons">
-        <button className="admin-nav-link" type="button" disabled={working} onClick={() => review("reject-description", item.id)}>Refuser</button>
-        <button className="auth-submit" type="button" disabled={working} onClick={() => review("approve-description", item.id)}>Valider</button>
+    {result && <>
+      <div className="photo-tabs" role="group" aria-label="Type de contenu">
+        {reviewFilters.map(([value, label]) => <button key={value} type="button" aria-pressed={value === filter} onClick={() => setFilter(value)}>
+          {label} ({value === "all" ? count : result[value].length})
+        </button>)}
       </div>
-    </article>)}
-    {result?.entries.map((item) => <article className="service-row profile-review" key={`entry-${item.id}`}>
-      <span><strong>{item.salon_name} · {item.city}</strong><br />{categoryNames[item.category]} : {item.title}<br /><span className="booking-message">{item.details}</span></span>
-      <div className="review-buttons">
-        <button className="admin-nav-link" type="button" disabled={working} onClick={() => review("reject-entry", item.id)}>Refuser</button>
-        <button className="auth-submit" type="button" disabled={working} onClick={() => review("approve-entry", item.id)}>Valider</button>
-      </div>
-    </article>)}
-    {result?.photos.map((item) => <article className="service-row profile-review" key={`photo-${item.id}`}>
-      <span className="profile-review-photo"><img src={apiUrl(`salon-photo.php?id=${encodeURIComponent(item.id)}`)} alt={`Photo proposée par ${item.salon_name}`} /><strong>{item.salon_name} · {item.city}</strong></span>
-      <div className="review-buttons">
-        <button className="admin-nav-link" type="button" disabled={working} onClick={() => review("reject-photo", item.id)}>Refuser</button>
-        <button className="auth-submit" type="button" disabled={working} onClick={() => review("approve-photo", item.id)}>Valider</button>
-      </div>
-    </article>)}
+      {count === 0 ? <p>Aucun contenu à valider.</p> : filter !== "all" && result[filter].length === 0 && <p>Aucun contenu de ce type à valider.</p>}
+      {(filter === "all" || filter === "descriptions") && result.descriptions.map((item) => <article className="profile-review" key={`description-${item.id}`}>
+        <h3>{item.name} · {item.city}</h3>
+        <div className="profile-description-grid">
+          <div className="profile-description-card profile-description-public">
+            <h4>Version publiée</h4>
+            <p>{item.public_description || "Aucun descriptif publié."}</p>
+          </div>
+          <div className="profile-description-card profile-description-edit">
+            <h4>Version proposée</h4>
+            <p>{item.profile_description || "Retrait du descriptif publié."}</p>
+          </div>
+        </div>
+        <p className="field-hint">Valider remplace la version publiée. Refuser la laisse inchangée.</p>
+        <ReviewActions kind="description" label="le descriptif" item={item} working={working} onReview={review} />
+      </article>)}
+      {(filter === "all" || filter === "entries") && result.entries.map((item) => <article className="profile-review" key={`entry-${item.id}`}>
+        <h3>{item.salon_name} · {item.city}</h3>
+        <p className="field-hint">Rubrique · {reviewCategoryNames[item.category]}</p>
+        <div className="profile-description-card profile-description-edit"><strong>{item.title}</strong>{item.details && <p>{item.details}</p>}</div>
+        <ReviewActions kind="entry" label="la rubrique" item={item} working={working} onReview={review} />
+      </article>)}
+      {(filter === "all" || filter === "photos") && result.photos.map((item) => <article className="profile-review profile-review-photo" key={`photo-${item.id}`}>
+        <img src={apiUrl(`salon-photo.php?id=${encodeURIComponent(item.id)}`)} alt="" />
+        <div>
+          <h3>{item.salon_name} · {item.city}</h3>
+          <p className="field-hint">Photo en attente</p>
+          <button className="admin-nav-link" type="button" disabled={working} onClick={() => { setNotice(null); setPhoto(item); }}>Agrandir la photo</button>
+        </div>
+      </article>)}
+    </>}
+    {photo && <ReviewPhotoDialog photo={photo} working={working} notice={notice} onClose={() => setPhoto(null)} onReview={review} />}
   </section>;
 }
 

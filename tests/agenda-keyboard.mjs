@@ -134,6 +134,22 @@ try {
           : { authenticated: true, account: { id: window.adminNotificationTest ? (sessionStorage.getItem("mock-admin-id") || "1") : "2", role: window.adminNotificationTest ? "super_admin" : window.clientBookingTest ? "client" : "professional", email: "admin@example.test" }, csrfToken: "test" };
       } else if (url.pathname.endsWith("/api/admin-homepage-image.php")) {
         data = { hasImage: false };
+      } else if (url.pathname.endsWith("/api/admin-profile-reviews.php")) {
+        if (options?.method === "POST") {
+          window.reviewPayload = JSON.parse(options.body);
+          if (window.reviewPayload.action.endsWith("-description")) {
+            window.revisedModerationText = "Nouvelle version pendant la lecture.";
+            return new Response(JSON.stringify({ error: "Le descriptif a changé." }), { status: 409 });
+          }
+          window.photoReviewed = true;
+          data = { message: "Le contenu a été publié." };
+        } else {
+          data = {
+            descriptions: [{ id: 1, name: "Salon test", city: "Sétif", public_description: "Descriptif publié.", profile_description: window.revisedModerationText || "Texte proposé." }],
+            entries: [{ id: 2, salon_name: "Salon test", city: "Sétif", category: "access", title: "Entrée", details: "De plain-pied." }],
+            photos: window.photoReviewed ? [] : [{ id: 3, salon_name: "Salon test", city: "Sétif" }],
+          };
+        }
       } else if (url.pathname.endsWith("/api/admin-notifications.php")) {
         if (options?.method === "POST") {
           window.notificationPayload = JSON.parse(options.body);
@@ -1489,6 +1505,27 @@ try {
   await evaluate("window.notificationLoadFails = false; Array.from(document.querySelectorAll('#notification-settings-title ~ button')).find(b => b.textContent.includes('Actualiser')).click()");
   await waitFor("document.querySelector('#notification-settings-title').parentElement.textContent.includes('E-mail n° 11')");
   console.log("Super-admin notification tracking and retries passed.");
+  await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Contenus à valider').click()");
+  await waitFor("document.querySelectorAll('.profile-review').length === 3");
+  await evaluate("Array.from(document.querySelectorAll('.profile-review-queue .photo-tabs button')).find(b => b.textContent.includes('Descriptifs')).click()");
+  assert.equal(await evaluate("document.querySelectorAll('.profile-review').length"), 1);
+  assert.match(await evaluate("document.querySelector('.profile-description-public').textContent"), /Descriptif publié/);
+  assert.match(await evaluate("document.querySelector('.profile-description-edit').textContent"), /Texte proposé/);
+  await evaluate("document.querySelector('.profile-review .auth-submit').click()");
+  await waitFor("document.querySelector('.profile-description-edit')?.textContent.includes('Nouvelle version pendant la lecture')");
+  assert.deepEqual(await evaluate("window.reviewPayload"), { action: "approve-description", id: 1, expectedDescription: "Texte proposé." });
+  assert.match(await evaluate("document.querySelector('.profile-review-queue [role=alert]').textContent"), /a changé/);
+  await evaluate("Array.from(document.querySelectorAll('.profile-review-queue .photo-tabs button')).find(b => b.textContent.includes('Photos')).click()");
+  await waitFor("!!document.querySelector('.profile-review-photo button')");
+  await evaluate("document.querySelector('.profile-review-photo button').focus(); document.querySelector('.profile-review-photo button').click()");
+  await waitFor("!!document.querySelector('.profile-review-dialog:modal')");
+  await evaluate("document.querySelector('.profile-review-dialog button').click()");
+  await waitFor("!document.querySelector('.profile-review-dialog') && document.activeElement.matches('.profile-review-photo button')");
+  await evaluate("document.querySelector('.profile-review-photo button').click()");
+  await waitFor("!!document.querySelector('.profile-review-dialog:modal')");
+  await evaluate("document.querySelector('.profile-review-dialog .auth-submit').click()");
+  await waitFor("!document.querySelector('.profile-review-dialog') && document.querySelector('.profile-review-queue')?.textContent.includes('Aucun contenu de ce type')");
+  assert.deepEqual(await evaluate("window.reviewPayload"), { action: "approve-photo", id: 3 });
   await evaluate("Array.from(document.querySelectorAll('.admin-section-nav button')).find(b => b.textContent === 'Campagnes').click()");
   await waitFor("document.querySelector('.service-list')?.textContent.includes('Actualités')");
   assert.match(await evaluate("document.querySelector('.service-list').textContent"), /Terminée.*2\/4 envois acceptés.*1 en échec définitif.*En cours.*1 en reprise.*Reprise possible/s);

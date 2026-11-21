@@ -67,8 +67,14 @@ def main():
     expect(professional.request("professional-salon-profile.php", {
         "action": "save-description", "description": revised,
     }), 200)
+    draft = next(item for item in expect(admin.request("admin-profile-reviews.php"), 200)["descriptions"]
+                 if int(item["id"]) == int(salon_id))
+    assert draft["public_description"] == description and draft["profile_description"] == revised
     expect(admin.request("admin-profile-reviews.php", {
-        "action": "reject-description", "id": salon_id,
+        "action": "approve-description", "id": salon_id, "expectedDescription": description,
+    }), 409)
+    expect(admin.request("admin-profile-reviews.php", {
+        "action": "reject-description", "id": salon_id, "expectedDescription": revised,
     }), 200)
     public = expect(guest.request(f"salons.php?id={salon_id}"), 200)
     assert public["salon"]["public_description"] == description
@@ -76,7 +82,7 @@ def main():
         "action": "save-description", "description": "",
     }), 200)
     expect(admin.request("admin-profile-reviews.php", {
-        "action": "approve-description", "id": salon_id,
+        "action": "approve-description", "id": salon_id, "expectedDescription": "",
     }), 200)
     assert expect(guest.request(f"salons.php?id={salon_id}"), 200)["salon"]["public_description"] == ""
     expect(professional.request("professional-salon-profile.php", {

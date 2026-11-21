@@ -32,14 +32,20 @@ try {
             bookili_json_response(422, ['error' => 'Décision de validation invalide.']);
         }
         [$type, $status] = $decisions[$action];
+        $compareDescription = $type === 'description' && array_key_exists('expectedDescription', $data);
         if ($type === 'description') {
-            $statement = $pdo->prepare(
-                $status === 'approved'
-                    ? "UPDATE salons SET public_description = profile_description, profile_description_status = 'approved'
-                       WHERE id = :id AND profile_description_status = 'pending'"
-                    : "UPDATE salons SET profile_description_status = 'rejected'
-                       WHERE id = :id AND profile_description_status = 'pending'"
-            );
+            $update = $status === 'approved'
+                ? "public_description = profile_description, profile_description_status = 'approved'"
+                : "profile_description_status = 'rejected'";
+            $condition = $compareDescription ? ' AND CAST(profile_description AS BINARY) = CAST(:expected_description AS BINARY)' : '';
+            $statement = $pdo->prepare("UPDATE salons SET $update WHERE id = :id AND profile_description_status = 'pending'" . $condition);
+            if ($compareDescription) {
+                $expected = $data['expectedDescription'];
+                if (!is_string($expected) || strlen($expected) > 8000) {
+                    bookili_json_response(422, ['error' => 'Le descriptif à comparer est invalide.']);
+                }
+                $statement->bindValue(':expected_description', $expected);
+            }
         } elseif ($type === 'entry') {
             $statement = $pdo->prepare(
                 'UPDATE salon_profile_entries SET status = :status WHERE id = :id AND status = \'pending\''
@@ -53,12 +59,15 @@ try {
         }
         $statement->bindValue(':id', $id, PDO::PARAM_INT);
         $statement->execute();
+        if ($statement->rowCount() !== 1 && $compareDescription) {
+            bookili_json_response(409, ['error' => 'Le descriptif a changé ou a déjà été traité. Vérifiez la file actualisée.']);
+        }
         if ($statement->rowCount() !== 1) bookili_json_response(404, ['error' => 'Ce contenu n’est plus en attente de validation.']);
         bookili_json_response(200, ['message' => $status === 'approved' ? 'Le contenu a été publié.' : 'Le contenu a été refusé.']);
     }
 
     $descriptions = $pdo->query(
-        "SELECT s.id, s.name, s.city, s.wilaya_code, s.profile_description, s.updated_at
+        "SELECT s.id, s.name, s.city, s.wilaya_code, s.public_description, s.profile_description, s.updated_at
          FROM salons s WHERE s.profile_description_status = 'pending' ORDER BY s.updated_at, s.id"
     )->fetchAll();
     $entries = $pdo->query(

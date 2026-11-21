@@ -460,6 +460,11 @@ ou refusées ne sont jamais affichées au public. Sans photo validée, la carte
 conserve un emplacement gris. Cette évolution réutilise la galerie existante
 et ne nécessite pas de nouvelle migration.
 
+Dans **Super-admin → Contenus à valider**, la file se filtre par descriptif,
+rubrique ou photo. Le descriptif publié apparaît à côté du texte proposé,
+et une photo peut être agrandie avant décision. Si le texte proposé change
+pendant la lecture, la décision est refusée et la file est actualisée.
+
 Sur la fiche d'un salon, le client peut choisir jusqu’à six prestations ; leur
 durée et leur tarif sont cumulés pour déterminer les créneaux disponibles,
 proposés sous forme de boutons radio accessibles et faciles à toucher. Si le
