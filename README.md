@@ -4,6 +4,61 @@ Site de recherche et de réservation de prestations beauté et bien-être en Alg
 Le site public est une application React/Vite statique. Les endpoints PHP et la
 base MySQL/MariaDB résident sur le même hébergement cPanel.
 
+## État du projet et prochaines étapes
+
+Feuille de route mise à jour le 21 novembre 2026. Les estimations initiales
+restent indicatives : les recalculer après la comparaison aux maquettes et la
+recette sur l'hébergement réel. Un parcours fonctionnel déjà implémenté peut
+encore nécessiter une validation ou des ajustements visuels.
+
+### Déjà réalisé
+
+- Le socle web comprend l'accueil, les espaces client, professionnel et
+  administration, ainsi que les parcours de réservation, d'agenda, de caisse,
+  de gestion client, de stock, de cartes cadeaux et d'abonnements. Les tests
+  décrits plus bas couvrent une partie importante de ces parcours ; la recette
+  complète et la comparaison aux maquettes restent à faire.
+- Les campagnes disposent de l'aperçu et de la confirmation d'audience, de
+  reprises après rechargement, d'une protection contre les créations en double
+  et de filtres d'historique par recherche, statut et période.
+- Les deux PWA Client et Pro ont des icônes et des points d'entrée distincts.
+  Elles ne sont pas encore des applications distribuées par les stores.
+- Le contrôle CLI de pré-déploiement vérifie la configuration, les extensions
+  PHP, la connexion à la base et la présence du schéma attendu. Il ne remplace
+  pas la recette de production.
+
+### Priorités restantes
+
+1. Reprendre les ZIP de référence, comparer les écrans et parcours à
+   l'implémentation, puis décider ensemble des écarts indispensables au
+   lancement. Les ZIP ne sont pas présents dans le dépôt.
+2. Faire la recette préproduction sur cPanel : sauvegarde et vérification de
+   restauration, migrations manquantes seulement, téléversement de `dist/`,
+   contrôle CLI, HTTPS, courriels, tâches cron et parcours de bout en bout.
+3. Corriger les écarts retenus pour l'accueil, le client, le professionnel et
+   l'administration, puis refaire les tests sur ordinateur et appareils
+   mobiles.
+4. Terminer la revue de sécurité, la préparation des sauvegardes et incidents,
+   et faire valider les pages et procédures légales par un professionnel
+   compétent pour l'Algérie.
+5. Vérifier la configuration du sous-domaine professionnel et décider les
+   règles d'abonnement avant d'automatiser les restrictions d'accès.
+
+### Applications Android et iOS — phase ultérieure
+
+Conserver la PWA pendant les essais. Après validation des parcours web, étudier
+un empaquetage Capacitor en deux applications distinctes (Client et Pro),
+réutilisant l'interface et l'API existantes. Cette phase demandera une
+vérification de l'authentification mobile, des liens profonds, des notifications
+push éventuelles, des versions iOS/Android et des procédures de publication.
+Le chiffrage sera établi après un prototype technique ; aucun travail de
+publication dans les stores n'est inclus dans la recette web.
+
+Les paiements en ligne, la publicité payante, l'achat en ligne de cartes
+cadeaux, la géolocalisation par rayon et les notifications push restent à
+cadrer séparément. Les cartes cadeaux utilisables en caisse et les abonnements
+saisis manuellement ne constituent pas ces services en ligne.
+
 ## Développement local
 
 Prérequis : Node.js 20.9 ou supérieur pour construire le site, et PHP 8.1 ou
