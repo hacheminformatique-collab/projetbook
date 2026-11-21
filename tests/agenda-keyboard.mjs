@@ -330,6 +330,23 @@ try {
         }
       } else if (url.pathname.endsWith("/api/professional-stock-suppliers.php")) {
         data = { suppliers: [{ id: 7, name: "Fournisseur test", phone: "0550123456", email: "", is_active: 1 }] };
+      } else if (url.pathname.endsWith("/api/professional-stock-orders.php")) {
+        if (options?.method === "POST") {
+          const body = JSON.parse(options.body);
+          if (body.action === "create") {
+            window.stockOrder = { id: 3, status: "open", supplier_name: "Fournisseur test", reference: body.reference, created_at: "2026-11-19 10:00:00",
+              items: body.items.map((item) => ({ product_id: item.productId, product_name: "Lotion test", ordered_quantity: item.quantity, received_quantity: 0 })) };
+          } else if (body.action === "receive") {
+            window.stockReceipt = body;
+            window.stockOrder.items[0].received_quantity += body.items[0].quantity;
+            window.stockOrder.status = "partial";
+          }
+          data = { orderId: 3 };
+        } else if (url.searchParams.has("orderId")) {
+          data = { order: window.stockOrder };
+        } else {
+          data = { orders: window.stockOrder ? [window.stockOrder] : [], hasMore: false };
+        }
       } else if (url.pathname.endsWith("/api/professional-products.php")) {
         window.inventoryQuery = Object.fromEntries(url.searchParams);
         data = { products: [{ id: 1, name: "Lotion test", reference: "LOT-1", category: "Soins", quantity: 8,
@@ -1003,6 +1020,30 @@ try {
     select.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
   await waitFor("window.inventoryQuery?.supplier === '7' && document.querySelector('.pro-panel a[href*=format]')?.href.includes('supplier=7')");
+  const orderSection = `document.querySelector('section[aria-label="Commandes fournisseurs"]')`;
+  const orderButton = (text) => evaluate(`Array.from(${orderSection}.querySelectorAll('button')).find(button => button.textContent === ${JSON.stringify(text)}).click()`);
+  await orderButton("Nouvelle commande");
+  await waitFor(`!!${orderSection}.querySelector('option[value="1"]')`);
+  await evaluate(`(() => {
+    const section = ${orderSection};
+    for (const value of ['7', '1']) {
+      const select = section.querySelector('select:has(option[value="' + value + '"])');
+      select.value = value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  })()`);
+  const setOrderQuantity = (value) => evaluate(`(() => {
+    const input = ${orderSection}.querySelector('input[type="number"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '${value}');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor(`!!${orderSection}.querySelector('input[type="number"]')`);
+  await setOrderQuantity(4);
+  await orderButton("Enregistrer la commande");
+  await waitFor(`${orderSection}.textContent.includes('0 reçue(s) sur 4 commandée(s)')`);
+  await setOrderQuantity(2);
+  await orderButton("Enregistrer la réception");
+  await waitFor(`${orderSection}.textContent.includes('2 reçue(s) sur 4 commandée(s)') && window.stockReceipt?.orderId === 3`);
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&page=2` });

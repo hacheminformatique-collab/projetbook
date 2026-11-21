@@ -223,7 +223,58 @@ def main():
     assert int(history(professional, product_id)["product"]["supplier_id"]) == supplier_id
     expect(professional.request(PRODUCTS, product_payload(id=product_id, supplierId=None)), 200)
     assert expect(professional.request(f"{PRODUCTS}?supplier={supplier_id}"), 200)["products"] == []
-    print("Inventory checks passed: ownership, validation, stock limits, history, alerts, archiving, CSV, pagination, idempotency and concurrency.")
+    orders = "professional-stock-orders.php"
+    capped_id, product_id = product_id, formula_id
+    second_id = expect(professional.request(PRODUCTS, product_payload(name="Produit de commande")), 200)["productId"]
+    other_id = expect(other.request(PRODUCTS, product_payload()), 200)["productId"]
+    create = {
+        "action": "create", "supplierId": supplier_id, "reference": "BC-01", "requestKey": str(uuid.uuid4()),
+        "items": [{"productId": product_id, "quantity": 4}, {"productId": second_id, "quantity": 3}],
+    }
+    expect(client.request(orders), 403)
+    expect(professional.request(orders, create, csrf=False), 403)
+    expect(professional.request(orders, create), 422)  # Archived supplier
+    expect(professional.request(suppliers, {**details, "id": supplier_id}), 200)
+    expect(other.request(orders, create), 422)
+    expect(professional.request(orders, {**create, "items": [create["items"][0], {"productId": other_id, "quantity": 3}]}), 404)
+    before = int(history(professional, product_id)["product"]["quantity"])
+    oid = expect(professional.request(orders, create), 200)["orderId"]
+    assert expect(professional.request(orders, create), 200) == {"orderId": oid, "duplicate": True}
+    expect(professional.request(orders, {**create, "reference": "DIFFERENT"}), 409)
+    assert len(expect(professional.request(orders), 200)["orders"]) == 1
+    assert expect(other.request(orders), 200)["orders"] == []
+    assert int(history(professional, product_id)["product"]["quantity"]) == before
+    order_path = f"{orders}?orderId={oid}"
+    expect(other.request(order_path), 404)
+    receive = {
+        "action": "receive", "orderId": oid, "requestKey": str(uuid.uuid4()),
+        "items": [{"productId": product_id, "quantity": 2}],
+    }
+    expect(other.request(orders, receive), 404)
+    expect(professional.request(orders, {**receive, "items": [*receive["items"], {"productId": second_id, "quantity": 4}]}), 409)
+    assert int(history(professional, product_id)["product"]["quantity"]) == before
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        receipts = list(pool.map(lambda session: expect(session.request(orders, receive), 200), [professional, second_session]))
+    assert sorted(result["duplicate"] for result in receipts) == [False, True]
+    order = expect(professional.request(order_path), 200)["order"]
+    assert order["status"] == "partial" and [int(item["received_quantity"]) for item in order["items"]] == [2, 0]
+    after = history(professional, product_id)
+    assert int(after["product"]["quantity"]) == before + 2
+    assert after["movements"][0]["reason"] == f"Réception commande fournisseur n° {oid}"
+    cancel = {"action": "cancel", "orderId": oid}
+    expect(professional.request(orders, cancel), 200)
+    assert expect(professional.request(order_path), 200)["order"]["status"] == "cancelled"
+    expect(professional.request(orders, {**receive, "requestKey": str(uuid.uuid4())}), 409)
+    assert int(history(professional, product_id)["product"]["quantity"]) == before + 2
+    full_id = expect(professional.request(orders, {**create, "requestKey": str(uuid.uuid4())}), 200)["orderId"]
+    expect(professional.request(orders, {**receive, "orderId": full_id, "requestKey": str(uuid.uuid4()), "items": create["items"]}), 200)
+    assert expect(professional.request(f"{orders}?orderId={full_id}"), 200)["order"]["status"] == "received"
+    expect(professional.request(orders, {**cancel, "orderId": full_id}), 409)
+    capped_items = [{"productId": capped_id, "quantity": 1}]
+    capped_order = expect(professional.request(orders, {**create, "requestKey": str(uuid.uuid4()), "items": capped_items}), 200)["orderId"]
+    expect(professional.request(orders, {**receive, "orderId": capped_order, "requestKey": str(uuid.uuid4()), "items": capped_items}), 409)
+    assert expect(professional.request(f"{orders}?orderId={capped_order}"), 200)["order"]["status"] == "open"
+    print("Inventory checks passed, including supplier orders, atomic receipts and concurrent retries.")
 
 
 if __name__ == "__main__":

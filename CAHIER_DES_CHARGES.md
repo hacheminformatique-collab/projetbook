@@ -79,7 +79,12 @@ impose de vérifier et de recompter. Migration : `029_stock_counts.sql`.
 Publiés : l’annuaire des fournisseurs du salon et l’association d’un
 fournisseur principal à un produit, avec filtre et export du stock. L’archivage
 conserve les associations existantes. Migration : `030_stock_suppliers.sql`.
-Les commandes et les réceptions restent à traiter.
+
+Publiés : saisie des commandes fournisseurs et réception partielle ou
+totale. Chaque réception met à jour les stocks et leur historique ; il est
+possible d’annuler le reste sans retirer les unités déjà reçues. Aucun envoi
+au fournisseur ni paiement n’est déclenché. Migration : `031_stock_orders.sql`.
+Les opérations de stock en masse restent à traiter.
 
 ## Paiements à garder en attente
 
