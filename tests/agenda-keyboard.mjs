@@ -353,6 +353,14 @@ try {
           }
           appointmentSaleId = 21;
           data = { saleId: appointmentSaleId, duplicate: true };
+        } else if (url.searchParams.get("view") === "team-report") {
+          data = { entries: [{ staff_id: 2, staff_name: "Équipe test", is_active: 0, gross_dzd: 500,
+            net_dzd: 0, void_dzd: 500, received_dzd: 0, sale_count: 1, void_count: 1 }], hasMore: false };
+        } else if (url.searchParams.get("view") === "comparison") {
+          data = {
+            current: { from: "2026-11-01", to: "2026-11-19", gross_dzd: 1500, net_dzd: 1500, void_dzd: 0, received_dzd: 1500, sale_count: 2, void_count: 0 },
+            previous: { from: "2026-10-13", to: "2026-10-31", gross_dzd: 1200, net_dzd: 1200, void_dzd: 0, received_dzd: 1200, sale_count: 1, void_count: 0 },
+          };
         } else if (url.searchParams.get("view") === "items-report") {
           const isProduct = url.searchParams.get("kind") === "product";
           data = { entries: [{ item_id: 1, item_name: isProduct ? "Shampooing test" : "Coupe test",
@@ -964,6 +972,11 @@ try {
   await waitFor("document.querySelector('.cash-reports tbody')?.textContent.includes('Shampooing test') && document.querySelector('.cash-reports a')?.href.includes('kind=product')");
   await selectReport("voids");
   await waitFor("document.querySelector('.cash-reports tbody')?.textContent.includes('Erreur de saisie') && document.querySelector('.cash-reports a')?.href.includes('view=voids-csv')");
+  await selectReport("team");
+  await waitFor("document.querySelector('.cash-reports tbody')?.textContent.includes('Équipe testInactif') && document.querySelector('.cash-reports a')?.href.includes('view=team-report-csv')");
+  await selectReport("comparison");
+  await waitFor("document.querySelector('.cash-reports table')?.textContent.includes('13/10/2026 – 31/10/2026') && document.querySelector('.cash-reports a')?.href.includes('view=comparison-csv')");
+  assert.match(await evaluate("document.querySelector('.cash-reports tbody').textContent"), /\+300 DA/);
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&page=2` });

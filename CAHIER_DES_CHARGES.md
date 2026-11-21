@@ -54,12 +54,17 @@ sans inclure les cartes cadeaux utilisées. Le solde attendu n’est pas un
 comptage réel. Les journées passées sont consultables en lecture seule.
 Les échéances et les impayés restent à traiter.
 
-Dans **Caisse → Rapports**, les sous-lots intégrés localement sont les ventes
+Dans **Caisse → Rapports**, les sous-lots publiés sont les ventes
 par prestation et par produit, et le journal des annulations de ventes.
 Chaque vue se filtre par période et s’exporte en CSV. Les ventes utilisent
 les libellés et prix enregistrés sur les tickets ; les annulations sont
 comptées à leur date d’enregistrement, même si la vente est antérieure.
 Le journal affiche le motif saisi et donne accès au détail de la vente.
+
+Deux sous-lots de rapports sont intégrés localement : ventes par collaborateur
+(attribution d’après le rendez-vous) et comparaison avec la période précédente
+de même durée. Les deux vues disposent d’un export CSV et ne nécessitent
+pas de migration supplémentaire.
 
 ## Paiements à garder en attente
 

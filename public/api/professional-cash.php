@@ -713,6 +713,86 @@ function bookili_cash_csv_output(string $filename)
     return $output;
 }
 
+function bookili_cash_report_totals_sql(): string
+{
+    return "COALESCE(SUM(CASE WHEN events.event_kind = 'sale' THEN events.amount_dzd ELSE 0 END), 0) AS gross_dzd,
+            COALESCE(SUM(CASE WHEN events.event_kind = 'void' THEN -events.amount_dzd ELSE 0 END), 0) AS void_dzd,
+            COALESCE(SUM(events.amount_dzd), 0) AS net_dzd,
+            COALESCE(SUM(events.collected_dzd), 0) AS received_dzd,
+            COALESCE(SUM(events.event_kind = 'sale'), 0) AS sale_count,
+            COALESCE(SUM(events.event_kind = 'void'), 0) AS void_count";
+}
+
+function bookili_cash_team_report(PDO $pdo, int $salonId, bool $csv): never
+{
+    [$from, $to, $page] = bookili_cash_period();
+    $events = bookili_cash_event_sql();
+    $totals = bookili_cash_report_totals_sql();
+    $statement = $pdo->prepare(
+        "SELECT m.id AS staff_id, COALESCE(m.name, 'Non attribué') AS staff_name, m.is_active, $totals
+         FROM ($events) AS events
+         JOIN cash_sales s ON s.id = events.id
+         LEFT JOIN appointments a ON a.id = s.appointment_id AND a.salon_id = s.salon_id
+         LEFT JOIN staff_members m ON m.id = a.staff_id AND m.salon_id = s.salon_id
+         GROUP BY m.id, m.name, m.is_active ORDER BY m.id IS NULL, m.name, m.id"
+         . ($csv ? '' : ' LIMIT 51 OFFSET ' . (($page - 1) * 50))
+    );
+    $statement->execute(bookili_cash_event_params($salonId, $from, $to));
+    if ($csv) {
+        $output = bookili_cash_csv_output('bookili-ventes-equipe.csv');
+        fputcsv($output, ['Référence', 'Collaborateur', 'Statut', 'Ventes', 'Annulations', 'Brut (DA)', 'Annulations (DA)', 'Net (DA)', 'Encaissé net (DA)'], ';', '"', '');
+        while ($row = $statement->fetch()) {
+            fputcsv($output, [$row['staff_id'], bookili_csv_text($row['staff_name']),
+                $row['staff_id'] === null ? '' : ((int) $row['is_active'] ? 'Actif' : 'Inactif'),
+                $row['sale_count'], $row['void_count'], $row['gross_dzd'], $row['void_dzd'], $row['net_dzd'], $row['received_dzd']], ';', '"', '');
+        }
+        fclose($output);
+        exit;
+    }
+    $rows = $statement->fetchAll();
+    bookili_json_response(200, ['entries' => array_slice($rows, 0, 50), 'hasMore' => count($rows) > 50]);
+}
+
+function bookili_cash_comparison_report(PDO $pdo, int $salonId, bool $csv): never
+{
+    [$from, $to] = bookili_cash_period();
+    $length = (int) $from->diff($to)->days + 1;
+    $previousFrom = $from->modify("-$length days");
+    $previousTo = $from->modify('-1 day');
+    $events = bookili_cash_event_sql();
+    $totals = bookili_cash_report_totals_sql();
+    $statement = $pdo->prepare(
+        "SELECT event_at >= :boundary AS is_current, $totals FROM ($events) AS events GROUP BY is_current"
+    );
+    $statement->execute(bookili_cash_event_params($salonId, $previousFrom, $to) + ['boundary' => $from->format('Y-m-d 00:00:00')]);
+    $labels = [
+        'sale_count' => 'Ventes', 'void_count' => 'Annulations', 'gross_dzd' => 'Ventes brutes (DA)',
+        'void_dzd' => 'Annulations (DA)', 'net_dzd' => 'Ventes nettes (DA)', 'received_dzd' => 'Encaissé net (DA)',
+    ];
+    $rows = array_column($statement->fetchAll(), null, 'is_current');
+    $report = [
+        'current' => ['from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d')],
+        'previous' => ['from' => $previousFrom->format('Y-m-d'), 'to' => $previousTo->format('Y-m-d')],
+    ];
+    foreach (['current' => 1, 'previous' => 0] as $period => $index) {
+        foreach ($labels as $key => $label) $report[$period][$key] = (int) ($rows[$index][$key] ?? 0);
+    }
+    if ($csv) {
+        $output = bookili_cash_csv_output('bookili-comparaison-periodes.csv');
+        fputcsv($output, ['Indicateur', 'Période sélectionnée', 'Période précédente', 'Écart'], ';', '"', '');
+        fputcsv($output, ['Du', $report['current']['from'], $report['previous']['from']], ';', '"', '');
+        fputcsv($output, ['Au', $report['current']['to'], $report['previous']['to']], ';', '"', '');
+        foreach ($labels as $key => $label) {
+            $current = $report['current'][$key];
+            $previous = $report['previous'][$key];
+            fputcsv($output, [$label, $current, $previous, $current - $previous], ';', '"', '');
+        }
+        fclose($output);
+        exit;
+    }
+    bookili_json_response(200, $report);
+}
+
 function bookili_cash_items_report(PDO $pdo, int $salonId, bool $csv): never
 {
     [$from, $to, $page] = bookili_cash_period();
@@ -869,6 +949,8 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === 'professional-cas
         if ($view === 'cards' || $view === 'cards-csv') bookili_cash_cards($pdo, $salonId, $view === 'cards-csv');
         if ($view === 'payments' || $view === 'payments-csv') bookili_cash_journal($pdo, $salonId, $view === 'payments-csv', 'payments');
         if ($view === 'items-report' || $view === 'items-report-csv') bookili_cash_items_report($pdo, $salonId, $view === 'items-report-csv');
+        if ($view === 'team-report' || $view === 'team-report-csv') bookili_cash_team_report($pdo, $salonId, $view === 'team-report-csv');
+        if ($view === 'comparison' || $view === 'comparison-csv') bookili_cash_comparison_report($pdo, $salonId, $view === 'comparison-csv');
         if ($view === 'voids' || $view === 'voids-csv') bookili_cash_journal($pdo, $salonId, $view === 'voids-csv', 'voids');
         if ($view === 'journal' || $view === 'csv') bookili_cash_journal($pdo, $salonId, $view === 'csv');
         bookili_json_response(422, ['error' => 'Vue de caisse invalide.']);

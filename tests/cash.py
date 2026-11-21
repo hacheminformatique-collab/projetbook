@@ -83,6 +83,16 @@ def main():
     assert saved["total_dzd"] == 2900 and saved["lines"][0]["item_name"] == "Shampooing"
     assert saved["lines"][0]["unit_price_dzd"] == 1200
     assert expect(professional.request(ENDPOINT), 200)["netDzd"] == 2900
+    comparison_path = ENDPOINT + "?view=comparison"
+    comparison = expect(professional.request(comparison_path + f"&from={yesterday}&to={today}"), 200)
+    prior_start = (datetime.date.fromisoformat(yesterday) - datetime.timedelta(days=2)).isoformat()
+    prior_end = (datetime.date.fromisoformat(yesterday) - datetime.timedelta(days=1)).isoformat()
+    assert comparison["current"]["sale_count"] == 1 and comparison["current"]["net_dzd"] == 2900
+    assert (comparison["previous"]["from"], comparison["previous"]["to"]) == (prior_start, prior_end)
+    assert comparison["previous"]["sale_count"] == 0
+    with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=comparison-csv&from={yesterday}&to={today}") as response:
+        rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
+    assert ["Ventes nettes (DA)", "2900", "0", "2900"] in rows
     items = ENDPOINT + "?view=items-report"
     products = expect(professional.request(items + "&kind=product"), 200)["entries"]
     assert [(row["item_name"], int(row["sold_quantity"]), int(row["gross_dzd"])) for row in products] == [("Shampooing", 2, 2400)]
@@ -279,6 +289,17 @@ def main():
     expect(professional.request(ENDPOINT, {"action": "void", "saleId": assigned_sale, "reason": "Correction"}), 200)
     filtered = expect(professional.request(f"{stats}&staff={staff}"), 200)
     assert filtered["summary"]["void_count"] == 1 and filtered["breakdown"]["services_dzd"] == 0
+    team_path = ENDPOINT + "?view=team-report"
+    team = expect(professional.request(team_path), 200)["entries"]
+    assert len(team) == 2
+    assigned, unassigned = team
+    assert int(assigned["staff_id"]) == int(staff) and assigned["staff_name"] == "Équipe test"
+    assert [int(assigned[key]) for key in ("sale_count", "void_count", "gross_dzd", "net_dzd")] == [1, 1, 500, 0]
+    assert unassigned["staff_id"] is None and int(unassigned["net_dzd"]) == report["summary"]["net_dzd"]
+    assert expect(other.request(team_path), 200)["entries"] == []
+    with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=team-report-csv") as response:
+        rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
+    assert rows[1] == [str(staff), "Équipe test", "Actif", "1", "1", "500", "500", "0", "0"]
     assert filtered["average_basket_dzd"] == 500
     with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=statistics-csv&staff={staff}") as response:
         rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))

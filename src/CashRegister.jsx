@@ -610,8 +610,10 @@ function CashReports({ revision, onSelect }) {
   const [kind, setKind] = useState("service");
   const [page, setPage] = useState(1);
   const isVoids = kind === "voids";
-  const view = isVoids ? "voids" : "items-report";
-  const filters = isVoids ? period : { ...period, kind };
+  const isTeam = kind === "team";
+  const isComparison = kind === "comparison";
+  const view = isVoids ? "voids" : isTeam ? "team-report" : isComparison ? "comparison" : "items-report";
+  const filters = view === "items-report" ? { ...period, kind } : period;
   const { data, error } = useCashData(new URLSearchParams({ view, ...filters, page }).toString(), revision);
   return <section className="client-card cash-reports">
     <h2>Rapports de caisse</h2>
@@ -624,6 +626,8 @@ function CashReports({ revision, onSelect }) {
       <label>Rapport<select value={kind} onChange={(event) => { setKind(event.target.value); setPage(1); }}>
         <option value="service">Ventes par prestation</option>
         <option value="product">Ventes par produit</option>
+        <option value="team">Ventes par collaborateur</option>
+        <option value="comparison">Comparaison de périodes</option>
         <option value="voids">Journal des annulations</option>
       </select></label>
       <label>Du<input name="from" type="date" required defaultValue={period.from} max={algerianDate()} /></label>
@@ -632,16 +636,38 @@ function CashReports({ revision, onSelect }) {
       {data && <a className="admin-nav-link" href={apiUrl(`${endpoint}?${new URLSearchParams({ view: `${view}-csv`, ...filters })}`)}>Exporter le rapport (CSV)</a>}
     </form>
     <p>{isVoids ? "Les annulations de ventes sont affichées à leur date d’enregistrement."
-      : "Les libellés et les prix sont ceux enregistrés à la vente. Les annulations sont déduites à leur date d’enregistrement."}</p>
+      : isTeam ? "Les ventes sont rattachées au collaborateur du rendez-vous associé. Les autres ventes sont non attribuées."
+        : isComparison ? "La période sélectionnée est comparée aux jours qui la précèdent immédiatement, sur la même durée."
+          : "Les libellés et les prix sont ceux enregistrés à la vente. Les annulations sont déduites à leur date d’enregistrement."}</p>
     {error && <Feedback notice={{ kind: "error", text: error }} />}
     {!data && !error && <p role="status">Chargement du rapport…</p>}
-    {data?.entries.length === 0 && <p>{isVoids ? "Aucune annulation de vente sur cette période." : "Aucune opération sur cette période."}</p>}
-    {data?.entries.length > 0 && <div className="cash-journal-table"><table>
+    {data && isComparison && <div className="cash-journal-table"><table>
+      <thead><tr><th scope="col">Indicateur</th>
+        {[[data.current, "Sélectionnée"], [data.previous, "Précédente"]].map(([range, label]) => <th key={label} scope="col">{label}
+          <small>{range.from.split("-").reverse().join("/")} – {range.to.split("-").reverse().join("/")}</small></th>)}
+        <th scope="col">Écart</th></tr></thead>
+      <tbody>{[
+        ["sale_count", "Ventes"], ["void_count", "Annulations"], ["gross_dzd", "Ventes brutes"],
+        ["void_dzd", "Montant des annulations"], ["net_dzd", "Ventes nettes"], ["received_dzd", "Encaissé net"],
+      ].map(([key, label]) => {
+        const format = key.endsWith("_dzd") ? priceLabel : (value) => value;
+        const current = data.current[key], previous = data.previous[key];
+        return <tr key={key}><th scope="row">{label}</th><td>{format(current)}</td><td>{format(previous)}</td>
+          <td>{current > previous ? "+" : ""}{format(current - previous)}</td></tr>;
+      })}</tbody>
+    </table></div>}
+    {data?.entries?.length === 0 && <p>{isVoids ? "Aucune annulation de vente sur cette période." : "Aucune opération sur cette période."}</p>}
+    {data?.entries?.length > 0 && <div className="cash-journal-table"><table>
       <thead><tr>{(isVoids ? ["Vente", "Mode", "Montant (déduction)", "Motif"]
+        : isTeam ? ["Collaborateur", "Ventes", "Annulations", "Brut", "Montant annulé", "Net", "Encaissé net"]
         : ["Nom à la vente", "Qté vendue", "Qté annulée", "Brut", "Annulations", "Net"]).map((column) => <th scope="col" key={column}>{column}</th>)}</tr></thead>
       <tbody>{isVoids ? data.entries.map((row) => <tr key={row.id}>
         <th scope="row"><button className="cash-journal-sale-link" type="button" onClick={() => onSelect(row.id)}>n° {row.id}</button><small>{appointmentDate(row.event_at)}</small></th>
         <td>{methods[row.payment_method]}</td><td>{priceLabel(row.amount_dzd)}</td><td>{row.reason}</td>
+      </tr>) : isTeam ? data.entries.map((row) => <tr key={row.staff_id ?? "unassigned"}>
+        <th scope="row">{row.staff_name}{row.staff_id !== null && !Number(row.is_active) && <small>Inactif</small>}</th>
+        <td>{row.sale_count}</td><td>{row.void_count}</td><td>{priceLabel(row.gross_dzd)}</td>
+        <td>{priceLabel(row.void_dzd)}</td><td>{priceLabel(row.net_dzd)}</td><td>{priceLabel(row.received_dzd)}</td>
       </tr>) : data.entries.map((row) => <tr key={`${row.item_id}:${row.item_name}`}>
         <th scope="row">{row.item_name}<small>n° {row.item_id}</small></th>
         <td>{row.sold_quantity}</td><td>{row.void_quantity}</td>
