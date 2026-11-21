@@ -66,10 +66,15 @@ Deux sous-lots de rapports sont publiés : ventes par collaborateur
 de même durée. Les deux vues disposent d’un export CSV et ne nécessitent
 pas de migration supplémentaire.
 
-Deux sous-lots de stock sont intégrés localement : catégories libres avec
+Deux sous-lots de stock sont publiés : catégories libres avec
 filtre, et stock maximum facultatif avec alerte au-delà de la valeur définie.
 Le maximum ne bloque pas les mouvements. Les deux champs figurent dans le
 CSV des stocks et utilisent la migration `028_product_stock_settings.sql`.
+
+Le comptage physique par produit et l’export filtrable de son historique sont
+intégrés localement. Un comptage consigne le stock avant, l’écart et le stock
+compté, même si l’écart est nul. Un mouvement intervenu depuis l’affichage
+impose de vérifier et de recompter. Migration : `029_stock_counts.sql`.
 
 ## Paiements à garder en attente
 

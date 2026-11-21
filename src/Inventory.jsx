@@ -138,34 +138,41 @@ export default function Inventory({ csrfToken }) {
 
 function StockMovements({ productId, csrfToken, refresh, onChanged }) {
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState("all");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
   const [pending, setPending] = useState(null);
   const [direction, setDirection] = useState("in");
+  const [countVersion, setCountVersion] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [reason, setReason] = useState("");
+  const count = direction === "count";
+  const historyQuery = new URLSearchParams({ productId, filter }).toString();
 
   useEffect(() => {
     const controller = new AbortController();
     setError("");
     setResult(null);
-    apiRequest(`professional-stock-movements.php?productId=${productId}&page=${page}`, { signal: controller.signal })
-      .then(setResult)
+    apiRequest(`professional-stock-movements.php?${historyQuery}&page=${page}`, { signal: controller.signal })
+      .then((data) => { if (!controller.signal.aborted) setResult(data); })
       .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
     return () => controller.abort();
-  }, [productId, page, refresh]);
+  }, [historyQuery, page, refresh]);
 
   async function submit(event) {
     event.preventDefault();
-    const body = pending || { productId, direction, quantity, reason, requestKey: crypto.randomUUID() };
+    if (saving || (!pending && count && countVersion !== result.stockVersion)) return;
+    const body = pending || { productId, direction, quantity, reason, requestKey: crypto.randomUUID(),
+      ...(count ? { stockVersion: countVersion } : {}) };
     setPending(body);
     setSaving(true);
     setNotice(null);
     try {
       const saved = await apiRequest("professional-stock-movements.php", { csrfToken, body });
       setPending(null);
+      setDirection("in");
       setQuantity(1);
       setReason("");
       setPage(1);
@@ -173,6 +180,11 @@ function StockMovements({ productId, csrfToken, refresh, onChanged }) {
       setNotice({ kind: "success", text: saved.message });
     } catch (cause) {
       if (cause.status >= 400 && cause.status < 500) setPending(null);
+      if (cause.status === 409 && body.direction === "count") {
+        setDirection("in");
+        setQuantity(1);
+        onChanged();
+      }
       setNotice({ kind: "error", text: cause.message });
     } finally { setSaving(false); }
   }
@@ -187,20 +199,35 @@ function StockMovements({ productId, csrfToken, refresh, onChanged }) {
         {(Number(result.product.is_active) === 1 || pending) ? <form className="auth-form" onSubmit={submit}>
           <fieldset className="form-fieldset" disabled={saving || !!pending}>
             <div className="auth-grid">
-              <label>Mouvement<select value={direction} onChange={(event) => setDirection(event.target.value)}><option value="in">Entrée de stock</option><option value="out">Sortie de stock</option></select></label>
-              <label>Quantité (unités entières)<input required type="number" min={1} max={1000000} step={1} value={quantity} onChange={(event) => setQuantity(numericValue(event.target.value))} /></label>
+              <label>Mouvement<select value={direction} onChange={(event) => {
+                const next = event.target.value;
+                setDirection(next);
+                if (next === "count") { setCountVersion(result.stockVersion); setQuantity(""); }
+                else if (count) setQuantity(1);
+              }}><option value="in">Entrée de stock</option><option value="out">Sortie de stock</option><option value="count">Comptage physique</option></select></label>
+              <label>{count ? "Quantité réellement comptée" : "Quantité (unités entières)"}<input required type="number" min={count ? 0 : 1} max={1000000} step={1} value={quantity} onChange={(event) => setQuantity(numericValue(event.target.value))} /></label>
             </div>
+            {count && <p className="field-hint">Le comptage rapproche le stock enregistré de la quantité réellement comptée.
+              {quantity !== "" && <> Écart : {Number(quantity) - Number(result.product.quantity)} unité(s).</>}</p>}
             <label>Motif obligatoire<input required maxLength={255} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Livraison, utilisation en cabine, casse, correction…" /></label>
           </fieldset>
-          <button type="submit" className="auth-submit" disabled={saving}>{saving ? "Enregistrement…" : pending ? "Réessayer le même mouvement" : "Enregistrer le mouvement"}</button>
+          {!pending && count && countVersion !== result.stockVersion && <p role="alert">Le stock a changé. Resélectionnez le comptage et recommencez.</p>}
+          <button type="submit" className="auth-submit" disabled={saving || (!pending && count && countVersion !== result.stockVersion)}>{saving ? "Enregistrement…" : pending ? "Réessayer le même mouvement" : count ? "Confirmer le comptage" : "Enregistrer le mouvement"}</button>
           {pending && !saving && <p className="field-hint">La réponse est incertaine. Réessayez ce même mouvement : il ne sera pas compté deux fois. Vérifiez l’historique avant de quitter cette page.</p>}
         </form> : <p>Produit archivé : les mouvements restent consultables, mais aucune entrée ou sortie n’est possible.</p>}
         <h3>Historique des mouvements</h3>
+        <div className="booking-toolbar">
+          <label>Type d’historique<select value={filter} disabled={saving} onChange={(event) => { setFilter(event.target.value); setPage(1); }}>
+            <option value="all">Tous les mouvements</option><option value="counts">Comptages physiques</option>
+          </select></label>
+          <a className="admin-nav-link" href={apiUrl(`professional-stock-movements.php?${historyQuery}&format=csv`)}>Exporter l’historique (CSV)</a>
+        </div>
         <p className="field-hint">Horaires d’Algérie. Les mouvements ne sont pas supprimables ; utilisez un mouvement inverse motivé pour corriger une erreur.</p>
         {result.movements.length === 0 && <p>Aucun mouvement enregistré.</p>}
         <div className="service-list">
           {result.movements.map((movement) => <article className="service-row" key={movement.id}>
             <span><strong>{Number(movement.quantity_delta) > 0 ? "+" : ""}{movement.quantity_delta} unité(s)</strong> · Stock après : {movement.quantity_after}<br />
+              {!!Number(movement.is_count) && <>Comptage physique · Stock avant : {Number(movement.quantity_after) - Number(movement.quantity_delta)}<br /></>}
               {movement.reason}<br /><small>{appointmentDate(movement.created_at)}</small>
             </span>
           </article>)}

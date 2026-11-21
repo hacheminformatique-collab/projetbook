@@ -179,6 +179,31 @@ def main():
     assert len(second_page["movements"]) == 1 and second_page["hasMore"] is False
     assert first_page["movements"][0]["quantity_after"] == 51
     assert second_page["movements"][0]["quantity_after"] == 1
+
+    def count(version, quantity, **changes):
+        return {"productId": formula_id, "direction": "count", "quantity": quantity,
+                "stockVersion": version, "reason": "=Inventaire", "requestKey": str(uuid.uuid4()), **changes}
+
+    # Even a round trip back to the same quantity invalidates a count in progress.
+    expect(move(professional, formula_id, 1), 200)
+    expect(move(professional, formula_id, 1, direction="out"), 200)
+    expect(professional.request(MOVEMENTS, count(first_page["stockVersion"], 0)), 409)
+    current = history(professional, formula_id)
+    assert current["product"]["quantity"] == 51
+    counted = count(current["stockVersion"], 0)
+    expect(other.request(MOVEMENTS, counted), 404)
+    assert expect(professional.request(MOVEMENTS, counted), 200)["duplicate"] is False
+    assert expect(professional.request(MOVEMENTS, counted), 200)["duplicate"] is True
+    expect(professional.request(MOVEMENTS, {**counted, "quantity": 1}), 409)
+    expect(professional.request(MOVEMENTS, count(history(professional, formula_id)["stockVersion"], 0)), 200)
+    counts_url = f"{MOVEMENTS}?productId={formula_id}&filter=counts"
+    counts = expect(professional.request(counts_url), 200)["movements"]
+    assert [(row["quantity_delta"], row["quantity_after"], row["is_count"]) for row in counts] == [(0, 0, 1), (-51, 0, 1)]
+    expect(other.request(counts_url + "&format=csv"), 404)
+    with professional.opener.open(f"{account_tests.BASE}/api/{counts_url}&format=csv") as response:
+        rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
+    assert len(rows) == 3 and rows[2][0] == "'=1+1"
+    assert rows[2][2:] == ["Comptage physique", "51", "-51", "0", "'=Inventaire"]
     print("Inventory checks passed: ownership, validation, stock limits, history, alerts, archiving, CSV, pagination, idempotency and concurrency.")
 
 

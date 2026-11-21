@@ -31,15 +31,22 @@ function bookili_csv_text(string $value): string
     return preg_match('/^[\s\x00-\x20]*[=+@-]|^[\t\r\n]/u', $value) ? "'" . $value : $value;
 }
 
-function bookili_write_stock_movement(PDO $pdo, int $productId, int $actorId, string $key, int $delta, int $after, string $reason, string $now): void
+function bookili_write_stock_movement(PDO $pdo, int $productId, int $actorId, string $key, int $delta, int $after, string $reason, string $now, bool $isCount = false): void
 {
     $pdo->prepare('UPDATE products SET quantity = :quantity WHERE id = :id')
         ->execute(['quantity' => $after, 'id' => $productId]);
     $pdo->prepare(
-        'INSERT INTO stock_movements (product_id, actor_id, request_key, quantity_delta, quantity_after, reason, created_at)
-         VALUES (:product_id, :actor_id, :request_key, :delta, :after, :reason, :created_at)'
+        'INSERT INTO stock_movements (product_id, actor_id, request_key, quantity_delta, quantity_after, is_count, reason, created_at)
+         VALUES (:product_id, :actor_id, :request_key, :delta, :after, :is_count, :reason, :created_at)'
     )->execute([
         'product_id' => $productId, 'actor_id' => $actorId, 'request_key' => $key,
-        'delta' => $delta, 'after' => $after, 'reason' => $reason, 'created_at' => $now,
+        'delta' => $delta, 'after' => $after, 'is_count' => (int) $isCount, 'reason' => $reason, 'created_at' => $now,
     ]);
+}
+
+function bookili_stock_version(PDO $pdo, int $productId, bool $lock = false): string
+{
+    $statement = $pdo->prepare('SELECT id FROM stock_movements WHERE product_id = :id ORDER BY id DESC LIMIT 1' . ($lock ? ' FOR UPDATE' : ''));
+    $statement->execute(['id' => $productId]);
+    return (string) ($statement->fetchColumn() ?: '0');
 }

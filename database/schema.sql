@@ -345,6 +345,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   request_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   quantity_delta INT NOT NULL,
   quantity_after INT UNSIGNED NOT NULL,
+  is_count BOOLEAN NOT NULL DEFAULT FALSE,
   reason VARCHAR(255) NOT NULL,
   created_at DATETIME NOT NULL,
   PRIMARY KEY (id),

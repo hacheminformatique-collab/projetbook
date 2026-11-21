@@ -249,7 +249,8 @@ migrations à importer dans phpMyAdmin est :
 `database/migrations/025_daily_schedule_pauses.sql` et
 `database/migrations/026_campaign_request_key.sql`, puis
 `database/migrations/027_cash_drawer.sql`, puis
-`database/migrations/028_product_stock_settings.sql`. Les nouvelles installations
+`database/migrations/028_product_stock_settings.sql`, puis
+`database/migrations/029_stock_counts.sql`. Les nouvelles installations
 utilisent directement `database/schema.sql`.
 
 Après avoir téléversé `dist/`, exécuter le contrôle structurel avec le même
@@ -791,5 +792,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/025_daily_schedule_pauses.sql` et
 `database/migrations/026_campaign_request_key.sql` et
 `database/migrations/027_cash_drawer.sql` et
-`database/migrations/028_product_stock_settings.sql`, dans cet ordre,
+`database/migrations/028_product_stock_settings.sql` et
+`database/migrations/029_stock_counts.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

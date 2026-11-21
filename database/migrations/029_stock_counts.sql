@@ -1,0 +1,2 @@
+ALTER TABLE stock_movements
+  ADD COLUMN is_count BOOLEAN NOT NULL DEFAULT FALSE;
