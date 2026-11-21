@@ -106,6 +106,12 @@ sur la période). Les deux indicateurs et leurs effectifs suivent les filtres
 de période et d’équipe et figurent dans le CSV ; l’historique d’un client
 peut précéder la période et ne dépend pas du collaborateur filtré.
 
+Publiés dans la fiche client, sans migration supplémentaire : le
+détail des dépenses liées aux rendez-vous (total, montant encaissé et cartes
+cadeaux utilisées, hors ventes annulées) et la fréquence des visites (nombre
+de jours de visite, dernière visite et intervalle moyen). La fréquence compte
+seulement les rendez-vous terminés avec vente non annulée, une fois par jour.
+
 ## Paiements à garder en attente
 
 **Tap to Pay sur iPhone**, **terminal de paiement**, **paiement en ligne** et

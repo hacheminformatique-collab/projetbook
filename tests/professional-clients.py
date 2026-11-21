@@ -60,6 +60,9 @@ def main():
     detail = expect(professional.request(detail_path), 200)
     assert detail["client"]["private_note"] == ""
     assert detail["client"]["appointment_count"] == 1
+    assert detail["client"]["paid_visit_days"] == 0 and detail["client"]["last_paid_visit"] is None
+    assert detail["client"]["average_visit_interval_days"] is None
+    assert detail["client"]["total_collected_dzd"] == detail["client"]["total_gift_card_dzd"] == 0
     assert len(detail["appointments"]) == 1 and detail["appointments"][0]["private_note"] == appointment_note
 
     note = "Préférence : prévenir avant le brushing.\nInformations privées au salon."

@@ -318,6 +318,7 @@ try {
               phone_number: "0550123456", date_of_birth: "1990-01-01",
               appointment_count: 2, confirmed_count: 2, cancelled_count: 0,
               latest_visit: null, next_appointment: null, total_spent_dzd: 0,
+              total_collected_dzd: 0, total_gift_card_dzd: 0, paid_visit_days: 0, last_paid_visit: null, average_visit_interval_days: null,
               private_note: clientNote, private_note_updated_at: null,
             },
             appointments: [{
@@ -864,6 +865,7 @@ try {
   assert.equal(await evaluate("document.querySelector('.client-profile-switch button[aria-pressed=true]').textContent"), "Historique");
   await evaluate("void Array.from(document.querySelectorAll('.client-profile-switch button')).find(b => b.textContent === 'Infos').click()");
   assert.equal(await evaluate("document.querySelector('.client-profile-info').open"), true);
+  assert.match(await evaluate("document.querySelector('.client-profile-info').textContent"), /Encaissé hors cartes cadeaux.*Au moins deux jours de visite nécessaires/s);
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   assert.equal(await evaluate(`(() => {
     const list = document.querySelector('.client-directory-list').getBoundingClientRect();

@@ -30,12 +30,28 @@ function bookili_professional_client_detail(PDO $pdo, int $salonId, int $clientI
     $stats = $statement->fetch();
 
     $statement = $pdo->prepare(
-        'SELECT COALESCE(SUM(cs.total_dzd), 0) FROM appointments b
+        "SELECT COALESCE(SUM(cs.total_dzd), 0) AS total_spent_dzd,
+                COALESCE(SUM(cs.collected_dzd), 0) AS total_collected_dzd,
+                COALESCE(SUM(cs.gift_card_applied_dzd), 0) AS total_gift_card_dzd,
+                COUNT(DISTINCT CASE WHEN b.status = 'confirmed' AND b.ends_at <= :visit_now THEN DATE(b.starts_at) END) AS paid_visit_days,
+                MIN(CASE WHEN b.status = 'confirmed' AND b.ends_at <= :first_now THEN b.starts_at END) AS first_paid_visit,
+                MAX(CASE WHEN b.status = 'confirmed' AND b.ends_at <= :last_now THEN b.starts_at END) AS last_paid_visit
+         FROM appointments b
          INNER JOIN cash_sales cs ON cs.appointment_id = b.id AND cs.voided_at IS NULL
-         WHERE b.salon_id = :salon AND b.client_id = :client'
+         WHERE b.salon_id = :salon AND b.client_id = :client AND cs.salon_id = b.salon_id"
     );
-    $statement->execute(['salon' => $salonId, 'client' => $clientId]);
-    $client['total_spent_dzd'] = (int) $statement->fetchColumn();
+    $statement->execute(['salon' => $salonId, 'client' => $clientId, 'visit_now' => $now, 'first_now' => $now, 'last_now' => $now]);
+    $activity = $statement->fetch();
+    foreach (['total_spent_dzd', 'total_collected_dzd', 'total_gift_card_dzd', 'paid_visit_days'] as $field) {
+        $client[$field] = (int) $activity[$field];
+    }
+    $client['last_paid_visit'] = $activity['last_paid_visit'];
+    $client['average_visit_interval_days'] = null;
+    if ($client['paid_visit_days'] > 1) {
+        $first = bookili_calendar_date(substr($activity['first_paid_visit'], 0, 10));
+        $last = bookili_calendar_date(substr($activity['last_paid_visit'], 0, 10));
+        $client['average_visit_interval_days'] = round($first->diff($last)->days / ($client['paid_visit_days'] - 1), 1);
+    }
 
     $statement = $pdo->prepare(
         'SELECT note, updated_at FROM professional_client_notes WHERE salon_id = :salon AND client_id = :client'
@@ -44,7 +60,7 @@ function bookili_professional_client_detail(PDO $pdo, int $salonId, int $clientI
     $note = $statement->fetch();
     $client['private_note'] = $note['note'] ?? '';
     $client['private_note_updated_at'] = $note['updated_at'] ?? null;
-    foreach (['id', 'total_spent_dzd'] as $field) $client[$field] = (int) $client[$field];
+    $client['id'] = (int) $client['id'];
     foreach (['appointment_count', 'confirmed_count', 'cancelled_count', 'no_show_count'] as $field) $stats[$field] = (int) $stats[$field];
     $client += $stats;
 
@@ -54,7 +70,7 @@ function bookili_professional_client_detail(PDO $pdo, int $salonId, int $clientI
                 cs.payment_method, cs.voided_at
          FROM appointments b
          LEFT JOIN appointment_private_notes n ON n.appointment_id = b.id
-         LEFT JOIN cash_sales cs ON cs.appointment_id = b.id
+         LEFT JOIN cash_sales cs ON cs.appointment_id = b.id AND cs.salon_id = b.salon_id
          WHERE b.salon_id = :salon AND b.client_id = :client
          ORDER BY b.starts_at DESC, b.id DESC LIMIT 51 OFFSET ' . (($historyPage - 1) * 50)
     );

@@ -81,7 +81,7 @@ export default function ProfessionalClients({ csrfToken }) {
         <div>
           <strong>{client.first_name} {client.last_name}</strong>
           <span>{client.phone_number} · {client.email}</span>
-          <small>{client.appointment_count} rendez-vous · Dernière visite : {client.latest_visit ? appointmentDate(client.latest_visit) : "Aucune visite passée"}</small>
+          <small>{client.appointment_count} rendez-vous · Dernier rendez-vous confirmé passé : {client.latest_visit ? appointmentDate(client.latest_visit) : "Aucun"}</small>
         </div>
         <div className="client-directory-actions">
           <a className="admin-nav-link" href={`tel:${client.phone_number}`}>Appeler</a>
@@ -187,7 +187,7 @@ function ClientDetail({ csrfToken, detail, historyPage, historyLoading, historyE
     <p className="client-profile-contact">{client.phone_number} · {client.email}</p>
     <div className="client-profile-grid client-profile-summary">
       <article><span>Prochain rendez-vous</span><strong>{client.next_appointment ? appointmentDate(client.next_appointment) : "Aucun"}</strong></article>
-      <article><span>Dernière visite confirmée passée</span><strong>{client.latest_visit ? appointmentDate(client.latest_visit) : "Aucune"}</strong></article>
+      <article><span>Dernière visite avec vente</span><strong>{client.last_paid_visit ? appointmentDate(client.last_paid_visit) : "Aucune"}</strong></article>
       <article><span>Ventes liées aux rendez-vous</span><strong>{priceLabel(client.total_spent_dzd)}</strong></article>
     </div>
     <div className="client-profile-switch" role="group" aria-label="Rubriques de la fiche client">
@@ -237,8 +237,20 @@ function ClientDetail({ csrfToken, detail, historyPage, historyLoading, historyE
       <div className="client-profile-grid">
         <article><span>Date de naissance</span><strong>{client.date_of_birth.split("-").reverse().join("/")}</strong></article>
         <article><span>Rendez-vous</span><strong>{client.appointment_count} au total · {client.confirmed_count} confirmé(s) · {client.cancelled_count} annulé(s){client.no_show_count > 0 && ` · ${client.no_show_count} non présenté(s)`}</strong></article>
-        <article><span>Dernière visite confirmée passée</span><strong>{client.latest_visit ? appointmentDate(client.latest_visit) : "Aucune"}</strong></article>
-        <article><span>Ventes liées aux rendez-vous</span><strong>{priceLabel(client.total_spent_dzd)}</strong></article>
+      </div>
+      <h4>Dépenses liées aux rendez-vous</h4>
+      <p className="field-hint">Toutes les ventes non annulées rattachées à un rendez-vous de ce client dans le salon. Les achats sans rendez-vous ne sont pas attribués.</p>
+      <div className="client-profile-grid">
+        <article><span>Total des ventes</span><strong>{priceLabel(client.total_spent_dzd)}</strong></article>
+        <article><span>Encaissé hors cartes cadeaux</span><strong>{priceLabel(client.total_collected_dzd)}</strong></article>
+        <article><span>Cartes cadeaux utilisées</span><strong>{priceLabel(client.total_gift_card_dzd)}</strong></article>
+      </div>
+      <h4>Fréquence des visites</h4>
+      <p className="field-hint">Seuls les rendez-vous terminés avec une vente non annulée comptent. Plusieurs rendez-vous le même jour comptent comme un seul jour de visite.</p>
+      <div className="client-profile-grid">
+        <article><span>Jours de visite</span><strong>{client.paid_visit_days}</strong></article>
+        <article><span>Dernière visite avec vente</span><strong>{client.last_paid_visit ? appointmentDate(client.last_paid_visit) : "Aucune"}</strong></article>
+        <article><span>Intervalle moyen</span><strong>{client.average_visit_interval_days == null ? "Au moins deux jours de visite nécessaires" : `${client.average_visit_interval_days.toLocaleString("fr-FR")} j`}</strong></article>
       </div>
     </details>
   </section>;

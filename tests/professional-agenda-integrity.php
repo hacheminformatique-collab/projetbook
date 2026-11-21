@@ -9,7 +9,7 @@ require_once __DIR__ . '/../public/api/booking.php';
 
 $pdo = bookili_database();
 $appointment = $pdo->query(
-    "SELECT b.id, b.starts_at, b.ends_at, b.price_dzd, b.notification_version, b.staff_id, a.email, a.id AS actor_id
+    "SELECT b.id, b.client_id, b.starts_at, b.ends_at, b.price_dzd, b.notification_version, b.staff_id, a.email, a.id AS actor_id
      FROM appointments b
      INNER JOIN salons s ON s.id = b.salon_id
      INNER JOIN professional_profiles p ON p.id = s.professional_profile_id
@@ -105,6 +105,7 @@ $countNotifications = $pdo->prepare('SELECT COUNT(*) FROM notification_outbox WH
 $countNotifications->execute(['id' => $id]);
 $notifications = (int) $countNotifications->fetchColumn();
 $priorId = null;
+$sameDayId = null;
 $fixtureSales = [];
 try {
     $changeDate->execute(['start' => "$date 09:00:00", 'end' => "$date 10:15:00", 'id' => $id]);
@@ -138,8 +139,8 @@ try {
     $check((int) $countNotifications->fetchColumn() === $notifications, 'Marking the appointment or correcting it queued a notification.');
     $saleFixture = $pdo->prepare(
         "INSERT INTO cash_sales (salon_id, appointment_id, actor_id, request_key, request_hash, payment_method,
-           total_dzd, collected_dzd, recorded_at)
-         SELECT salon_id, id, :actor, :request_key, :hash, 'cash', price_dzd, price_dzd, ends_at
+           total_dzd, collected_dzd, gift_card_applied_dzd, recorded_at)
+         SELECT salon_id, id, :actor, :request_key, :hash, 'cash', price_dzd, price_dzd - 500, 500, ends_at
          FROM appointments WHERE id = :id"
     );
     $recordFixture = static function (int $id) use ($pdo, $saleFixture, $appointment): int {
@@ -151,10 +152,11 @@ try {
     [$status, $report] = $request('professional-cash.php?view=statistics' . $period);
     $check($status === 200 && $report['returns'] === ['client_count' => 1, 'returning_count' => 0, 'rate' => 0], 'First paid visit should not count as a return.');
     $previous = $past->modify('-1 day')->format('Y-m-d');
-    $pdo->prepare(
+    $clone = $pdo->prepare(
         'INSERT INTO appointments (salon_id, client_id, service_id, service_name, price_dzd, starts_at, ends_at)
          SELECT salon_id, client_id, service_id, service_name, price_dzd, :start, :end FROM appointments WHERE id = :id'
-    )->execute(['id' => $id, 'start' => "$previous 09:00:00", 'end' => "$previous 10:15:00"]);
+    );
+    $clone->execute(['id' => $id, 'start' => "$previous 09:00:00", 'end' => "$previous 10:15:00"]);
     $priorId = (int) $pdo->lastInsertId();
     $priorSale = $recordFixture($priorId);
     $fixtureSales[] = $priorSale;
@@ -165,11 +167,26 @@ try {
     $pdo->prepare('UPDATE cash_sales SET voided_at = recorded_at WHERE id = :id')->execute(['id' => $priorSale]);
     [$status, $report] = $request('professional-cash.php?view=statistics' . $period);
     $check($status === 200 && $report['returns']['returning_count'] === 0, 'A voided previous visit was counted.');
+    $clone->execute(['id' => $id, 'start' => "$date 12:00:00", 'end' => "$date 13:15:00"]);
+    $sameDayId = (int) $pdo->lastInsertId();
+    $fixtureSales[] = $recordFixture($sameDayId);
+    $clientPath = 'professional-clients.php?clientId=' . $appointment['client_id'];
+    [$status, $detail] = $request($clientPath);
+    $customer = $detail['client'];
+    $check($status === 200 && $customer['paid_visit_days'] === 1 && $customer['average_visit_interval_days'] === null, 'Two appointments on the same day counted as separate visit days.');
+    $check($customer['last_paid_visit'] === "$date 12:00:00", 'The latest visit was not returned.');
+    $check($customer['total_spent_dzd'] === 2 * (int) $appointment['price_dzd']
+        && $customer['total_gift_card_dzd'] === 1000 && $customer['total_collected_dzd'] === $customer['total_spent_dzd'] - 1000,
+        'Spending did not separate gift card redemptions and collections, or included the void.');
+    $pdo->prepare('UPDATE cash_sales SET voided_at = NULL WHERE id = :id')->execute(['id' => $priorSale]);
+    [$status, $detail] = $request($clientPath);
+    $check($status === 200 && $detail['client']['paid_visit_days'] === 2 && $detail['client']['average_visit_interval_days'] === 1, 'Visit frequency did not include the previous paid visit.');
     echo "Non-presentation, checkout, return rates and statistics CSV checks passed.\n";
 } finally {
     $deleteSale = $pdo->prepare('DELETE FROM cash_sales WHERE id = :id');
     foreach ($fixtureSales as $saleId) $deleteSale->execute(['id' => $saleId]);
     if ($priorId !== null) $pdo->prepare('DELETE FROM appointments WHERE id = :id')->execute(['id' => $priorId]);
+    if ($sameDayId !== null) $pdo->prepare('DELETE FROM appointments WHERE id = :id')->execute(['id' => $sameDayId]);
     $pdo->prepare("UPDATE appointments SET starts_at = :start, ends_at = :end, status = 'confirmed', no_show_at = NULL, notification_version = :version WHERE id = :id")
         ->execute(['start' => $appointment['starts_at'], 'end' => $appointment['ends_at'], 'version' => $appointment['notification_version'], 'id' => $id]);
     curl_close($curl);
