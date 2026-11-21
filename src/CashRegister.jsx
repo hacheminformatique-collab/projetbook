@@ -222,6 +222,7 @@ export function CashOverview({ revision = 0, statistics = false }) {
         <article><span>Règlements encaissés</span><strong>{priceLabel(data.summary.received_dzd)}</strong><small>Espèces, carte, virement et autres</small></article>
         <article><span>Cartes cadeaux utilisées</span><strong>{priceLabel(data.summary.gift_card_dzd)}</strong><small>Montant consommé sur les ventes</small></article>
         {statistics && <article><span>Panier moyen brut</span><strong>{data.average_basket_dzd === null ? "—" : priceLabel(data.average_basket_dzd)}</strong><small>Ventes brutes divisées par le nombre de ventes, avant annulations</small></article>}
+        {statistics && <article><span>Rendez-vous non présentés</span><strong>{data.no_show_count}</strong><small>Marquages explicites, à la date du rendez-vous</small></article>}
       </div>
       {statistics && <section className="cash-report-section">
         <h3>Ventes nettes par catégorie</h3>

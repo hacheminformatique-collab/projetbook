@@ -18,6 +18,7 @@ function bookili_professional_client_detail(PDO $pdo, int $salonId, int $clientI
     $statement = $pdo->prepare(
         "SELECT COUNT(*) AS appointment_count,
                 COALESCE(SUM(status = 'confirmed'), 0) AS confirmed_count,
+                COALESCE(SUM(status = 'no_show'), 0) AS no_show_count,
                 COALESCE(SUM(status = 'cancelled'), 0) AS cancelled_count,
                 MAX(CASE WHEN status = 'confirmed' AND ends_at <= :last_now THEN starts_at END) AS latest_visit,
                 MIN(CASE WHEN status = 'confirmed' AND starts_at > :next_now THEN starts_at END) AS next_appointment
@@ -44,7 +45,7 @@ function bookili_professional_client_detail(PDO $pdo, int $salonId, int $clientI
     $client['private_note'] = $note['note'] ?? '';
     $client['private_note_updated_at'] = $note['updated_at'] ?? null;
     foreach (['id', 'total_spent_dzd'] as $field) $client[$field] = (int) $client[$field];
-    foreach (['appointment_count', 'confirmed_count', 'cancelled_count'] as $field) $stats[$field] = (int) $stats[$field];
+    foreach (['appointment_count', 'confirmed_count', 'cancelled_count', 'no_show_count'] as $field) $stats[$field] = (int) $stats[$field];
     $client += $stats;
 
     $statement = $pdo->prepare(

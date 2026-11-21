@@ -21,7 +21,7 @@ try {
              FROM appointments b
              INNER JOIN client_profiles c ON c.account_id = b.client_id
              INNER JOIN accounts a ON a.id = c.account_id AND a.status = 'active' AND a.role = 'client'
-             WHERE b.salon_id = :salon AND b.client_id <> :professional AND b.status IN ('confirmed', 'cancelled')
+             WHERE b.salon_id = :salon AND b.client_id <> :professional
                AND (LOCATE(:name, CONCAT(c.first_name, ' ', c.last_name)) > 0
                     OR LOCATE(:first, c.first_name) > 0 OR LOCATE(:last, c.last_name) > 0
                     OR LOCATE(:phone, REPLACE(c.phone_number, ' ', '')) > 0)
@@ -82,7 +82,7 @@ try {
 
     $day = bookili_calendar_date($_GET['date'] ?? bookili_now()->format('Y-m-d'));
     $statement = $pdo->prepare(
-        'SELECT b.id, b.client_id, b.service_id, b.staff_id, b.service_name, b.price_dzd, b.notification_version AS version, cs.id AS cash_sale_id, cs.voided_at,
+        'SELECT b.id, b.client_id, b.service_id, b.staff_id, b.service_name, b.price_dzd, b.status, b.notification_version AS version, cs.id AS cash_sale_id, cs.voided_at,
                 b.starts_at, b.ends_at, c.first_name, c.last_name, c.phone_number, c.date_of_birth,
                 a.email, COALESCE(n.note, \'\') AS private_note
          FROM appointments b
@@ -90,7 +90,7 @@ try {
          INNER JOIN accounts a ON a.id = b.client_id
          LEFT JOIN appointment_private_notes n ON n.appointment_id = b.id
          LEFT JOIN cash_sales cs ON cs.appointment_id = b.id
-         WHERE b.salon_id = :salon AND b.status = \'confirmed\'
+         WHERE b.salon_id = :salon AND b.status IN (\'confirmed\', \'no_show\')
            AND b.starts_at < :day_end AND b.ends_at > :day_start
          ORDER BY b.starts_at, b.id LIMIT 1001'
     );

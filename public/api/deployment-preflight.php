@@ -140,7 +140,7 @@ if ($pdo instanceof PDO) {
         'accounts' => ['session_version'],
         'products' => ['category', 'max_stock_quantity', 'supplier_id'],
         'stock_movements' => ['is_count'],
-        'appointments' => ['notification_version'],
+        'appointments' => ['notification_version', 'no_show_at'],
         'salon_hours' => ['pause_starts_at', 'pause_ends_at'],
         'staff_hours' => ['pause_starts_at', 'pause_ends_at'],
         'notification_outbox' => ['appointment_version', 'locked_at'],

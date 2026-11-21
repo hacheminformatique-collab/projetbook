@@ -411,6 +411,7 @@ try {
             const assigned = url.searchParams.get("staff") !== "unassigned";
             data.staff = [{ id: 1, name: "Sonia", is_active: 1 }];
             data.average_basket_dzd = assigned ? 1000 : null;
+            data.no_show_count = assigned ? 1 : 2;
             data.breakdown = { services_dzd: assigned ? 1000 : 0, products_dzd: 0, other_dzd: 0 };
           }
         } else if (url.searchParams.get("view") === "catalog") {

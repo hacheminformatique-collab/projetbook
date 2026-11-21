@@ -79,6 +79,9 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
   const activeStaff = agenda.staff.filter((item) => Number(item.is_active));
   const canEdit = startsInFuture(appointment) && !appointment.cash_sale_id;
   const canCancel = startsInFuture(appointment) && (!appointment.cash_sale_id || appointment.voided_at);
+  const noShow = appointment.status === "no_show";
+  const canMarkAttendance = new Date(appointment.ends_at.replace(" ", "T") + "+01:00") <= new Date()
+    && (!appointment.cash_sale_id || appointment.voided_at);
   useEffect(() => {
     const controller = new AbortController();
     apiRequest(`professional-agenda.php?${new URLSearchParams({ historyFor: appointment.id })}`, { signal: controller.signal })
@@ -186,6 +189,19 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
     } catch (error) { setNotice({ error: true, text: error.message }); if (error.code === "appointment_changed") setStale(true); }
     finally { setBusy(false); }
   }
+  async function changeAttendance() {
+    if (busy || !hasVersion || stale || !canMarkAttendance) return;
+    if (!window.confirm(noShow ? "Retirer le marquage de non-présentation ?" : "Marquer ce rendez-vous comme non présenté ? Aucun e-mail ne sera envoyé.")) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const response = await apiRequest("appointments.php", { csrfToken, body: {
+        action: noShow ? "undo_no_show" : "no_show", appointmentId: Number(appointment.id), expectedVersion: Number(appointment.version),
+      } });
+      onChanged(true, response.message);
+    } catch (error) { setNotice({ error: true, text: error.message }); if (error.code === "appointment_changed") setStale(true); }
+    finally { setBusy(false); }
+  }
   return <div className="agenda-backdrop">
     <section className="agenda-detail" role="dialog" aria-modal="true" aria-labelledby="agenda-detail-title">
       <header className="agenda-detail-header">
@@ -205,6 +221,7 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
         Durée : {duration} min<br />
         Collaborateur : {agenda.staff.find((member) => String(member.id) === String(appointment.staff_id))?.name || "Non attribué"}
       </p>
+      {noShow && <p><strong>Non présenté</strong></p>}
       {hasDetails ? <ul className="agenda-service-lines">{appointment.services.map((item) =>
         <li key={item.id}>{item.name} · {item.duration_minutes} min · {priceLabel(item.price_dzd)}</li>)}</ul>
         : <p className="form-message form-error" role="alert">Le détail enregistré des prestations est indisponible ou incohérent. L’encaissement est impossible tant que le détail ne peut pas être vérifié. Vérifiez le rendez-vous ou contactez l’assistance.</p>}
@@ -232,16 +249,19 @@ function AppointmentDetail({ appointment, agenda, csrfToken, onClose, onChanged,
           <p>{item.note}</p>
         </article>)}
       </details>
-      {(canEdit || canCancel) && <div className="review-buttons">
+      {(canEdit || canCancel || canMarkAttendance) && <div className="review-buttons">
         {canEdit && <button className="admin-nav-link" type="button" disabled={busy || !hasVersion || stale} onClick={() => setEditing(!editing)}>{editing ? "Fermer la modification" : "Modifier le rendez-vous"}</button>}
         {canCancel && <button className="review-reject" type="button" disabled={busy || !hasVersion || stale} onClick={cancel}>Annuler le rendez-vous</button>}
+        {canMarkAttendance && <button className="admin-nav-link" type="button" disabled={busy || !hasVersion || stale} onClick={changeAttendance}>
+          {noShow ? "Retirer le marquage de non-présentation" : "Marquer non présenté"}
+        </button>}
       </div>}
       {appointment.cash_sale_id
         ? <>
           <p className="field-hint">Ce rendez-vous possède déjà une vente dans le journal{appointment.voided_at ? " (annulée)" : ""}.</p>
           <button className="admin-nav-link" type="button" disabled={busy} onClick={() => onViewSale(appointment.cash_sale_id)}>Voir la vente n° {appointment.cash_sale_id}</button>
         </>
-        : <button className="auth-submit agenda-cash-button" type="button" disabled={busy || !hasDetails || stale} onClick={() => onCheckout(appointment)}>Encaisser · {appointmentPrice}</button>}
+        : !noShow && <button className="auth-submit agenda-cash-button" type="button" disabled={busy || !hasDetails || stale} onClick={() => onCheckout(appointment)}>Encaisser · {appointmentPrice}</button>}
       {editing && <form className="auth-form agenda-edit" onSubmit={reschedule}>
         {suggestedTime && <p className="field-hint">Déplacement proposé à {suggestedTime}. {loadingSlots ? "" : slots.includes(suggestedTime) ? "Confirmez pour enregistrer." : "Ce créneau ne convient pas à la prestation. Choisissez un autre horaire."}</p>}
         <p className="field-hint">La prestation sera enregistrée au tarif et à la durée affichés ci-dessous. Le rendez-vous initial reste inchangé si le créneau est indisponible.</p>
@@ -705,6 +725,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
                 {!displaySettings.showTime && !displaySettings.showClient && !displaySettings.showServices
                   && (!displaySettings.showNote || !item.private_note) && <span>Rendez-vous</span>}
                 {!mobile && item.cash_sale_id && <small className="agenda-paid-badge">Encaissé</small>}
+                {item.status === "no_show" && <small>Non présenté</small>}
               </button>;
             })}
             {currentPosition !== null && <div className="agenda-current-time" aria-hidden="true" style={{ top: `${currentPosition}px` }} />}

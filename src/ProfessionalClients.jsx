@@ -208,7 +208,7 @@ function ClientDetail({ csrfToken, detail, historyPage, historyLoading, historyE
         {appointments.map((appointment) => <article className="appointment-card" key={appointment.id}>
           <header className="client-history-heading">
             <strong>{appointmentDate(appointment.starts_at)} · {appointment.service_name}</strong>
-            <span className={`client-status-${appointment.status}`}>{appointment.status === "cancelled" ? "Annulé" : "Confirmé"}</span>
+            <span className={`client-status-${appointment.status}`}>{appointment.status === "cancelled" ? "Annulé" : appointment.status === "no_show" ? "Non présenté" : "Confirmé"}</span>
           </header>
           <p>{priceLabel(appointment.price_dzd)}</p>
           {appointment.private_note && <p className="client-appointment-note"><strong>Note privée du rendez-vous :</strong> {appointment.private_note}</p>}
@@ -236,7 +236,7 @@ function ClientDetail({ csrfToken, detail, historyPage, historyLoading, historyE
       <summary>Autres informations et statistiques</summary>
       <div className="client-profile-grid">
         <article><span>Date de naissance</span><strong>{client.date_of_birth.split("-").reverse().join("/")}</strong></article>
-        <article><span>Rendez-vous</span><strong>{client.appointment_count} au total · {client.confirmed_count} confirmé(s) · {client.cancelled_count} annulé(s)</strong></article>
+        <article><span>Rendez-vous</span><strong>{client.appointment_count} au total · {client.confirmed_count} confirmé(s) · {client.cancelled_count} annulé(s){client.no_show_count > 0 && ` · ${client.no_show_count} non présenté(s)`}</strong></article>
         <article><span>Dernière visite confirmée passée</span><strong>{client.latest_visit ? appointmentDate(client.latest_visit) : "Aucune"}</strong></article>
         <article><span>Ventes liées aux rendez-vous</span><strong>{priceLabel(client.total_spent_dzd)}</strong></article>
       </div>

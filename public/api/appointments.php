@@ -73,9 +73,11 @@ try {
     }
 
     $action = $data['action'] ?? '';
-    if (!in_array($action, ['book', 'reschedule', 'cancel'], true)) {
+    if (!in_array($action, ['book', 'reschedule', 'cancel', 'no_show', 'undo_no_show'], true)) {
         bookili_json_response(422, ['error' => 'Action non autorisée.']);
     }
+    $attendance = in_array($action, ['no_show', 'undo_no_show'], true);
+    if ($attendance && !$professional) bookili_json_response(403, ['error' => 'Cette action est réservée au professionnel du salon.']);
     $newClient = null;
     $existingClientId = null;
     $appointmentId = $action !== 'book' ? bookili_id($data['appointmentId'] ?? null) : null;
@@ -116,7 +118,7 @@ try {
         if ($salonId === false) bookili_json_response(404, ['error' => 'Rendez-vous introuvable.']);
         $salonId = (int) $salonId;
     }
-    if ($action !== 'cancel') {
+    if (in_array($action, ['book', 'reschedule'], true)) {
         $serviceIds = $data['serviceIds'] ?? [$data['serviceId'] ?? null];
         if (!is_array($serviceIds) || !array_is_list($serviceIds)) {
             bookili_json_response(422, ['error' => 'Sélection de prestations invalide.']);
@@ -199,17 +201,31 @@ try {
                 'error' => 'Ce rendez-vous a changé depuis son affichage. Actualisez vos rendez-vous avant de réessayer.',
             ]);
         }
-        if ($appointment['status'] !== 'confirmed' || $appointment['starts_at'] <= bookili_now()->format('Y-m-d H:i:s')) {
+        $expectedStatus = $action === 'undo_no_show' ? 'no_show' : 'confirmed';
+        if ($appointment['status'] !== $expectedStatus || ($attendance
+            ? $appointment['ends_at'] > $now
+            : $appointment['starts_at'] <= $now)) {
             $pdo->rollBack();
-            bookili_json_response(409, ['error' => 'Ce rendez-vous ne peut plus être modifié.']);
+            bookili_json_response(409, ['error' => $attendance
+                ? 'Le statut de présence ne peut être modifié que pour un rendez-vous terminé et non annulé.'
+                : 'Ce rendez-vous ne peut plus être modifié.']);
         }
         $statement = $pdo->prepare('SELECT id, voided_at FROM cash_sales WHERE appointment_id = :id');
         $statement->execute(['id' => $appointmentId]);
         $linkedSale = $statement->fetch();
         if ($linkedSale && ($action === 'reschedule' || $linkedSale['voided_at'] === null)) {
             $pdo->rollBack();
-            bookili_json_response(409, ['error' => 'Un rendez-vous déjà enregistré en caisse ne peut plus être déplacé. Pour l’annuler, annulez d’abord la vente dans le journal de caisse.']);
+            bookili_json_response(409, ['error' => $attendance
+                ? 'Ce rendez-vous a une vente active. Annulez d’abord cette vente dans le journal de caisse.'
+                : 'Un rendez-vous déjà enregistré en caisse ne peut plus être déplacé. Pour l’annuler, annulez d’abord la vente dans le journal de caisse.']);
         }
+    }
+    if ($attendance) {
+        $pdo->prepare('UPDATE appointments SET status = :status, no_show_at = :marked_at, notification_version = notification_version + 1 WHERE id = :id')
+            ->execute(['status' => $action === 'no_show' ? 'no_show' : 'confirmed', 'marked_at' => $action === 'no_show' ? $now : null, 'id' => $appointmentId]);
+        $pdo->commit();
+        bookili_json_response(200, ['appointmentId' => $appointmentId, 'message' => $action === 'no_show'
+            ? 'Rendez-vous marqué non présenté.' : 'Marquage de non-présentation retiré.']);
     }
     if ($action === 'cancel') {
         $pdo->prepare("UPDATE appointments SET status = 'cancelled', notification_version = notification_version + 1 WHERE id = :id")

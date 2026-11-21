@@ -599,8 +599,9 @@ export function Appointments({ csrfToken, professional = false }) {
           const stale = staleIds.includes(appointment.id);
           const appointmentPrice = validAppointmentPrice(appointment.price_dzd) ? priceLabel(appointment.price_dzd) : "Tarif indisponible";
           const cancelled = appointment.status === "cancelled";
+          const noShow = appointment.status === "no_show";
           const past = !professional && filter === "past";
-          const status = <span className={`application-status ${cancelled ? "status-rejected" : past ? "appointment-status-past" : "status-approved"}`}>{cancelled ? "Annulé" : past ? "Passé" : "Confirmé"}</span>;
+          const status = <span className={`application-status ${cancelled || noShow ? "status-rejected" : past ? "appointment-status-past" : "status-approved"}`}>{cancelled ? "Annulé" : noShow ? "Non présenté" : past ? "Passé" : "Confirmé"}</span>;
           const durationLabel = Number.isSafeInteger(duration) && duration > 0 ? `${duration} min` : "Durée indisponible";
           return (
             <article className={`appointment-card${next && !expanded ? " appointment-next" : ""}`} key={appointment.id} hidden={showDetail && !expanded}>

@@ -9,7 +9,7 @@ require_once __DIR__ . '/../public/api/booking.php';
 
 $pdo = bookili_database();
 $appointment = $pdo->query(
-    "SELECT b.id, b.starts_at, b.price_dzd, a.email
+    "SELECT b.id, b.starts_at, b.ends_at, b.price_dzd, b.notification_version, b.staff_id, a.email
      FROM appointments b
      INNER JOIN salons s ON s.id = b.salon_id
      INNER JOIN professional_profiles p ON p.id = s.professional_profile_id
@@ -33,7 +33,7 @@ curl_setopt_array($curl, [
     CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEFILE => '', CURLOPT_TIMEOUT => 15,
 ]);
 $base = rtrim(getenv('BOOKILI_TEST_URL'), '/') . '/api/';
-$request = static function (string $path, ?array $body = null, string $csrf = '') use ($curl, $base): array {
+$request = static function (string $path, ?array $body = null, string $csrf = '', bool $csv = false) use ($curl, $base): array {
     curl_setopt_array($curl, [
         CURLOPT_URL => $base . $path,
         CURLOPT_HTTPGET => true,
@@ -47,7 +47,7 @@ $request = static function (string $path, ?array $body = null, string $csrf = ''
     }
     $result = curl_exec($curl);
     if ($result === false) throw new RuntimeException(curl_error($curl));
-    return [curl_getinfo($curl, CURLINFO_RESPONSE_CODE), json_decode($result, true, 512, JSON_THROW_ON_ERROR)];
+    return [curl_getinfo($curl, CURLINFO_RESPONSE_CODE), $csv ? $result : json_decode($result, true, 512, JSON_THROW_ON_ERROR)];
 };
 $check = static function (bool $condition, string $message): void {
     if (!$condition) throw new RuntimeException($message);
@@ -93,5 +93,48 @@ try {
     echo "Missing and incomplete appointment details are rejected by agenda and checkout.\n";
 } finally {
     $restore();
+}
+
+$mark = ['action' => 'no_show', 'appointmentId' => $id, 'expectedVersion' => (int) $appointment['notification_version']];
+[$status] = $request('appointments.php', $mark, $token);
+$check($status === 409, 'A future appointment accepted a non-presentation mark.');
+$past = bookili_now()->modify('-1 day');
+$date = $past->format('Y-m-d');
+$changeDate = $pdo->prepare('UPDATE appointments SET starts_at = :start, ends_at = :end WHERE id = :id');
+$countNotifications = $pdo->prepare('SELECT COUNT(*) FROM notification_outbox WHERE appointment_id = :id');
+$countNotifications->execute(['id' => $id]);
+$notifications = (int) $countNotifications->fetchColumn();
+try {
+    $changeDate->execute(['start' => "$date 09:00:00", 'end' => "$date 10:15:00", 'id' => $id]);
+    [$status] = $request('appointments.php', $mark, $token);
+    $check($status === 200, 'Could not mark an ended appointment as not presented.');
+    [$status, $agenda] = $request("professional-agenda.php?date=$date");
+    $items = array_values(array_filter($agenda['appointments'], static fn(array $item): bool => $item['id'] === $id));
+    $check($status === 200 && count($items) === 1 && $items[0]['status'] === 'no_show', 'The mark is not present in the agenda.');
+    [$status] = $request('professional-cash.php', $sale, $token);
+    $check($status === 409, 'A non-presented appointment was accepted at checkout.');
+    $scope = $appointment['staff_id'] ?? 'unassigned';
+    $period = "&from=$date&to=$date&staff=$scope";
+    [$status, $report] = $request('professional-cash.php?view=statistics' . $period);
+    $check($status === 200 && $report['no_show_count'] === 1, 'The correct appointment date and staff did not include the mark.');
+    [$status, $csv] = $request('professional-cash.php?view=statistics-csv' . $period, null, '', true);
+    $check($status === 200 && str_contains($csv, '"Rendez-vous non présentés";1'), 'The CSV does not include the count.');
+    $today = bookili_now()->format('Y-m-d');
+    [$status, $report] = $request("professional-cash.php?view=statistics&from=$today&to=$today");
+    $check($status === 200 && $report['no_show_count'] === 0, 'Mark counted by its recording date instead of the appointment date.');
+    $undo = ['action' => 'undo_no_show'] + $mark;
+    [$status, $response] = $request('appointments.php', $undo, $token);
+    $check($status === 409 && $response['code'] === 'appointment_changed', 'A stale correction was accepted.');
+    $undo['expectedVersion'] = $items[0]['version'];
+    [$status] = $request('appointments.php', $undo, $token);
+    $check($status === 200, 'Could not correct the status.');
+    [$status, $report] = $request('professional-cash.php?view=statistics' . $period);
+    $check($status === 200 && $report['no_show_count'] === 0, 'The corrected mark was kept in the report.');
+    $countNotifications->execute(['id' => $id]);
+    $check((int) $countNotifications->fetchColumn() === $notifications, 'Marking the appointment or correcting it queued a notification.');
+    echo "Non-presentation, correction, checkout and statistics checks passed.\n";
+} finally {
+    $pdo->prepare("UPDATE appointments SET starts_at = :start, ends_at = :end, status = 'confirmed', no_show_at = NULL, notification_version = :version WHERE id = :id")
+        ->execute(['start' => $appointment['starts_at'], 'end' => $appointment['ends_at'], 'version' => $appointment['notification_version'], 'id' => $id]);
     curl_close($curl);
 }

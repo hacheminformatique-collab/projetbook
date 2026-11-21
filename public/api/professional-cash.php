@@ -659,6 +659,12 @@ function bookili_cash_overview(PDO $pdo, int $salonId, bool $statistics = false,
         $report['average_basket_dzd'] = $summary['sale_count'] > 0 ? round($summary['gross_dzd'] / $summary['sale_count'], 2) : null;
         $report['staff'] = $staff;
         $report['staffLabel'] = $staffLabel;
+        $statement = $pdo->prepare(
+            "SELECT COUNT(*) FROM appointments WHERE salon_id = :salon AND status = 'no_show'
+             AND starts_at >= :from AND starts_at < :to AND ends_at <= :now$visitFilter"
+        );
+        $statement->execute($visitParams);
+        $report['no_show_count'] = (int) $statement->fetchColumn();
     }
     if ($csv) bookili_cash_statistics_csv($report);
     bookili_json_response(200, $report);
@@ -686,6 +692,7 @@ function bookili_cash_statistics_csv(array $report): never
     ] as $label => $key) $write([$label, $report['summary'][$key]]);
     $average = $report['average_basket_dzd'];
     $write(['Panier moyen brut (DA)', $average === null ? '' : number_format($average, 2, ',', '')]);
+    $write(['Rendez-vous non présentés', $report['no_show_count']]);
     $write(['Prestations nettes (DA)', $report['breakdown']['services_dzd']]);
     $write(['Produits nets (DA)', $report['breakdown']['products_dzd']]);
     $write(['Divers nets, dont cartes cadeaux émises (DA)', $report['breakdown']['other_dzd']]);

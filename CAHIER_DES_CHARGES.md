@@ -91,6 +91,12 @@ quantités avant et après. Si une ligne a changé ou est invalide, le lot entie
 est refusé ; chaque ligne validée apparaît dans l’historique du produit.
 Migration : `032_stock_batches.sql`.
 
+Publiés : le marquage « Non présenté » après la fin d’un rendez-vous,
+avec correction possible et sans e-mail automatique ; et son décompte dans
+les statistiques et le CSV, à la date du rendez-vous et par collaborateur.
+Les rendez-vous passés non marqués ne sont pas automatiquement classés.
+Migration : `033_appointment_no_show.sql`.
+
 ## Paiements à garder en attente
 
 **Tap to Pay sur iPhone**, **terminal de paiement**, **paiement en ligne** et
