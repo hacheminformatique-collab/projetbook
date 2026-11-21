@@ -253,7 +253,7 @@ try {
             first_name: "Autre", last_name: "Client", service_name: "Coupe encaissée", private_note: "",
           }] : [],
           services: [{ id: 1, name: "Coupe", duration_minutes: 30, price_dzd: 1000 }],
-          displaySettings: { showTime: true, showClient: true, showServices: true, showNote: true, showAddButton: true },
+          displaySettings: { showTime: true, showClient: true, showServices: true, showNote: true, showAddButton: !window.hideAgendaAdd },
         };
       } else if (url.pathname.endsWith("/api/professional-clients.php")) {
         if (options?.method === "POST") {
@@ -375,8 +375,28 @@ try {
       return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
     };
   ` });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send("Page.navigate", { url: `${origin}/masalledereception/espace-professionnel` });
   await waitFor("!!document.querySelector('.agenda-slot-free')");
+  assert.equal(await evaluate(`(() => {
+    const toolbar = document.querySelector('.agenda-toolbar').getBoundingClientRect();
+    const grid = document.querySelector('.agenda-scroll').getBoundingClientRect();
+    return toolbar.height <= 60 && Math.abs(grid.top - toolbar.bottom) <= 1 && grid.height >= innerHeight * .8;
+  })()`), true, "the desktop grid begins directly below the compact toolbar");
+  assert.equal(await evaluate("document.querySelector('.agenda-desktop-options').open"), false);
+  await evaluate("void document.querySelector('.agenda-desktop-options summary').click()");
+  await evaluate("void document.querySelector('.agenda-full-day input').click()");
+  await waitFor("document.querySelector('.agenda-time-label').textContent === '00:00'");
+  await evaluate("void document.querySelector('.agenda-full-day input').click()");
+  await evaluate("void document.querySelector('.agenda-desktop-options summary').click()");
+  await evaluate("void document.querySelector('.agenda-toolbar-add').click()");
+  await waitFor("!!document.querySelector('.agenda-create')");
+  await key("Escape");
+  await waitFor("!document.querySelector('.agenda-create')");
+  await evaluate("window.hideAgendaAdd = true; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
+  await waitFor("!!document.querySelector('.agenda-slot-free') && !document.querySelector('.agenda-toolbar-add')");
+  await evaluate("window.hideAgendaAdd = false; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
+  await waitFor("!!document.querySelector('.agenda-toolbar-add')");
   assert.equal(await evaluate("document.querySelectorAll('.agenda-day-column:not(.agenda-day-column-absent) .agenda-slot-free[tabindex=\"0\"]').length"), 1);
   assert.equal(await evaluate("document.querySelectorAll('.agenda-day-column-absent button.agenda-slot-free').length"), 0);
   await evaluate("document.querySelector('.agenda-slot-free[tabindex=\"0\"]').focus()");
@@ -560,6 +580,7 @@ try {
   assert.equal(await evaluate("document.querySelector('.agenda-scroll').scrollWidth <= document.querySelector('.agenda-scroll').clientWidth"), true);
   assert.equal(await evaluate("document.querySelector('.agenda-scroll').getBoundingClientRect().height > innerHeight * .65"), true);
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.pro-tabs')).position"), "fixed");
+  assert.equal(await evaluate("!!document.querySelector('.agenda-add-button') && !document.querySelector('.agenda-toolbar-add')"), true);
   await evaluate("(() => { const select = document.querySelector('[aria-label=\"Collaborateur affiché\"]'); select.value = '2'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
   await waitFor("!!document.querySelector('.agenda-day-column-absent')");
   assert.equal(await evaluate("document.querySelectorAll('.agenda-slot-free').length"), 0);

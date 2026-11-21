@@ -85,15 +85,15 @@ export default function ProfessionalSpace() {
       </header>
       <div className="pro-layout">
         {configuration && <aside className="pro-sidebar" id="pro-sidebar">
+          {view === "planning" && <>
+            <AgendaCalendar key={agendaDate.slice(0, 7)} date={agendaDate} onChange={setAgendaDate} />
+            <div className="agenda-sidebar-filters" ref={setAgendaFilters} />
+          </>}
           <nav aria-label={`Rubriques ${workspaceTabs.find(([value]) => value === tab)[1]}`}>
             {workspaceViews[tab].map(([value, label]) => (
               <button key={value} type="button" aria-current={view === value ? "page" : undefined} onClick={() => { setView(value); setMobileMenu(false); }}>{label}</button>
             ))}
           </nav>
-          {view === "planning" && <>
-            <AgendaCalendar key={agendaDate.slice(0, 7)} date={agendaDate} onChange={setAgendaDate} />
-            <div className="agenda-sidebar-filters" ref={setAgendaFilters} />
-          </>}
           {Number(configuration.salon.is_public)
             ? <Link className="pro-public-link" to={`/salons/${configuration.salon.id}`}>Voir ma page publique</Link>
             : <p className="pro-public-link">Salon non publié</p>}
@@ -103,7 +103,7 @@ export default function ProfessionalSpace() {
           {error && <p className="form-message form-error" role="alert">{error}</p>}
           {!configuration && !error && <p role="status">Chargement de votre espace…</p>}
           {configuration && <>
-            <h1>{workspaceViews[tab].find(([value]) => value === view)[1]}</h1>
+            <h1 className={view === "planning" ? "visually-hidden" : undefined}>{workspaceViews[tab].find(([value]) => value === view)[1]}</h1>
             {view === "planning" && <ProfessionalAgenda csrfToken={session.csrfToken} date={agendaDate} setDate={setAgendaDate} filtersTarget={agendaFilters} onCheckout={(appointment) => {
               setCashAppointment(appointment);
               setCashSaleId(null);

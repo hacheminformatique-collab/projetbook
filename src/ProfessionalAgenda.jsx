@@ -484,7 +484,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   ]) ?? [];
   const start = fullDay ? 0 : ranges.length ? Math.floor(Math.min(...ranges.map(([from]) => from)) / 15) * 15 : 8 * 60;
   const end = fullDay ? 1440 : ranges.length ? Math.ceil(Math.max(...ranges.map(([, to]) => to)) / 15) * 15 : 18 * 60;
-  const unit = 40 / scale;
+  const unit = (mobile ? 40 : 24) / scale;
   const rows = Array.from({ length: (end - start) / 15 }, (_, index) => start + index * 15);
   const maxBookingDate = algerianDate(60);
   const selectedDay = days?.find((day) => day.date === selected?.sourceDate);
@@ -509,6 +509,8 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
     if (nextDate && nextDate !== date) setDate(nextDate);
     else setRevision((value) => value + 1);
   }
+  const fullDayOption = <label className="agenda-full-day"><input type="checkbox" checked={fullDay} onChange={(event) => setFullDay(event.target.checked)} /> Afficher de 0 h à 24 h</label>;
+  const canAdd = days && displaySettings.showAddButton;
   return <div className={`pro-agenda${dragged ? " agenda-dragging" : ""}`}>
     <div className="agenda-mobile-heading">
       <button type="button" className="admin-nav-link" aria-label="Jour précédent" onClick={() => navigateDate(dayOffset(date, -1))}>‹</button>
@@ -523,21 +525,31 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
     </div>
     <div id="agenda-options" className={`agenda-toolbar${mobileOptions ? " agenda-options-open" : ""}`}>
       <button className="admin-nav-link" type="button" onClick={() => navigateDate(algerianDate())}>Aujourd’hui</button>
-      <button className="admin-nav-link" type="button" aria-label={view === "day" ? "Jour précédent" : "Semaine précédente"} onClick={() => navigateDate(dayOffset(date, -dayCount))}>‹</button>
-      <button className="admin-nav-link" type="button" aria-label={view === "day" ? "Jour suivant" : "Semaine suivante"} onClick={() => navigateDate(dayOffset(date, dayCount))}>›</button>
-      <button className="admin-nav-link agenda-view" type="button" aria-pressed={view === "day"} onClick={() => { setSelected(null); setView("day"); }}>Vue jour<small>{shortDay.format(utcDate(date))}</small></button>
-      <button className="admin-nav-link agenda-view" type="button" aria-pressed={view === "week"} onClick={() => { setSelected(null); setView("week"); }}>Vue semaine<small>Semaine {weekNumber(monday)}</small></button>
-      <label>Échelle<select value={scale} onChange={(event) => setScale(Number(event.target.value))}>
+      <button className="admin-nav-link" type="button" aria-label={effectiveView === "day" ? "Jour précédent" : "Semaine précédente"} onClick={() => navigateDate(dayOffset(date, -dayCount))}>‹</button>
+      <button className="admin-nav-link" type="button" aria-label={effectiveView === "day" ? "Jour suivant" : "Semaine suivante"} onClick={() => navigateDate(dayOffset(date, dayCount))}>›</button>
+      {!mobile && <>
+        <span className="agenda-toolbar-date">{view === "day" ? shortDay.format(utcDate(date)) : `Semaine ${weekNumber(monday)}`}</span>
+        <div className="agenda-views" role="group" aria-label="Vue du planning">
+          <button className="admin-nav-link agenda-view" type="button" aria-pressed={view === "day"} onClick={() => { setSelected(null); setView("day"); }}>Jour</button>
+          <button className="admin-nav-link agenda-view" type="button" aria-pressed={view === "week"} onClick={() => { setSelected(null); setView("week"); }}>Semaine</button>
+        </div>
+      </>}
+      <label><span className={mobile ? undefined : "visually-hidden"}>Échelle</span><select value={scale} onChange={(event) => setScale(Number(event.target.value))}>
         <option value={15}>15 min</option><option value={30}>30 min</option><option value={60}>1 h</option><option value={120}>2 h</option>
       </select></label>
-      <time className="agenda-clock" aria-label="Heure actuelle en Algérie">{localClock.format(now)}</time>
+      {!mobile && <details className="agenda-desktop-options">
+        <summary className="admin-nav-link">Options <span aria-hidden="true">▾</span></summary>
+        <div className="agenda-options-panel">
+          {fullDayOption}
+          <p className="field-hint">Ouvrez un rendez-vous pour le modifier, ou faites-le glisser puis confirmez. Au clavier, utilisez les flèches haut et bas pour parcourir les créneaux libres d’une colonne, puis Entrée pour en choisir un.</p>
+        </div>
+      </details>}
+      <div className="agenda-toolbar-clock">{!mobile && <span>Heure d’Algérie</span>} <time className="agenda-clock" aria-label="Heure actuelle en Algérie">{localClock.format(now)}</time></div>
       <button className="admin-nav-link" type="button" onClick={() => { setSelected(null); setRevision((value) => value + 1); }}>Actualiser</button>
+      {!mobile && canAdd && <button className="admin-nav-link agenda-toolbar-add" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date })}>+ Rendez-vous</button>}
     </div>
-    <div className="agenda-planning-options">
-      {filtersTarget ? createPortal(filters, filtersTarget) : filters}
-      <label className="agenda-full-day"><input type="checkbox" checked={fullDay} onChange={(event) => setFullDay(event.target.checked)} /> Afficher de 0 h à 24 h</label>
-    </div>
-    <p className="field-hint">Heures d’Algérie · Ouvrez un rendez-vous pour le modifier, ou faites-le glisser sur ordinateur puis confirmez. Au clavier, utilisez les flèches haut et bas pour parcourir les créneaux libres d’une colonne, puis Entrée pour en choisir un. La disponibilité dépend de la durée des prestations.</p>
+    {mobile && <div className="agenda-planning-options">{fullDayOption}</div>}
+    {filtersTarget ? createPortal(filters, filtersTarget) : filters}
     {notice && <p className="form-message form-success" role="status">{notice}</p>}
     {current?.error && <p className="form-message form-error" role="alert">{current.error}</p>}
     {!current && <p role="status">Chargement de l’agenda…</p>}
@@ -625,6 +637,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
                 } : undefined}
               />;
             })}
+            {!mobile && absent && <span className="agenda-absence-label">Absence toute la journée</span>}
             {bookings.map((item) => {
               const [from, to] = bounds(item, day.date);
               const draggable = startsInFuture(item, now) && !item.cash_sale_id;
@@ -633,7 +646,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
                 `${item.first_name} ${item.last_name}`,
                 item.service_name,
               ].join(" · ");
-              return <button type="button" key={item.id} className="agenda-booking" title={`${label} · ${item.service_name}`} draggable={draggable} style={{ top: `${(from - start) * unit}px`, height: `${(to - from) * unit}px`, paddingBlock: (to - from) * unit < 17 ? 0 : undefined }}
+              return <button type="button" key={item.id} className={`agenda-booking${!mobile && item.cash_sale_id ? " agenda-booking-paid" : ""}`} title={`${label}${item.cash_sale_id ? " · Encaissé" : ""}`} draggable={draggable} style={{ top: `${(from - start) * unit}px`, height: `${(to - from) * unit}px`, paddingBlock: (to - from) * unit < 17 ? 0 : undefined }}
                 onDragStart={draggable ? (event) => {
                   event.dataTransfer.effectAllowed = "move";
                   event.dataTransfer.setData("application/x-bookili-appointment", String(item.id));
@@ -647,6 +660,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
                 {displaySettings.showNote && item.private_note && <small className="agenda-booking-note">{item.private_note}</small>}
                 {!displaySettings.showTime && !displaySettings.showClient && !displaySettings.showServices
                   && (!displaySettings.showNote || !item.private_note) && <span>Rendez-vous</span>}
+                {!mobile && item.cash_sale_id && <small className="agenda-paid-badge">Encaissé</small>}
               </button>;
             })}
             {currentPosition !== null && <div className="agenda-current-time" aria-hidden="true" style={{ top: `${currentPosition}px` }} />}
@@ -654,7 +668,7 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
         })}
       </div>
     </div>}
-    {days && displaySettings.showAddButton && <button className="agenda-add-button" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date, ...(mobile ? { staffId: String(selectedMobileStaff?.id || "") } : {}) })}>+</button>}
+    {mobile && canAdd && <button className="agenda-add-button" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date, staffId: String(selectedMobileStaff?.id || "") })}>+</button>}
     {createSlot && days && <AppointmentCreate key={`${createSlot.date}:${createSlot.time || "new"}:${createSlot.staffId || ""}`} agenda={days.find((day) => day.date === createSlot.date) || days[0]} csrfToken={csrfToken} initial={createSlot} onClose={closeCreate} onCreated={(message, nextDate) => {
       setCreateSlot(null);
       setNotice(message);

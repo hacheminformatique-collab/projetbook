@@ -507,6 +507,10 @@ ou masquer l’horaire, le nom du client, les prestations et la note privée dan
 les blocs, puis activer ou masquer le bouton +. Ces préférences sont propres au
 salon ; la fiche rendez-vous conserve le détail complet. Masquer le bouton +
 n’empêche pas de créer un rendez-vous en cliquant sur un créneau disponible.
+Sur ordinateur, la grille commence directement sous la barre de commandes.
+Le calendrier et les filtres d’équipe restent à gauche, et le menu **Options**
+regroupe l’affichage de 0 h à 24 h et l’aide au clavier. Le bouton de création
+se trouve dans la barre sur ordinateur et reste flottant sur mobile.
 L’onglet **Clients** permet de rechercher par nom, téléphone ou e-mail, puis
 d’ouvrir la fiche d’un client ayant un rendez-vous confirmé dans le salon.
 La fiche affiche ses coordonnées, ses statistiques de rendez-vous, les ventes

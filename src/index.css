@@ -529,6 +529,46 @@ button:disabled { cursor: wait; opacity: .6; }
   .site-header, .faq-icon { transition: none; }
 }
 .pro-session .pro-mobile-menu, .agenda-mobile-heading { display: none; }
+@media (width > 760px) {
+  .pro-planning { display: flex; flex-direction: column; height: 100dvh; }
+  .pro-planning .pro-topbar { flex: none; }
+  .pro-planning .pro-layout { flex: 1; min-height: 0; }
+  .pro-planning .pro-sidebar { overflow: auto; }
+  .pro-planning .agenda-calendar { margin-block-start: 0; padding-block-start: 0; border-top: 0; }
+  .pro-planning .pro-panel, .pro-planning .pro-agenda { display: flex; flex-direction: column; min-height: 0; }
+  .pro-planning .pro-panel { padding: 0; }
+  .pro-planning .pro-agenda { flex: 1; }
+  .pro-planning .agenda-scroll { flex: 1; min-height: 0; max-height: none; border: 0; border-radius: 0; }
+  .pro-planning .agenda-toolbar { flex: none; gap: 6px; padding: 7px 12px; border-bottom: 1px solid #e6dfe4; background: #fff; }
+  .agenda-toolbar .admin-nav-link, .agenda-toolbar select { min-height: 36px; padding: 7px 9px; font-size: 13px; white-space: nowrap; }
+  .agenda-toolbar .agenda-view { display: inline-flex; }
+  .agenda-toolbar-date { font-size: 13px; font-weight: 700; }
+  .agenda-views { display: flex; }
+  .agenda-views > :first-child { border-start-end-radius: 0; border-end-end-radius: 0; }
+  .agenda-views > :last-child { margin-inline-start: -1px; border-start-start-radius: 0; border-end-start-radius: 0; }
+  .agenda-views > [aria-pressed="true"] { position: relative; }
+  .agenda-toolbar-clock { display: flex; align-items: center; gap: 6px; margin-inline-start: auto; color: #59616b; font-size: 12px; white-space: nowrap; }
+  .agenda-toolbar-clock .agenda-clock { padding: 0; font-size: 14px; }
+  .agenda-toolbar .agenda-toolbar-add { background: var(--rose); border-color: var(--rose); color: #381a2a; font-weight: 700; }
+  .agenda-desktop-options { position: relative; }
+  .agenda-desktop-options summary { list-style: none; cursor: pointer; }
+  .agenda-desktop-options summary::-webkit-details-marker { display: none; }
+  .agenda-options-panel { position: absolute; inset: calc(100% + 5px) 0 auto auto; z-index: 5; width: 280px; padding: 12px; border: 1px solid #e6dfe4; border-radius: 8px; background: #fff; box-shadow: 0 4px 16px #381a2a22; }
+  .agenda-options-panel .agenda-full-day { display: inline-flex; }
+  .agenda-options-panel input { min-height: 0; accent-color: var(--rose-ink); }
+  .agenda-options-panel p { margin: 8px 0 0; }
+  .pro-planning .agenda-corner, .pro-planning .agenda-column-title { min-height: 36px; padding: 10px; }
+  .pro-planning .agenda-booking { flex-direction: row; align-items: baseline; gap: 4px; line-height: 12px; white-space: nowrap; }
+  .pro-planning .agenda-booking strong { flex: none; }
+  .agenda-booking-paid { background: #eee7f7; border-color: #7b5899; }
+  .agenda-paid-badge { flex: none; margin-inline-start: auto; font-weight: 700; }
+  .agenda-absence-label { position: absolute; inset: 4px 4px auto; padding: 4px 8px; border-radius: 4px; background: #e4dce2; font-size: 12px; font-weight: 700; pointer-events: none; }
+  .pro-planning .agenda-day-column-absent .agenda-slot-unavailable { background: repeating-linear-gradient(135deg, #f2edf1 0 6px, #eae3e9 6px 7px); }
+  .pro-planning .pro-agenda > :is(.form-message, [role="status"]) { margin: 0; padding: 6px 12px; }
+}
+@media (760px < width <= 1000px) {
+  .agenda-toolbar-clock > span { display: none; }
+}
 @media (max-width: 760px) {
   .pro-workspace { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
   .pro-tabs { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; min-height: 60px; padding-bottom: env(safe-area-inset-bottom); background: #fff; border-top: 1px solid #e1e5e3; }
