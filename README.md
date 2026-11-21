@@ -136,29 +136,36 @@ statique et l'API PHP.
 1. Dans **MySQL Databases**, créer une base et un utilisateur, puis leur
    attribuer les droits nécessaires. cPanel ajoute souvent le préfixe du compte
    devant les deux noms.
-2. Dans **phpMyAdmin**, sélectionner cette base et importer
+2. Avant de modifier une installation existante, exporter sa base depuis
+   **phpMyAdmin → Exporter** et conserver une copie des fichiers actuellement
+   déployés. Garder ces sauvegardes hors de `public_html` ; vérifier à l'avance
+   qu'une restauration est possible, idéalement sur une base de test.
+3. Dans **phpMyAdmin**, sélectionner cette base et importer
    `database/schema.sql`.
    Si vous aviez déjà importé l'ancien schéma PostgreSQL, créez une base MySQL
    neuve et importez ce schéma ; il n'est pas compatible avec PostgreSQL.
-3. Créer `/home/UTILISATEUR_CPANEL/bookili-config.php` à partir de
+4. Créer `/home/UTILISATEUR_CPANEL/bookili-config.php` à partir de
    `public/api/config.example.php`, puis renseigner l'hôte, le nom de base,
    l'utilisateur et le mot de passe fournis par cPanel. Générez une clé de
    configuration avec `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"` et
    placez-la dans `setup_token`. Le fichier est ainsi hors de `public_html`.
    En développement local, il reste possible d'utiliser `public/api/config.php`,
    qui n'est jamais inclus dans le dépôt.
-4. Construire le projet avec `npm ci && npm run build`, puis téléverser **le
+5. Construire le projet avec `npm ci && npm run build`, puis téléverser **le
    contenu de `dist/`** dans `public_html/` avec le Gestionnaire de fichiers ou
    FTP.
-5. Vérifier `https://votre-domaine/api/health.php`. Une réponse
+6. Vérifier `https://votre-domaine/api/health.php`. Une réponse
    `{"status":"ok"}` confirme que PHP et MySQL communiquent.
-6. Ouvrir `https://votre-domaine/gestion-commercial` pour créer le premier
+7. Ouvrir `https://votre-domaine/gestion-commercial` pour créer le premier
    compte super-admin avec la clé, son adresse e-mail et un mot de passe fort.
    Retirer immédiatement `setup_token` du fichier de configuration après sa
    création. La création initiale est verrouillée en base et ne peut réussir
    qu'une fois.
 
-Pour une base existante déjà installée, importer une fois
+Pour une base existante déjà installée, appliquer uniquement les migrations
+qui ne l'ont pas encore été, dans l'ordre et une seule fois. Avant chaque
+migration, vérifier qu'une sauvegarde récente est disponible. La liste des
+migrations à importer dans phpMyAdmin est :
 `database/migrations/003_super_admin_setup.sql`, puis
 `database/migrations/004_homepage_image.sql` et
 `database/migrations/005_booking.sql`,
@@ -182,10 +189,25 @@ Pour une base existante déjà installée, importer une fois
 `database/migrations/023_salon_photos.sql` et
 `database/migrations/024_staff_absences.sql` et
 `database/migrations/025_daily_schedule_pauses.sql` et
-`database/migrations/026_campaign_request_key.sql` dans phpMyAdmin,
-uniquement pour les migrations non encore appliquées. Les nouvelles
-installations obtiennent ces tables directement via `database/schema.sql`.
-Les migrations doivent être appliquées dans l’ordre et une seule fois.
+`database/migrations/026_campaign_request_key.sql`. Les nouvelles installations
+obtiennent ces tables directement via `database/schema.sql`.
+
+Après avoir téléversé `dist/`, exécuter le contrôle structurel avec le même
+PHP CLI 8.1+ que celui configuré pour le site :
+
+```bash
+php /home/UTILISATEUR_CPANEL/public_html/api/deployment-preflight.php
+```
+
+Le script ne modifie pas la base et n'affiche aucun identifiant. Il vérifie la
+configuration privée, la connexion MySQL/MariaDB, les tables et des colonnes
+critiques des migrations récentes. Corriger chaque `[FAIL]` avant d'utiliser
+le site. L'absence de `setup_token` après la création du premier super-admin
+est attendue ; sa présence est signalée comme avertissement. Cette vérification
+ne prouve pas la livraison des e-mails, l'exécution du cron, le fonctionnement
+de `mod_rewrite`, le DNS/HTTPS, ni la possibilité réelle de restaurer une
+sauvegarde : contrôler ces points séparément et effectuer un parcours de test
+sur le site avant son ouverture au public.
 
 Si l’URL publique contient un sous-dossier, construisez le site avec ce
 préfixe, par exemple `npm run build -- --base=/masalledereception/`. Copiez
