@@ -328,6 +328,8 @@ try {
             historyPage: secondPage ? 2 : 1, hasMoreHistory: !secondPage,
           };
         }
+      } else if (url.pathname.endsWith("/api/professional-stock-suppliers.php")) {
+        data = { suppliers: [{ id: 7, name: "Fournisseur test", phone: "0550123456", email: "", is_active: 1 }] };
       } else if (url.pathname.endsWith("/api/professional-products.php")) {
         window.inventoryQuery = Object.fromEntries(url.searchParams);
         data = { products: [{ id: 1, name: "Lotion test", reference: "LOT-1", category: "Soins", quantity: 8,
@@ -994,6 +996,13 @@ try {
   })()`);
   await waitFor("window.inventoryQuery?.category === 'Soins' && window.inventoryQuery?.stock === 'over'");
   assert.match(await evaluate("document.querySelector('.pro-panel a[href*=format]').href"), /category=Soins&stock=over/);
+  await waitFor("document.querySelector('.pro-panel select option[value=\"7\"]')?.textContent === 'Fournisseur test'");
+  await evaluate(`(() => {
+    const select = document.querySelector('.pro-panel .booking-toolbar select:has(option[value="7"])');
+    select.value = '7';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("window.inventoryQuery?.supplier === '7' && document.querySelector('.pro-panel a[href*=format]')?.href.includes('supplier=7')");
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&page=2` });

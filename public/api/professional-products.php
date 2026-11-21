@@ -21,6 +21,17 @@ try {
         $pdo->beginTransaction();
         $salon = bookili_own_salon($pdo, (int) $account['id'], true);
         $previous = $id === null ? null : bookili_own_product($pdo, (int) $salon['id'], $id, true);
+        $previousSupplier = isset($previous['supplier_id']) ? (int) $previous['supplier_id'] : null;
+        $supplier = array_key_exists('supplierId', $data)
+            ? ($data['supplierId'] === null ? null : bookili_id($data['supplierId'])) : $previousSupplier;
+        if ($supplier !== null && $supplier !== $previousSupplier) {
+            $check = $pdo->prepare('SELECT id FROM stock_suppliers WHERE salon_id = :salon AND id = :id AND is_active = 1');
+            $check->execute(['salon' => $salon['id'], 'id' => $supplier]);
+            if ($check->fetchColumn() === false) {
+                $pdo->rollBack();
+                bookili_json_response(422, ['error' => 'Choisissez un fournisseur actif de votre salon.']);
+            }
+        }
         $category = array_key_exists('category', $data) ? $data['category'] : ($previous['category'] ?? '');
         $maximum = array_key_exists('maximum', $data) ? $data['maximum']
             : (isset($previous['max_stock_quantity']) ? (int) $previous['max_stock_quantity'] : null);
@@ -32,15 +43,16 @@ try {
         if ($id !== null) {
             $sql = 'UPDATE products SET name = :name, reference = :reference, price_dzd = :price,
                     low_stock_threshold = :threshold, category = :category, max_stock_quantity = :maximum,
-                    is_active = :active WHERE id = :id AND salon_id = :salon_id';
+                    supplier_id = :supplier, is_active = :active WHERE id = :id AND salon_id = :salon_id';
         } else {
-            $sql = 'INSERT INTO products (salon_id, name, reference, price_dzd, low_stock_threshold, category, max_stock_quantity, is_active)
-                    VALUES (:salon_id, :name, :reference, :price, :threshold, :category, :maximum, :active)';
+            $sql = 'INSERT INTO products (salon_id, name, reference, price_dzd, low_stock_threshold, category, max_stock_quantity, supplier_id, is_active)
+                    VALUES (:salon_id, :name, :reference, :price, :threshold, :category, :maximum, :supplier, :active)';
         }
         $params = [
             'salon_id' => $salon['id'], 'name' => $name, 'reference' => trim($reference),
             'price' => $price, 'threshold' => $threshold, 'active' => (int) $data['isActive'],
             'category' => trim($category), 'maximum' => $maximum,
+            'supplier' => $supplier,
         ];
         if ($id !== null) $params['id'] = $id;
         $pdo->prepare($sql)->execute($params);
@@ -54,6 +66,7 @@ try {
     $query = $_GET['q'] ?? '';
     $stock = $_GET['stock'] ?? 'all';
     $category = $_GET['category'] ?? '';
+    $supplier = isset($_GET['supplier']) && $_GET['supplier'] !== '' ? bookili_id($_GET['supplier']) : null;
     $archived = $_GET['includeArchived'] ?? '0';
     $format = $_GET['format'] ?? 'json';
     if ($page > 10000 || !is_string($query) || strlen($query) > 180
@@ -67,6 +80,10 @@ try {
     if ($archived === '0') $where .= ' AND is_active = 1';
     if ($stock === 'low') $where .= ' AND is_active = 1 AND quantity <= low_stock_threshold';
     if ($stock === 'over') $where .= ' AND is_active = 1 AND quantity > max_stock_quantity';
+    if ($supplier !== null) {
+        $where .= ' AND supplier_id = :supplier';
+        $params['supplier'] = $supplier;
+    }
     if (trim($category) !== '') {
         $where .= ' AND category = :category';
         $params['category'] = trim($category);
@@ -76,7 +93,8 @@ try {
         $params['name_query'] = $params['reference_query'] = trim($query);
     }
     $statement = $pdo->prepare(
-        'SELECT id, name, reference, price_dzd, quantity, low_stock_threshold, category, max_stock_quantity, is_active
+        'SELECT id, name, reference, price_dzd, quantity, low_stock_threshold, category, max_stock_quantity, supplier_id, is_active,
+                (SELECT s.name FROM stock_suppliers s WHERE s.id = products.supplier_id AND s.salon_id = products.salon_id) AS supplier_name
          FROM products WHERE ' . $where . ' ORDER BY id DESC'
         . ($format === 'csv' ? '' : ' LIMIT 51 OFFSET ' . (($page - 1) * 50))
     );
@@ -90,12 +108,12 @@ try {
         header('Cache-Control: no-store');
         header('X-Content-Type-Options: nosniff');
         fwrite($output, "\xEF\xBB\xBF");
-        fputcsv($output, ['Produit', 'Référence', 'Prix unitaire (DA)', 'Stock', 'Seuil d’alerte', 'Catégorie', 'Stock maximum', 'Statut'], ';', '"', '');
+        fputcsv($output, ['Produit', 'Référence', 'Prix unitaire (DA)', 'Stock', 'Seuil d’alerte', 'Fournisseur', 'Catégorie', 'Stock maximum', 'Statut'], ';', '"', '');
         foreach ($products as $product) {
             fputcsv($output, [
                 bookili_csv_text($product['name']), bookili_csv_text($product['reference']),
                 $product['price_dzd'], $product['quantity'], $product['low_stock_threshold'],
-                bookili_csv_text($product['category']), $product['max_stock_quantity'],
+                bookili_csv_text($product['supplier_name'] ?? ''), bookili_csv_text($product['category']), $product['max_stock_quantity'],
                 (int) $product['is_active'] === 1 ? 'Actif' : 'Archivé',
             ], ';', '"', '');
         }

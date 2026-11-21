@@ -72,9 +72,14 @@ Le maximum ne bloque pas les mouvements. Les deux champs figurent dans le
 CSV des stocks et utilisent la migration `028_product_stock_settings.sql`.
 
 Le comptage physique par produit et l’export filtrable de son historique sont
-intégrés localement. Un comptage consigne le stock avant, l’écart et le stock
+publiés. Un comptage consigne le stock avant, l’écart et le stock
 compté, même si l’écart est nul. Un mouvement intervenu depuis l’affichage
 impose de vérifier et de recompter. Migration : `029_stock_counts.sql`.
+
+Publiés : l’annuaire des fournisseurs du salon et l’association d’un
+fournisseur principal à un produit, avec filtre et export du stock. L’archivage
+conserve les associations existantes. Migration : `030_stock_suppliers.sql`.
+Les commandes et les réceptions restent à traiter.
 
 ## Paiements à garder en attente
 

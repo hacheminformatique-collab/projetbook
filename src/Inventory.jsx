@@ -1,20 +1,33 @@
 import { useEffect, useState } from "react";
 import { apiRequest, apiUrl, appointmentDate, priceLabel } from "./api-client.js";
 
-const emptyProduct = { name: "", reference: "", category: "", price: 0, threshold: 0, maximum: "", isActive: true };
+const emptyProduct = { name: "", reference: "", category: "", supplierId: "", price: 0, threshold: 0, maximum: "", isActive: true };
 const numericValue = (value) => value === "" ? "" : Number(value);
 
 export default function Inventory({ csrfToken }) {
-  const [filters, setFilters] = useState({ q: "", category: "", stock: "all", includeArchived: "0" });
+  const [filters, setFilters] = useState({ q: "", category: "", stock: "all", includeArchived: "0", supplier: "" });
+  const [suppliers, setSuppliers] = useState(null);
+  const [supplierError, setSupplierError] = useState("");
+  const [supplierRevision, reloadSuppliers] = useState(0);
   const [page, setPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(null);
   const [editing, setEditing] = useState(emptyProduct);
+  const [supplierChanged, setSupplierChanged] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const query = new URLSearchParams(filters).toString();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setSupplierError("");
+    apiRequest("professional-stock-suppliers.php", { signal: controller.signal })
+      .then((data) => { if (!controller.signal.aborted) setSuppliers(data.suppliers); })
+      .catch((cause) => { if (!controller.signal.aborted) setSupplierError(cause.message); });
+    return () => controller.abort();
+  }, [supplierRevision]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -31,9 +44,11 @@ export default function Inventory({ csrfToken }) {
     setPage(1);
   }
   function edit(product) {
+    setSupplierChanged(false);
     setEditing({
       id: product.id, name: product.name, reference: product.reference,
       category: product.category,
+      supplierId: product.supplier_id == null ? "" : String(product.supplier_id),
       price: Number(product.price_dzd), threshold: Number(product.low_stock_threshold),
       maximum: product.max_stock_quantity == null ? "" : Number(product.max_stock_quantity),
       isActive: Number(product.is_active) === 1,
@@ -45,10 +60,13 @@ export default function Inventory({ csrfToken }) {
     setSaving(true);
     setNotice(null);
     try {
+      const { supplierId, ...product } = editing;
       const saved = await apiRequest("professional-products.php", {
-        csrfToken, body: { ...editing, maximum: editing.maximum === "" ? null : editing.maximum },
+        csrfToken, body: { ...product, maximum: product.maximum === "" ? null : product.maximum,
+          ...(supplierChanged ? { supplierId: supplierId || null } : {}) },
       });
       setEditing(emptyProduct);
+      setSupplierChanged(false);
       setSelectedId(saved.productId);
       setRefresh((value) => value + 1);
       setNotice({ kind: "success", text: "Produit enregistré. Pour modifier sa quantité, enregistrez une entrée ou une sortie ci-dessous." });
@@ -69,6 +87,10 @@ export default function Inventory({ csrfToken }) {
         }}>
           <label>Nom ou référence<input name="q" maxLength={180} placeholder="Rechercher un produit" /></label>
           <label>Catégorie exacte<input name="category" maxLength={80} placeholder="Toutes les catégories" /></label>
+          <label>Fournisseur<select value={filters.supplier} disabled={!suppliers} onChange={(event) => filter({ supplier: event.target.value })}>
+            <option value="">Tous les fournisseurs</option>
+            {suppliers?.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}{!Number(supplier.is_active) ? " (archivé)" : ""}</option>)}
+          </select></label>
           <button type="submit" className="admin-nav-link">Rechercher</button>
           <label>Stock<select value={filters.stock} onChange={(event) => filter({ stock: event.target.value })}>
             <option value="all">Tous les stocks</option><option value="low">Stock bas uniquement</option>
@@ -89,6 +111,7 @@ export default function Inventory({ csrfToken }) {
             <article className="service-row" key={product.id}>
               <span><strong>{product.name}</strong>{product.reference && <> · {product.reference}</>}<br />
                 {product.category && <>{product.category}<br /></>}
+                {product.supplier_name && <>Fournisseur : {product.supplier_name}<br /></>}
                 {priceLabel(product.price_dzd)} · Stock : <strong>{product.quantity}</strong> · Seuil : {product.low_stock_threshold}
                 {product.max_stock_quantity != null && <> · Maximum : {product.max_stock_quantity}</>}<br />
                 {!Number(product.is_active) ? "Archivé" : Number(product.quantity) <= Number(product.low_stock_threshold)
@@ -117,6 +140,15 @@ export default function Inventory({ csrfToken }) {
             <label>Nom du produit<input required maxLength={180} value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
             <label>Référence (facultative)<input maxLength={80} value={editing.reference} onChange={(event) => setEditing({ ...editing, reference: event.target.value })} /></label>
             <label>Catégorie (facultative)<input maxLength={80} value={editing.category} onChange={(event) => setEditing({ ...editing, category: event.target.value })} /></label>
+            <label>Fournisseur principal (facultatif)<select value={editing.supplierId} disabled={!suppliers}
+              onChange={(event) => {
+                setSupplierChanged(true);
+                setEditing({ ...editing, supplierId: event.target.value });
+              }}>
+              <option value="">Aucun fournisseur</option>
+              {suppliers?.filter((supplier) => Number(supplier.is_active) || String(supplier.id) === editing.supplierId)
+                .map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}{!Number(supplier.is_active) ? " (archivé)" : ""}</option>)}
+            </select></label>
             <div className="auth-grid">
               <label>Prix de vente unitaire (DA)<input required type="number" min={0} max={10000000} step={1} value={editing.price} onChange={(event) => setEditing({ ...editing, price: numericValue(event.target.value) })} /></label>
               <label>Seuil d’alerte (unités)<input required type="number" min={0} max={1000000} step={1} value={editing.threshold} onChange={(event) => setEditing({ ...editing, threshold: numericValue(event.target.value) })} /></label>
@@ -132,8 +164,60 @@ export default function Inventory({ csrfToken }) {
         </form>
       </section>
       {selectedId && <StockMovements key={selectedId} productId={selectedId} csrfToken={csrfToken} refresh={refresh} onChanged={() => setRefresh((value) => value + 1)} />}
+      <Suppliers csrfToken={csrfToken} suppliers={suppliers} error={supplierError} onReload={() => reloadSuppliers((n) => n + 1)}
+        onSaved={() => { reloadSuppliers((n) => n + 1); setRefresh((n) => n + 1); }} />
     </>
   );
+}
+
+const emptySupplier = { name: "", phone: "", email: "", isActive: true };
+
+function Suppliers({ csrfToken, suppliers, error, onReload, onSaved }) {
+  const [editing, setEditing] = useState(emptySupplier);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null);
+  async function submit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setNotice(null);
+    try {
+      await apiRequest("professional-stock-suppliers.php", { csrfToken, body: editing });
+      setEditing(emptySupplier);
+      onSaved();
+      setNotice({ text: "Fournisseur enregistré.", kind: "success" });
+    } catch (cause) { setNotice({ text: cause.message, kind: "error" }); }
+    finally { setSaving(false); }
+  }
+  return <section className="client-card" aria-label="Fournisseurs">
+    <h2>Fournisseurs</h2>
+    <p>Archiver un fournisseur conserve les liens existants, mais empêche les nouvelles associations.</p>
+    {error && <><p className="form-message form-error" role="alert">{error}</p>
+      <button type="button" className="admin-nav-link" onClick={onReload}>Recharger les fournisseurs</button></>}
+    {!suppliers && !error && <p role="status">Chargement des fournisseurs…</p>}
+    {suppliers?.length === 0 && <p>Aucun fournisseur enregistré.</p>}
+    <div className="service-list">{suppliers?.map((supplier) => <article className="service-row" key={supplier.id}>
+      <span><strong>{supplier.name}</strong>{!Number(supplier.is_active) && " · Archivé"}
+        {(supplier.phone || supplier.email) && <><br />{[supplier.phone, supplier.email].filter(Boolean).join(" · ")}</>}</span>
+      <button type="button" className="admin-nav-link" disabled={saving} onClick={() => {
+        setNotice(null);
+        setEditing({ id: supplier.id, name: supplier.name, phone: supplier.phone, email: supplier.email, isActive: !!Number(supplier.is_active) });
+      }}>Modifier</button>
+    </article>)}</div>
+    {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
+    <form className="auth-form" onSubmit={submit}>
+      <h3>{editing.id ? "Modifier le fournisseur" : "Ajouter un fournisseur"}</h3>
+      <fieldset className="form-fieldset" disabled={saving}>
+        <label>Nom<input required maxLength={120} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></label>
+        <label>Téléphone<input type="tel" maxLength={40} value={editing.phone} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} /></label>
+        <label>E-mail<input type="email" maxLength={254} value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} /></label>
+        <label className="checkbox-label"><input type="checkbox" checked={editing.isActive} onChange={(e) => setEditing({ ...editing, isActive: e.target.checked })} />Fournisseur actif</label>
+        <div className="review-buttons">
+          <button type="submit" className="auth-submit">{saving ? "Enregistrement…" : "Enregistrer le fournisseur"}</button>
+          {editing.id && <button type="button" className="admin-nav-link" onClick={() => setEditing(emptySupplier)}>Annuler l’édition</button>}
+        </div>
+      </fieldset>
+    </form>
+  </section>;
 }
 
 function StockMovements({ productId, csrfToken, refresh, onChanged }) {

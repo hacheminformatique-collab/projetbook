@@ -204,6 +204,25 @@ def main():
         rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
     assert len(rows) == 3 and rows[2][0] == "'=1+1"
     assert rows[2][2:] == ["Comptage physique", "51", "-51", "0", "'=Inventaire"]
+
+    suppliers = "professional-stock-suppliers.php"
+    details = {"name": "=Fournisseur test", "phone": "0550123456", "email": "stock@example.test", "isActive": True}
+    expect(client.request(suppliers), 403)
+    expect(professional.request(suppliers, details, csrf=False), 403)
+    supplier_id = expect(professional.request(suppliers, details), 200)["supplierId"]
+    assert expect(other.request(suppliers), 200)["suppliers"] == []
+    expect(other.request(suppliers, {**details, "id": supplier_id}), 404)
+    expect(other.request(PRODUCTS, product_payload(supplierId=supplier_id)), 422)
+    expect(professional.request(PRODUCTS, product_payload(id=product_id, supplierId=str(supplier_id))), 200)
+    filtered = expect(professional.request(f"{PRODUCTS}?supplier={supplier_id}"), 200)["products"]
+    assert len(filtered) == 1 and filtered[0]["supplier_name"] == details["name"]
+    assert export(professional, supplier=supplier_id)[1][5] == "'=Fournisseur test"
+    expect(professional.request(suppliers, {**details, "id": supplier_id, "isActive": False}), 200)
+    expect(professional.request(PRODUCTS, product_payload(supplierId=supplier_id)), 422)
+    expect(professional.request(PRODUCTS, product_payload(id=product_id)), 200)
+    assert int(history(professional, product_id)["product"]["supplier_id"]) == supplier_id
+    expect(professional.request(PRODUCTS, product_payload(id=product_id, supplierId=None)), 200)
+    assert expect(professional.request(f"{PRODUCTS}?supplier={supplier_id}"), 200)["products"] == []
     print("Inventory checks passed: ownership, validation, stock limits, history, alerts, archiving, CSV, pagination, idempotency and concurrency.")
 
 
