@@ -1,20 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest, apiUrl } from "./api-client.js";
 
-const statusNames = { pending: "En validation", approved: "Validée", rejected: "Refusée" };
+const statusNames = { pending: "En attente", approved: "Validée", rejected: "Refusée" };
+const photoFilters = [
+  ["all", "Toutes"], ["approved", "Validées"], ["pending", "En attente"], ["rejected", "Refusées"],
+];
 
 export default function ProfessionalPhotos({ csrfToken }) {
   const [photos, setPhotos] = useState(null);
-  const [tab, setTab] = useState("active");
+  const [tab, setTab] = useState("all");
   const [notice, setNotice] = useState(null);
   const [working, setWorking] = useState(false);
   const activePhotos = useMemo(() => photos?.filter((photo) => photo.status !== "rejected") || [], [photos]);
-  const rejectedPhotos = useMemo(() => photos?.filter((photo) => photo.status === "rejected") || [], [photos]);
   const presentationPhoto = activePhotos.find((photo) => photo.status === "approved");
+  const presentationPosition = presentationPhoto ? activePhotos.indexOf(presentationPhoto) + 1 : null;
+  const count = photos?.length ?? 0;
 
   async function load(signal) {
     const result = await apiRequest("professional-salon-photos.php", { signal });
     setPhotos(result.photos);
+    setTab("all");
   }
 
   useEffect(() => {
@@ -50,8 +55,7 @@ export default function ProfessionalPhotos({ csrfToken }) {
         if (!response.ok) throw new Error(result.error || "L’import de la photo a échoué.");
         setPhotos(result.photos);
       }
-      setTab("active");
-      setNotice({ kind: "success", text: "Photo(s) importée(s). Elles seront visibles sur votre page après validation." });
+      setNotice({ kind: "success", text: "Photos importées. Elles seront visibles après validation, si votre fiche est publiée." });
     } catch (cause) {
       setNotice({ kind: "error", text: cause.message });
     } finally {
@@ -77,7 +81,7 @@ export default function ProfessionalPhotos({ csrfToken }) {
     }
   }
 
-  async function move(photo, offset) {
+  async function move(photo, offset, chooseCover = false) {
     const index = activePhotos.findIndex((item) => Number(item.id) === Number(photo.id));
     const target = index + offset;
     if (index < 0 || target < 0 || target >= activePhotos.length) return;
@@ -90,6 +94,7 @@ export default function ProfessionalPhotos({ csrfToken }) {
         csrfToken, body: { action: "reorder", photoIds },
       });
       setPhotos(result.photos);
+      if (chooseCover) setNotice({ kind: "success", text: "La photo de couverture a été mise à jour." });
     } catch (cause) {
       setNotice({ kind: "error", text: cause.message });
     } finally {
@@ -97,37 +102,48 @@ export default function ProfessionalPhotos({ csrfToken }) {
     }
   }
 
-  const shownPhotos = tab === "active" ? activePhotos : rejectedPhotos;
-  return <section className="client-card">
+  const shownPhotos = photos?.filter((photo) => tab === "all" || photo.status === tab) ?? [];
+  return <section className="client-card pro-photo-management">
     <div className="client-directory-header">
-      <div><h2>Image de présentation et photos</h2><p>Ajoutez votre logo ou une photo de l’intérieur ou de l’extérieur du salon.</p></div>
+      <div><h2>Gestion des photos</h2><p>Ajoutez votre logo ou une photo de l’intérieur ou de l’extérieur du salon.</p></div>
       <label className="admin-nav-link photo-upload">
         Importer des photos
-        <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={working || (photos?.length || 0) >= 4} onChange={upload} />
+        <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={working || photos === null || count >= 4} onChange={upload} />
       </label>
     </div>
-    <p className="field-hint">JPEG, PNG ou WebP · 2 Mo maximum par photo · 8 mégapixels maximum · quatre photos maximum.</p>
-    <p className="field-hint">La première photo validée illustre votre carte dans les résultats de recherche et apparaît en premier sur votre fiche publique. Utilisez « Présenter » pour la choisir. Les nouvelles images restent privées jusqu’à leur validation par BOOKILI.</p>
+    <p className="field-hint">{photos && `${count} / 4 emplacements utilisés · `}JPEG, PNG ou WebP · 2 Mo et 8 mégapixels maximum par photo.</p>
     {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
-    <nav className="photo-tabs" aria-label="Statut des photos">
-      <button type="button" className={tab === "active" ? "selected" : ""} onClick={() => setTab("active")}>Photos validées et en validation ({activePhotos.length})</button>
-      <button type="button" className={tab === "rejected" ? "selected" : ""} onClick={() => setTab("rejected")}>Photos refusées ({rejectedPhotos.length})</button>
-    </nav>
     {photos === null && !notice && <p role="status">Chargement des photos…</p>}
-    {photos && shownPhotos.length === 0 && <p>Aucune photo dans cette catégorie.</p>}
+    {photos && <>
+    <div className="photo-cover-summary">
+      {presentationPhoto && <img src={apiUrl(`salon-photo.php?id=${encodeURIComponent(presentationPhoto.id)}`)} alt="" />}
+      <div>
+        <strong>{presentationPhoto ? `Couverture actuelle : photo ${presentationPosition}` : "Aucune photo de couverture"}</strong>
+        <p>{presentationPhoto ? "Elle illustre votre carte dans l’annuaire et apparaît en premier sur votre fiche, si elle est publiée."
+          : "La première photo validée devient la couverture. Sans photo validée, aucune image n’apparaît sur votre carte."}</p>
+      </div>
+    </div>
+    <div className="photo-tabs" role="group" aria-label="Filtrer les photos par statut">
+      {photoFilters.map(([value, label]) => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>
+        {label} ({value === "all" ? count : photos.filter((photo) => photo.status === value).length})
+      </button>)}
+    </div>
+    {shownPhotos.length === 0 && <p>{tab === "all" ? "Aucune photo importée." : "Aucune photo avec ce statut."}</p>}
     <div className="salon-photo-grid">
       {shownPhotos.map((photo) => {
         const index = activePhotos.findIndex((item) => Number(item.id) === Number(photo.id));
         const position = index >= 0 ? index + 1 : Number(photo.position);
+        const isCover = photo.id === presentationPhoto?.id;
         return <article className="salon-photo-card" key={photo.id}>
           <div className="salon-photo-preview">
             <img src={apiUrl(`salon-photo.php?id=${encodeURIComponent(photo.id)}`)} alt={`Photo ${position} de l’établissement`} />
             <span className={`photo-status photo-status-${photo.status}`}>{statusNames[photo.status]}</span>
           </div>
           <div className="salon-photo-actions">
-            <span>{photo.id === presentationPhoto?.id ? "Image de présentation" : `Position ${position}`}</span>
+            <span>{isCover ? <strong className="photo-cover-label">Couverture</strong>
+              : photo.status === "approved" ? `Position ${position}` : "Non visible par les clients"}</span>
             <div>
-              {photo.status === "approved" && photo.id !== presentationPhoto?.id && <button className="admin-nav-link" type="button" disabled={working} onClick={() => move(photo, -index)}>Présenter</button>}
+              {photo.status === "approved" && !isCover && <button className="admin-nav-link" type="button" disabled={working} onClick={() => move(photo, -index, true)}>Choisir en couverture</button>}
               {photo.status !== "rejected" && <>
                 <button className="admin-nav-link" type="button" aria-label={`Monter la photo ${position}`} disabled={working || index <= 0} onClick={() => move(photo, -1)}>↑</button>
                 <button className="admin-nav-link" type="button" aria-label={`Descendre la photo ${position}`} disabled={working || index === activePhotos.length - 1} onClick={() => move(photo, 1)}>↓</button>
@@ -138,5 +154,6 @@ export default function ProfessionalPhotos({ csrfToken }) {
         </article>;
       })}
     </div>
+    </>}
   </section>;
 }

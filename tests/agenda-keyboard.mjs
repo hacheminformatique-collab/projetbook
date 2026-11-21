@@ -219,6 +219,18 @@ try {
         }
         const saved = window.salonSaves?.at(-1);
         data = { salon: { id: 1, name: "Salon test", city: saved?.city || "Sétif", wilaya_code: "19", is_public: saved?.isPublic ? 1 : 0, address: "10 rue de test", phone_number: "0550123456" }, hours: saved?.hours || [] };
+      } else if (url.pathname.endsWith("/api/professional-salon-profile.php")) {
+        if (options?.method === "POST") window.profileSave = JSON.parse(options.body);
+        data = { salon: {
+          is_public: 0, public_description: "Texte publié du salon.",
+          profile_description: window.profileSave?.description ?? "Texte en attente.",
+          profile_description_status: "pending",
+        }, entries: [] };
+      } else if (url.pathname.endsWith("/api/professional-salon-photos.php")) {
+        if (options?.method === "POST") window.photoReorder = JSON.parse(options.body);
+        const order = [...(window.photoReorder?.photoIds || [11, 12, 13]), 14];
+        const statuses = { 11: "pending", 12: "approved", 13: "approved", 14: "rejected" };
+        data = { photos: order.map((id, index) => ({ id, position: index + 1, status: statuses[id] })) };
       } else if (url.pathname.endsWith("/api/professional-services.php")) {
         if (options?.method === "POST") window.savedSalonService = JSON.parse(options.body);
         data = { services: window.savedSalonService ? [
@@ -642,6 +654,34 @@ try {
   await evaluate("void document.querySelector('.salon-settings input[name=isPublic]').click(); void document.querySelector('.salon-settings button[type=submit]').click()");
   await waitFor("document.querySelector('.salon-publication-status').textContent === 'Salon non publié'");
   assert.equal(await evaluate("window.salonSaves[2].isPublic"), false);
+  await evaluate("Array.from(document.querySelectorAll('.salon-settings button')).find(b => b.textContent === 'Descriptif établissement').click()");
+  await waitFor("!!document.querySelector('.profile-description-edit textarea')");
+  assert.match(await evaluate("document.querySelector('.profile-description-public').textContent"), /fiche est masquée.*Texte publié du salon/);
+  assert.equal(await evaluate("document.querySelector('.profile-description-edit textarea').value"), "Texte en attente.");
+  await evaluate(`(() => {
+    const input = document.querySelector('.profile-description-edit textarea');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, 'Nouveau texte');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.profile-description-edit button[type=submit]').click();
+  })()`);
+  await waitFor("document.querySelector('.pro-panel [role=status]')?.textContent.includes('version publiée reste inchangée')");
+  assert.deepEqual(await evaluate("window.profileSave"), { action: "save-description", description: "Nouveau texte" });
+  assert.equal(await evaluate("document.querySelector('.profile-published-text').textContent"), "Texte publié du salon.");
+  await evaluate("Array.from(document.querySelectorAll('.pro-panel button')).find(b => b.textContent.startsWith('Gestion des photos')).click()");
+  await waitFor("document.querySelectorAll('.salon-photo-card').length === 4");
+  assert.equal(await evaluate("document.querySelector('.photo-upload input').disabled"), true);
+  assert.match(await evaluate("document.querySelector('.photo-cover-summary img').src"), /id=12$/);
+  await evaluate("Array.from(document.querySelectorAll('.photo-tabs button')).find(b => b.textContent.includes('En attente')).click()");
+  assert.equal(await evaluate("document.querySelectorAll('.salon-photo-card').length"), 1);
+  assert.match(await evaluate("document.querySelector('.salon-photo-card').textContent"), /Non visible par les clients/);
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('.salon-photo-card button')).some(b => b.textContent === 'Choisir en couverture')"), false);
+  await evaluate("Array.from(document.querySelectorAll('.photo-tabs button')).find(b => b.textContent.includes('Refusées')).click()");
+  assert.equal(await evaluate("document.querySelector('.salon-photo-card .photo-status').textContent"), "Refusée");
+  await evaluate("Array.from(document.querySelectorAll('.photo-tabs button')).find(b => b.textContent.includes('Validées')).click()");
+  await evaluate("Array.from(document.querySelectorAll('.salon-photo-card button')).find(b => b.textContent === 'Choisir en couverture').click()");
+  await waitFor("document.querySelector('.photo-cover-summary img')?.src.endsWith('id=13')");
+  assert.deepEqual(await evaluate("window.photoReorder"), { action: "reorder", photoIds: [13, 12, 11] });
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Agenda').click()");
   await waitFor("!!document.querySelector('.agenda-day-column')");

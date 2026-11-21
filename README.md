@@ -449,12 +449,13 @@ sont conservés. La fiche
 disponibilités. Les comptes suspendus et les salons masqués ne sont pas
 réservables.
 
-Dans **Admin → Descriptif établissement**, le professionnel peut importer un
-logo ou une photo du salon (JPEG, PNG ou WebP, 2 Mo et 8 mégapixels maximum).
-Ces images sont aussi accessibles depuis **Gestion des photos**, avec une limite
-commune de quatre photos. La première photo validée illustre la carte du salon
+Dans **Admin → Descriptif établissement**, le professionnel voit la version
+publiée à côté du texte à modifier. Le texte publié ne change qu’après
+validation. **Gestion des photos** permet d’importer jusqu’à quatre photos
+(JPEG, PNG ou WebP, 2 Mo et 8 mégapixels maximum par photo) et de les filtrer
+par statut. La première photo validée illustre la carte du salon
 dans l’annuaire et apparaît en premier sur sa fiche publique ; le bouton
-**Présenter** permet de choisir une autre photo validée. Les photos en attente
+**Choisir en couverture** permet de choisir une autre photo validée. Les photos en attente
 ou refusées ne sont jamais affichées au public. Sans photo validée, la carte
 conserve un emplacement gris. Cette évolution réutilise la galerie existante
 et ne nécessite pas de nouvelle migration.

@@ -494,8 +494,19 @@ a.pro-public-link { color: var(--pro-accent); text-decoration: underline; }
   .pro-settings-header .auth-submit { width: 100%; }
   .pro-settings-row .admin-nav-link { min-height: 44px; padding-inline: 7px; }
 }
-.profile-category { margin-top: 28px; padding-top: 18px; border-top: 1px solid #e6e8eb; }
-.profile-category h3 { margin: 0 0 12px; }
+.profile-description-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.profile-description-card { min-width: 0; border: 1px solid #e8dfe5; border-radius: 10px; padding: 14px; }
+.profile-description-card h3 { margin: 0; }
+.profile-description-public { background: #f5fbf7; }
+.profile-description-edit { margin-top: 0; background: #fff8ed; }
+.profile-published-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.profile-description-status { display: inline-block; margin: 6px 0 0; padding: 3px 8px; border-radius: 999px; background: #f1edf0; color: #5f505b; font-size: 13px; font-weight: 700; }
+.profile-description-status-pending { background: #ffedcf; color: #704611; }
+.profile-description-status-approved { background: #e4f3ea; color: #27583c; }
+.profile-description-status-rejected { background: #f9e7ec; color: #87233f; }
+.profile-category { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e6e8eb; }
+.profile-category h3 { margin: 0 0 6px; }
+.profile-entry-details summary { padding: 10px 0; color: var(--rose-ink); font-weight: 700; cursor: pointer; }
 .profile-entry-form { max-width: 680px; }
 .profile-review { align-items: flex-start; }
 .profile-review .review-buttons { flex-shrink: 0; }
@@ -513,9 +524,20 @@ a.pro-public-link { color: var(--pro-accent); text-decoration: underline; }
 .photo-status-rejected { color: #8a211b; }
 .salon-photo-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; font-size: 13px; }
 .salon-photo-actions > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
-.photo-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; border-bottom: 1px solid #e6e8eb; }
-.photo-tabs button { padding: 10px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #59616b; font: inherit; cursor: pointer; }
-.photo-tabs button.selected { border-bottom-color: var(--rose-ink); color: var(--rose-ink); font-weight: 700; }
+.photo-cover-summary { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; background: var(--rose-soft); }
+.photo-cover-summary img { width: 72px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
+.photo-cover-summary p { margin: 4px 0 0; }
+.photo-cover-label { color: var(--rose-ink); }
+.photo-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
+.photo-tabs button { min-height: 44px; padding: 6px 10px; border: 1px solid #e8dfe5; border-radius: 8px; background: #fff; color: #535b63; font: inherit; cursor: pointer; }
+.photo-tabs button[aria-pressed="true"] { border-color: var(--rose-ink); background: var(--rose-soft); color: var(--rose-ink); font-weight: 700; }
+.pro-photo-management .salon-photo-actions { align-items: flex-start; flex-direction: column; }
+.pro-photo-management .salon-photo-actions > div { justify-content: flex-start; }
+@media (max-width: 760px) {
+  .profile-description-grid { grid-template-columns: minmax(0, 1fr); }
+  .pro-photo-management .salon-photo-grid { grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); }
+  .pro-photo-management .salon-photo-actions button { min-height: 44px; padding-inline: 8px; }
+}
 .photo-upload { position: relative; display: inline-flex; align-items: center; overflow: hidden; }
 .photo-upload input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .photo-upload:focus-within { outline: 2px solid var(--rose-ink); outline-offset: 2px; }

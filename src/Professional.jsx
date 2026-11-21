@@ -123,7 +123,7 @@ export default function ProfessionalSpace() {
             {view === "staff" && <StaffSettings csrfToken={session.csrfToken} salonHours={configuration.hours} />}
             {view === "agenda-display" && <AgendaDisplaySettings csrfToken={session.csrfToken} />}
             {view === "salon" && <SalonSettings configuration={configuration} csrfToken={session.csrfToken} onSaved={setConfiguration} onNavigate={setView} />}
-            {view === "profile" && <ProfessionalProfile csrfToken={session.csrfToken} />}
+            {view === "profile" && <ProfessionalProfile csrfToken={session.csrfToken} onOpenPhotos={() => setView("photos")} />}
             {view === "photos" && <ProfessionalPhotos csrfToken={session.csrfToken} />}
           </>}
         </main>

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "./api-client.js";
-import ProfessionalPhotos from "./ProfessionalPhotos.jsx";
 
 const categories = [
   ["access", "Accès"],
@@ -41,7 +40,7 @@ function EntryForm({ category, disabled, onAdd }) {
   </form>;
 }
 
-export default function ProfessionalProfile({ csrfToken }) {
+export default function ProfessionalProfile({ csrfToken, onOpenPhotos }) {
   const [profile, setProfile] = useState(null);
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(true);
@@ -74,7 +73,7 @@ export default function ProfessionalProfile({ csrfToken }) {
       setDescription(result.salon.profile_description || "");
       setNotice({ kind: "success", text: result.salon.profile_description_status === "draft"
         ? "Le descriptif a été retiré de la file de validation."
-        : "Le descriptif a été envoyé à l’équipe pour validation. La version publique actuelle reste visible jusque-là." });
+        : "Le descriptif a été envoyé à l’équipe pour validation. La version publiée reste inchangée jusque-là." });
     } catch (cause) {
       setNotice({ kind: "error", text: cause.message });
     } finally {
@@ -106,19 +105,35 @@ export default function ProfessionalProfile({ csrfToken }) {
     }
   }
 
-  return <>
-    <ProfessionalPhotos csrfToken={csrfToken} />
-    <section className="client-card">
-    <h2>Descriptif établissement</h2>
+  return <section className="client-card">
+    <div className="client-directory-header">
+      <h2>Descriptif établissement</h2>
+      <button className="admin-nav-link" type="button" onClick={onOpenPhotos}>Gestion des photos →</button>
+    </div>
     <p className="field-hint">Présentez votre établissement. Chaque modification est vérifiée par BOOKILI avant d’être publiée.</p>
     {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
     {loading && <p role="status">Chargement du descriptif…</p>}
     {!loading && profile && <>
-      <form className="auth-form" onSubmit={saveDescription}>
-        <label>À-propos<textarea required={description.trim() !== ""} value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} rows={8} /></label>
-        <p className="field-hint">{description.length} / 2 000 caractères · {statusLabels[profile.salon.profile_description_status] || "Brouillon"}</p>
-        <button className="auth-submit" type="submit" disabled={working}>{working ? "Enregistrement…" : "Envoyer le descriptif"}</button>
-      </form>
+      <div className="profile-description-grid">
+        <section className="profile-description-card profile-description-public" aria-labelledby="profile-public-title">
+          <h3 id="profile-public-title">Version publiée</h3>
+          {Number(profile.salon.is_public) === 0 && <p className="field-hint">Votre fiche est masquée : ce texte n’est pas visible par les clients.</p>}
+          {profile.salon.public_description
+            ? <p className="profile-published-text">{profile.salon.public_description}</p>
+            : <p className="field-hint">Aucun descriptif n’est actuellement publié.</p>}
+        </section>
+        <form className="auth-form profile-description-card profile-description-edit" onSubmit={saveDescription}>
+          <div>
+            <h3>Version à modifier</h3>
+            <p className={`profile-description-status profile-description-status-${profile.salon.profile_description_status}`}>
+              {statusLabels[profile.salon.profile_description_status] || "Brouillon"}
+            </p>
+          </div>
+          <label>À-propos<textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} rows={6} /></label>
+          <p className="field-hint">{description.length} / 2 000 caractères · Le texte publié reste inchangé jusqu’à validation.</p>
+          <button className="auth-submit" type="submit" disabled={working}>{working ? "Enregistrement…" : "Envoyer le descriptif"}</button>
+        </form>
+      </div>
       {categories.map(([category, label]) => {
         const entries = profile.entries.filter((entry) => entry.category === category);
         return <section className="profile-category" key={category}>
@@ -130,10 +145,12 @@ export default function ProfessionalProfile({ csrfToken }) {
               <button className="admin-nav-link" type="button" disabled={working} onClick={() => deleteEntry(entry)}>Supprimer</button>
             </article>)}
           </div>
-          <EntryForm category={category} disabled={working} onAdd={addEntry} />
+          <details className="profile-entry-details">
+            <summary>Ajouter une rubrique · {label}</summary>
+            <EntryForm category={category} disabled={working} onAdd={addEntry} />
+          </details>
         </section>;
       })}
     </>}
-    </section>
-  </>;
+  </section>;
 }
