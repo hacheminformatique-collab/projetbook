@@ -431,16 +431,23 @@ publication et les prérequis remplis. Enregistrez d’abord vos horaires, puis
 cochez l’ouverture de la réservation en ligne et enregistrez pour publier.
 
 L'annuaire `/recherche` filtre les salons publiés par nom de salon,
-prestation, ville, wilaya et catégorie, avec pagination. La saisie de ville
-propose les villes d'Algérie où des établissements publics sont répertoriés ;
-elle reste libre et n'exige pas de géolocalisation. La configuration du salon
-et la recherche réutilisent ces suggestions ; un professionnel peut toujours
-saisir une commune qui n'apparaît pas encore dans l'annuaire. Depuis les résultats,
+prestation, ville, wilaya et catégorie, avec pagination. Sur l’accueil et
+dans les résultats, la liste s’ouvre dès trois lettres, même si la commune
+n’a pas encore de salon publié. Choisir une commune renseigne sa wilaya ;
+la saisie libre reste possible, sans géolocalisation. Le référentiel local
+des 1 541 communes couvre les 58 codes de wilaya utilisés par BOOKILI :
+les noms latins et arabes et les codes ont été extraits du jeu de données
+[Algeria Administrative Divisions](https://github.com/open-admin-data/algeria-administrative-divisions/tree/591dd4664e4b191312227641ec57f093cf6dfccd),
+© 2026 jakkrapongt, sous licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+La configuration du salon conserve ses suggestions issues de l’annuaire.
+Depuis les résultats,
 le formulaire permet de modifier le salon ou la prestation recherchée, la
 ville et la wilaya sans revenir à l’accueil. Le tarif « À partir de » est le
 prix le plus bas parmi les prestations actives qui correspondent aux filtres.
 Si le mot-clé correspond au nom du salon ou à sa ville, toutes ses prestations
-actives dans la catégorie sélectionnée sont prises en compte. Les résultats
+actives dans la catégorie sélectionnée sont prises en compte. Un terme métier
+comme « Coiffure » trouve aussi les prestations de cette catégorie, même
+si leur nom ne contient pas le mot recherché. Les résultats
 sont triés par nom par défaut ; le tri par prix croissant utilise ce tarif
 sur l’ensemble des résultats, avant pagination. Les nouveaux
 filtres conservent la catégorie sélectionnée et repartent à la première page.

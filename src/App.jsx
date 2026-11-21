@@ -6,7 +6,7 @@ import ProfessionalSpace from "./Professional.jsx";
 import PasswordReset from "./PasswordReset.jsx";
 import { apiRequest, apiUrl, appointmentDate, serviceCategories } from "./api-client.js";
 import HomeSearch from "./HomeSearch.jsx";
-import AlgerianCityInput from "./AlgerianCityInput.jsx";
+import CommuneSearchInput, { findCommune } from "./CommuneSearchInput.jsx";
 import { AdminAccounts, AdminBilling, AdminCampaigns, AdminProfileReviews } from "./AdminOperations.jsx";
 import { InstallLink, InstallPage } from "./PwaInstall.jsx";
 
@@ -129,7 +129,7 @@ function HomePage() {
 }
 
 function SearchResults() {
-  const { search, hash } = useLocation();
+  const { search, hash, key } = useLocation();
   const navigate = useNavigate();
   useEffect(() => {
     if (hash === "#categories") document.getElementById("categories")?.scrollIntoView();
@@ -141,6 +141,13 @@ function SearchResults() {
   const wilayaName = isWilayaCode(requestedWilaya) ? getWilayaName(requestedWilaya) : null;
   const city = (params.get("ville") || "").trim();
   const category = serviceCategories.find(([value]) => value === params.get("categorie"));
+  const initialFilters = () => ({
+    q: query, ville: city, wilaya: wilayaName ? requestedWilaya : "", tri: params.get("tri") === "prix" ? "prix" : "",
+  });
+  const [draft, setDraft] = useState(() => ({ search, filters: initialFilters() }));
+  const filters = draft.search === search ? draft.filters : initialFilters();
+  if (draft.search !== search) setDraft({ search, filters });
+  const updateFilters = (changes) => setDraft({ search, filters: { ...filters, ...changes } });
   function applyFilters(event) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
@@ -149,8 +156,16 @@ function SearchResults() {
       const value = fields.get(filter).trim();
       if (value) next.set(filter, value);
     }
+    if (!next.has("wilaya") && next.has("ville")) {
+      const commune = findCommune(next.get("ville"));
+      if (commune) {
+        next.set("ville", commune.name);
+        next.set("wilaya", commune.wilaya);
+      }
+    }
     if (category) next.set("categorie", category[0]);
-    navigate(`/recherche${next.size ? `?${next}` : ""}`);
+    const nextSearch = next.size ? `?${next}` : "";
+    navigate(`/recherche${nextSearch}`, { replace: nextSearch === search });
   }
   function categoryLink(value) {
     const next = new URLSearchParams(params);
@@ -174,14 +189,20 @@ function SearchResults() {
             {city && <> · {city}</>}
             {wilayaName ? <> · Wilaya : {wilayaName}</> : !city && " · Toutes les wilayas"}
           </p>
-          <form key={search} className="booking-toolbar results-filters" role="search" aria-label="Affiner la recherche" onSubmit={applyFilters}>
-            <label>Salon ou prestation<input name="q" maxLength={100} defaultValue={query} /></label>
-            <label>Ville en Algérie<AlgerianCityInput key={search} name="ville" defaultValue={city} /></label>
-            <label>Wilaya<select name="wilaya" defaultValue={wilayaName ? requestedWilaya : ""}>
+          <form className="booking-toolbar results-filters" role="search" aria-label="Affiner la recherche" onSubmit={applyFilters}>
+            <label>Salon ou prestation<input name="q" maxLength={100} value={filters.q} onChange={(event) => updateFilters({ q: event.target.value })} /></label>
+            <div className="results-city-field"><span>Ville en Algérie</span>
+              <CommuneSearchInput label="Ville en Algérie" name="ville" value={filters.ville}
+                onChange={(value) => updateFilters({
+                  ville: value, wilaya: filters.wilaya && findCommune(filters.ville, filters.wilaya) ? "" : filters.wilaya,
+                })}
+                onSelect={(commune) => updateFilters({ ville: commune.name, wilaya: commune.wilaya })} />
+            </div>
+            <label>Wilaya<select name="wilaya" value={filters.wilaya} onChange={(event) => updateFilters({ wilaya: event.target.value })}>
               <option value="">Toutes les wilayas</option>
               {algerianWilayas.map(({ code, name }) => <option key={code} value={code}>{name}</option>)}
             </select></label>
-            <label>Trier par<select name="tri" defaultValue={params.get("tri") === "prix" ? "prix" : ""}>
+            <label>Trier par<select name="tri" value={filters.tri} onChange={(event) => updateFilters({ tri: event.target.value })}>
               <option value="">Nom (A à Z)</option>
               <option value="prix">Prix croissant</option>
             </select></label>
@@ -192,7 +213,7 @@ function SearchResults() {
               <Link key={value} aria-current={(category?.[0] || "") === value ? "true" : undefined} to={categoryLink(value)}>{label}</Link>
             )}
           </nav>
-          <DirectoryResults key={search} search={search} />
+          <DirectoryResults search={search} requestKey={key} />
         </section>
       </main>
       <Footer />

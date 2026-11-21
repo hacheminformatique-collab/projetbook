@@ -5,7 +5,7 @@ import { createBookingCalendarEvent } from "./lib/booking-calendar.js";
 import { validAppointmentPrice, validAppointmentServiceDetails, validAppointmentVersion, validServiceDetails } from "./lib/appointment-services.js";
 import { getWilayaName } from "./data/algerian-wilayas.js";
 
-export function DirectoryResults({ search }) {
+export function DirectoryResults({ search, requestKey }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const params = new URLSearchParams(search);
@@ -27,10 +27,10 @@ export function DirectoryResults({ search }) {
     setResult(null);
     setError("");
     apiRequest(`salons.php${search}`, { signal: controller.signal })
-      .then(setResult)
+      .then((data) => { if (!controller.signal.aborted) setResult(data); })
       .catch((cause) => { if (!controller.signal.aborted) setError(cause.message); });
     return () => controller.abort();
-  }, [search]);
+  }, [search, requestKey]);
   return (
     <>
       {error && <p className="form-message form-error" role="alert">{error}</p>}

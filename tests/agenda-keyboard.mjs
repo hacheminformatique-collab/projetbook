@@ -227,7 +227,12 @@ try {
           data = { cities: ["Sétif", "Setif", "Oran"].filter((city) => city.toLowerCase().startsWith(window.citySuggestionQuery.toLowerCase())) };
         } else {
           window.directoryQuery = Object.fromEntries(url.searchParams);
-          data = { salons: [], hasMore: window.directoryQuery.tri === "prix" && !window.directoryQuery.page };
+          window.directoryRequests = (window.directoryRequests || 0) + 1;
+          const ghazaouet = window.directoryQuery.ville === "Ghazaouet" && window.directoryQuery.wilaya === "13";
+          data = {
+            salons: ghazaouet ? [{ id: 2, name: "Salon de Ghazaouet", city: "Ghazaouet", wilaya_code: "13", from_price: 1000 }] : [],
+            hasMore: window.directoryQuery.tri === "prix" && !window.directoryQuery.page,
+          };
         }
       } else if (url.pathname.endsWith("/api/professional-salon.php")) {
         if (options?.method === "POST") {
@@ -875,11 +880,10 @@ try {
   assert.deepEqual(await filterValues(), { q: "Coupe", ville: "Sétif", wilaya: "19", tri: "" });
   await evaluate(`(() => {
     const input = document.querySelector('.results-filters input[name=ville]');
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Sé');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Set');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   })()`);
-  await waitFor("window.citySuggestionQuery === 'Sé'");
-  assert.equal(await evaluate("document.querySelector('.results-filters input[name=ville]').list.options[0]?.value"), "Sétif");
+  await waitFor("document.querySelector('.results-filters [role=option]')?.textContent.includes('Sétif')");
   assert.match(await evaluate("document.querySelector('.results-summary').textContent"), /Sétif · Wilaya : Sétif/);
   assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);
   await evaluate(`(() => {
@@ -918,12 +922,36 @@ try {
   await waitFor("!!document.querySelector('.search-panel .location-field input')");
   await evaluate(`(() => {
     const input = document.querySelector('.search-panel .location-field input');
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Ora');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Gh');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   })()`);
-  await waitFor("window.citySuggestionQuery === 'Ora'");
-  assert.equal(await evaluate("document.querySelector('.search-panel .location-field input').list.options[0]?.value"), "Oran");
-  assert.equal(await evaluate("document.querySelector('.search-panel .location-field input').value"), "Ora", "suggestions must not replace the manually entered value");
+  await waitFor("document.querySelector('.search-panel input[role=combobox]')?.value === 'Gh'");
+  assert.equal(await evaluate("document.querySelector('.search-panel [role=listbox]')"), null);
+  await evaluate(`(() => {
+    const input = document.querySelector('.search-panel .location-field input');
+    input.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'gha');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor("Array.from(document.querySelectorAll('.search-panel [role=option]')).some(option => option.textContent.includes('GhazaouetTlemcen (13)'))");
+  assert.equal(await evaluate("document.querySelector('.search-panel input[role=combobox]').value"), "gha");
+  await evaluate(`(() => {
+    Array.from(document.querySelectorAll('.search-panel [role=option]')).find(option => option.textContent.startsWith('Ghazaouet')).click();
+    const form = document.querySelector('.search-panel');
+    const input = form.querySelector('.service-field input');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'coiffure');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await evaluate("document.querySelector('.search-panel').requestSubmit()");
+  await waitFor("document.querySelector('.salon-grid h2')?.textContent === 'Salon de Ghazaouet'");
+  assert.deepEqual(await evaluate("window.directoryQuery"), { ville: "Ghazaouet", wilaya: "13", q: "coiffure" });
+  await evaluate("void (window.originalSearchForm = document.querySelector('.results-filters'))");
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const requests = await evaluate("window.directoryRequests");
+    await evaluate("document.querySelector('.results-filters').requestSubmit()");
+    await waitFor(`window.directoryRequests > ${requests} && document.querySelector('.salon-grid h2')?.textContent === 'Salon de Ghazaouet'`);
+    assert.equal(await evaluate("document.querySelectorAll('.results-filters').length === 1 && document.querySelector('.results-filters') === window.originalSearchForm"), true);
+  }
   console.log("Algerian city suggestions passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/salons/1` });

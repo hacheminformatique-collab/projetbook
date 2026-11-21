@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import AlgerianCityInput from "./AlgerianCityInput.jsx";
+import CommuneSearchInput, { findCommune } from "./CommuneSearchInput.jsx";
 
 const icons = {
   location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></>,
@@ -26,11 +26,16 @@ export default function HomeSearch() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
+  const [selectedCity, setSelectedCity] = useState(null);
 
   function searchLink(category, includeQuery = false) {
     const params = new URLSearchParams();
     const city = location.trim();
-    if (city) params.set("ville", city);
+    if (city) {
+      const commune = selectedCity || findCommune(city);
+      params.set("ville", commune?.name || city);
+      if (commune) params.set("wilaya", commune.wilaya);
+    }
     if (includeQuery && query.trim()) params.set("q", query.trim());
     if (category && category !== "more") params.set("categorie", category);
     return `/recherche${params.size ? `?${params}` : ""}${category === "more" ? "#categories" : ""}`;
@@ -41,11 +46,12 @@ export default function HomeSearch() {
       event.preventDefault();
       navigate(searchLink(null, true));
     }}>
-      <label className="search-field location-field">
+      <div className="search-field location-field">
         <Icon name="location" />
-        <span className="visually-hidden">Ville en Algérie</span>
-        <AlgerianCityInput value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Votre ville" />
-      </label>
+        <CommuneSearchInput label="Ville en Algérie" value={location} placeholder="Votre ville"
+          onChange={(value) => { setLocation(value); setSelectedCity(null); }}
+          onSelect={(city) => { setLocation(city.name); setSelectedCity(city); }} />
+      </div>
       <label className="search-field service-field">
         <Icon name="search" />
         <span className="visually-hidden">Nom du salon ou de la prestation</span>

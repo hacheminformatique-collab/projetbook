@@ -94,9 +94,23 @@ try {
         $params['city'] = trim($city);
     }
     if (trim($query) !== '') {
+        $term = trim($query);
+        $categoryTerms = [
+            'coiffure' => 'coiffeur', 'coiffeur' => 'coiffeur', 'coiffeuse' => 'coiffeur',
+            'barbier' => 'barbier', 'barber' => 'barbier', 'manucure' => 'manucure', 'ongles' => 'manucure',
+            'institut de beauté' => 'institut', 'esthétique' => 'institut', 'esthetique' => 'institut',
+            'bien-être' => 'bien-etre', 'bien-etre' => 'bien-etre', 'maquillage' => 'maquillage',
+            'spa' => 'spa', 'massage' => 'massage',
+        ];
+        $queryCategory = $categoryTerms[strtolower($term)] ?? null;
         $sql .= " AND (s.name LIKE :salon_query ESCAPE '!' OR s.city LIKE :city_query ESCAPE '!'
-                 OR v.name LIKE :service_query ESCAPE '!')";
-        $pattern = '%' . strtr(trim($query), ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
+                 OR v.name LIKE :service_query ESCAPE '!'";
+        if ($queryCategory !== null) {
+            $sql .= ' OR v.category = :query_category';
+            $params['query_category'] = $queryCategory;
+        }
+        $sql .= ')';
+        $pattern = '%' . strtr($term, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
         $params += ['salon_query' => $pattern, 'city_query' => $pattern, 'service_query' => $pattern];
     }
     $order = $sort === 'prix' ? 'from_price ASC, s.name, s.id' : 's.name, s.id';
