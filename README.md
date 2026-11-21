@@ -6,6 +6,9 @@ base MySQL/MariaDB résident sur le même hébergement cPanel.
 
 ## État du projet et prochaines étapes
 
+Le [cahier des charges BOOKILI](CAHIER_DES_CHARGES.md) sert de plan de suivi
+pour les écarts relevés dans les références PC et mobiles.
+
 Feuille de route mise à jour le 21 novembre 2026. Les estimations initiales
 restent indicatives : les recalculer après la comparaison aux maquettes et la
 recette sur l'hébergement réel. Un parcours fonctionnel déjà implémenté peut
