@@ -43,12 +43,12 @@ export default function CashRegister({ csrfToken, appointment = null, initialSal
   }
   const mobileGroups = [
     ["Encaissement", [["sale", "Nouveau ticket"], ["tickets", "Tickets en attente"]]],
-    ["Transactions", [["journal", "Tickets et règlements"], ["gift-cards", "Cartes cadeaux en salon"]]],
+    ["Transactions", [["journal", "Journal de caisse"], ["payments", "Règlements"], ["drawer", "Fond de caisse"], ["gift-cards", "Cartes cadeaux en salon"]]],
     ["Gestion des stocks", [["inventory", "État des stocks"]]],
   ];
   return <>
     <nav className="workspace-tabs cash-desktop-nav" aria-label="Caisse professionnelle">
-      {[["sale", "Vente"], ["tickets", "Tickets en attente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["inventory", "Stocks"]].map(([value, name]) =>
+      {[["sale", "Vente"], ["tickets", "Tickets en attente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["payments", "Règlements"], ["drawer", "Fond de caisse"], ["inventory", "Stocks"]].map(([value, name]) =>
         <button key={value} type="button" disabled={!canOpen(value)} aria-current={view === value ? "page" : undefined} onClick={() => open(value)}>{name}</button>
       )}
     </nav>
@@ -89,6 +89,8 @@ export default function CashRegister({ csrfToken, appointment = null, initialSal
     {view === "overview" && <CashOverview revision={revision} />}
     {view === "gift-cards" && <GiftCards csrfToken={csrfToken} onBusy={setBusy} onRecorded={refresh} />}
     {view === "journal" && <Journal csrfToken={csrfToken} saleId={saleId} recorded={recorded} onSelect={setSaleId} revision={revision} onChanged={refresh} onBusy={setBusy} busy={busy} />}
+    {view === "payments" && <Payments revision={revision} onSelect={(id) => { setSaleId(id); open("journal"); }} />}
+    {view === "drawer" && <CashDrawer csrfToken={csrfToken} onBusy={setBusy} />}
     {view === "inventory" && <Inventory csrfToken={csrfToken} />}
   </>;
 }
@@ -429,7 +431,8 @@ function GiftCards({ csrfToken, onBusy, onRecorded }) {
   const [saving, setSaving] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [page, setPage] = useState(1);
-  const response = useCashData(new URLSearchParams({ page }).toString(), refresh, "professional-gift-cards.php");
+  const [status, setStatus] = useState("all");
+  const response = useCashData(new URLSearchParams({ view: "cards", status, page }).toString(), refresh);
 
   async function submit(event) {
     event.preventDefault();
@@ -479,9 +482,16 @@ function GiftCards({ csrfToken, onBusy, onRecorded }) {
     </section>
     <section className="client-card">
       <h2>Cartes émises par ce salon</h2>
+      <div className="booking-toolbar">
+        <label>Statut<select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+          <option value="all">Toutes les cartes</option>
+          <option value="expired">Cartes expirées</option>
+        </select></label>
+        {response.data && <a className="admin-nav-link" href={apiUrl(`${endpoint}?${new URLSearchParams({ view: "cards-csv", status })}`)}>Exporter les cartes (CSV)</a>}
+      </div>
       {response.error && <Feedback notice={{ kind: "error", text: response.error }} />}
       {!response.data && !response.error && <p role="status">Chargement…</p>}
-      {response.data?.cards.length === 0 && <p>Aucune carte émise.</p>}
+      {response.data?.cards.length === 0 && <p>{status === "expired" ? "Aucune carte expirée." : "Aucune carte émise."}</p>}
       <div className="service-list">{response.data?.cards.map((card) => <article className="service-row" key={card.id}>
         <span><strong>Carte n° {card.id}</strong> · {priceLabel(card.balance_dzd)} / {priceLabel(card.initial_value_dzd)}<br />
           Valable jusqu’au {card.expires_on.split("-").reverse().join("/")} · {card.status === "active" ? Number(card.balance_dzd) ? "Active" : "Solde épuisé" : card.status === "voided" ? "Annulée" : "Expirée"}
@@ -493,6 +503,148 @@ function GiftCards({ csrfToken, onBusy, onRecorded }) {
       </nav>
     </section>
   </>;
+}
+
+const drawerEndpoint = "professional-cash-drawer.php";
+const drawerKinds = { deposit: "Dépôt d’espèces", withdrawal: "Retrait d’espèces", bank: "Remise en banque" };
+
+function CashDrawer({ csrfToken, onBusy }) {
+  const [date, setDate] = useState(algerianDate);
+  const [page, setPage] = useState(1);
+  const [revision, refresh] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [formVersion, resetForm] = useState(0);
+  const { data, error } = useCashData(new URLSearchParams({ date, page }).toString(), revision, drawerEndpoint);
+
+  async function save(body) {
+    setSaving(true);
+    onBusy(true);
+    setNotice(null);
+    try {
+      await apiRequest(drawerEndpoint, { csrfToken, body });
+      setPending(null);
+      setNotice({ kind: "success", text: body.action === "open" ? "Fond de caisse enregistré." : "Mouvement enregistré." });
+      setPage(1);
+      resetForm((value) => value + 1);
+      refresh((value) => value + 1);
+    } catch (cause) {
+      setPending(!cause.status || cause.status >= 500 ? body : null);
+      setNotice({ kind: "error", text: cause.message });
+      if (cause.status === 409) refresh((value) => value + 1);
+    } finally {
+      setSaving(false);
+      onBusy(false);
+    }
+  }
+
+  return <section className="client-card cash-drawer">
+    <h2>Fond de caisse</h2>
+    <p>Le montant attendu porte uniquement sur les espèces. Il ne remplace pas le comptage du tiroir.</p>
+    <div className="booking-toolbar">
+      <label>Journée (heure d’Algérie)<input type="date" value={date} min="2000-01-01" max={algerianDate()} disabled={saving || !!pending}
+        onChange={(event) => {
+          if (event.target.value) { setDate(event.target.value); setPage(1); setNotice(null); }
+        }} /></label>
+      <button className="admin-nav-link" type="button" disabled={saving} onClick={() => refresh((value) => value + 1)}>Actualiser</button>
+    </div>
+    <Feedback notice={notice} />
+    {pending && <div>
+      <p>Vérifiez le résultat en réessayant la même demande, sans saisir une seconde opération.</p>
+      <button className="admin-nav-link" type="button" disabled={saving} onClick={() => save(pending)}>Réessayer la même demande</button>
+    </div>}
+    {error && <Feedback notice={{ kind: "error", text: error }} />}
+    {!data && !error && <p role="status">Chargement du fond de caisse…</p>}
+    {data && <>
+      <div className="cash-kpis">
+        <article><span>Fond d’ouverture</span><strong>{data.opening ? priceLabel(data.opening.opening_dzd) : "Non renseigné"}</strong>
+          {data.opening && <small>Enregistré : {appointmentDate(data.opening.opened_at)}</small>}</article>
+        <article><span>Ventes en espèces, nettes des annulations</span><strong>{priceLabel(data.cashNetDzd)}</strong></article>
+        {Object.entries(drawerKinds).map(([kind, label]) => <article key={kind}>
+          <span>{label}</span><strong>{priceLabel(data.totals[kind])}</strong>
+        </article>)}
+        <article><span>Espèces attendues</span><strong>{data.expectedDzd === null ? "—" : priceLabel(data.expectedDzd)}</strong></article>
+      </div>
+      {data.expectedDzd < 0 && <p className="form-message form-error">Le montant attendu est négatif. Vérifiez le fond d’ouverture et les opérations de cette journée.</p>}
+      {date === data.today && !pending && <form key={`${date}:${!!data.opening}:${formVersion}`} className="auth-form" onSubmit={(event) => {
+        event.preventDefault();
+        if (saving) return;
+        const fields = new FormData(event.currentTarget);
+        const body = { date, action: data.opening ? "move" : "open", amountDzd: Number(fields.get("amount")) };
+        if (data.opening) Object.assign(body, { kind: fields.get("kind"), note: fields.get("note"), requestKey: crypto.randomUUID() });
+        save(body);
+      }}>
+        <h3>{data.opening ? "Enregistrer un mouvement" : "Enregistrer le fond d’ouverture"}</h3>
+        {!data.opening && <p className="field-hint">Indiquez les espèces présentes avant les opérations de la journée. Ce montant n’est pas modifiable après enregistrement.</p>}
+        <fieldset className="form-fieldset" disabled={saving}>
+          {data.opening && <label>Type<select name="kind">{Object.entries(drawerKinds).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select></label>}
+          <label>Montant en DA<input name="amount" type="number" inputMode="numeric" min={data.opening ? 1 : 0} max={10000000} step={1} required /></label>
+          {data.opening && <label>Motif<input name="note" maxLength={160} required /></label>}
+        </fieldset>
+        <button className="auth-submit" type="submit" disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer"}</button>
+      </form>}
+      {date !== data.today && <p className="field-hint">Journée passée : consultation uniquement.</p>}
+      <section className="cash-report-section">
+        <h3>Mouvements d’espèces</h3>
+        {data.movements.length === 0 ? <p>Aucun mouvement sur cette journée.</p> : <div className="cash-journal-table"><table>
+          <thead><tr><th scope="col">Enregistré le</th><th scope="col">Type</th><th scope="col">Montant</th><th scope="col">Motif</th></tr></thead>
+          <tbody>{data.movements.map((row) => <tr key={row.id}>
+            <th scope="row">{appointmentDate(row.recorded_at)}</th><td>{drawerKinds[row.kind]}</td>
+            <td>{priceLabel(row.kind === "deposit" ? row.amount_dzd : -row.amount_dzd)}</td><td>{row.note}</td>
+          </tr>)}</tbody>
+        </table></div>}
+        <nav className="pagination" aria-label="Pages des mouvements">
+          {page > 1 && <button className="admin-nav-link" type="button" disabled={saving} onClick={() => setPage(page - 1)}>Précédent</button>}
+          {data.hasMore && <button className="admin-nav-link" type="button" disabled={saving} onClick={() => setPage(page + 1)}>Suivant</button>}
+        </nav>
+      </section>
+    </>}
+  </section>;
+}
+
+function Payments({ revision, onSelect }) {
+  const [filters, setFilters] = useState(() => ({ ...currentCashPeriod("day"), method: "" }));
+  const [page, setPage] = useState(1);
+  const { data, error } = useCashData(new URLSearchParams({ view: "payments", ...filters, page }).toString(), revision);
+  return <section className="client-card cash-payments">
+    <h2>Règlements</h2>
+    <p>Les montants encaissés et les cartes cadeaux utilisées sont séparés. Les annulations apparaissent à leur date, en négatif.</p>
+    <form className="booking-toolbar" onSubmit={(event) => {
+      event.preventDefault();
+      setFilters(Object.fromEntries(new FormData(event.currentTarget)));
+      setPage(1);
+    }}>
+      <label>Du<input name="from" type="date" required defaultValue={filters.from} max={algerianDate()} /></label>
+      <label>Au<input name="to" type="date" required defaultValue={filters.to} max={algerianDate()} /></label>
+      <label>Mode de règlement<select name="method" defaultValue={filters.method}>
+        <option value="">Tous les modes</option>
+        {Object.entries(methods).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select></label>
+      <button className="admin-nav-link" type="submit">Afficher</button>
+      {data && <a className="admin-nav-link" href={apiUrl(`${endpoint}?${new URLSearchParams({ view: "payments-csv", ...filters })}`)}>Exporter les règlements (CSV)</a>}
+    </form>
+    {error && <Feedback notice={{ kind: "error", text: error }} />}
+    {!data && !error && <p role="status">Chargement des règlements…</p>}
+    {data && <>
+      <p><strong>Encaissé net : {priceLabel(data.totals.collected)}</strong> · Cartes cadeaux utilisées nettes : {priceLabel(data.totals.gift)}</p>
+      {data.entries.length === 0 ? <p>Aucun règlement pour ces filtres.</p> : <div className="cash-journal-table">
+        <table>
+          <thead><tr><th scope="col">Vente</th><th scope="col">Opération</th><th scope="col">Mode</th><th scope="col">Encaissé</th><th scope="col">Carte cadeau</th></tr></thead>
+          <tbody>{data.entries.map((row) => <tr key={`${row.id}:${row.event_kind}`}>
+            <th scope="row"><button className="cash-journal-sale-link" type="button" onClick={() => onSelect(row.id)}>n° {row.id}</button><small>{appointmentDate(row.event_at)}</small></th>
+            <td>{row.event_kind === "void" ? "Annulation" : "Vente"}</td>
+            <td>{Number(row.collected_dzd) === 0 ? methods.gift_card : methods[row.payment_method]}</td>
+            <td>{priceLabel(row.collected_dzd)}</td><td>{priceLabel(row.gift_card_applied_dzd)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
+      <nav className="pagination" aria-label="Pages des règlements">
+        {page > 1 && <button className="admin-nav-link" type="button" onClick={() => setPage(page - 1)}>Précédent</button>}
+        {data.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
+      </nav>
+    </>}
+  </section>;
 }
 
 function Journal({ csrfToken, saleId, recorded, onSelect, revision, onChanged, onBusy, busy }) {

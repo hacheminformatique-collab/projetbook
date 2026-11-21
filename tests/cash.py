@@ -45,6 +45,32 @@ def main():
     assert expect(professional.request(ENDPOINT), 200)["entries"] == []
 
     sale_id = expect(professional.request(ENDPOINT, sale), 201)["saleId"]
+    drawer = "professional-cash-drawer.php"
+    expect(guest.request(drawer), 401)
+    expect(customer.request(drawer), 403)
+    balance = expect(professional.request(drawer), 200)
+    assert balance["opening"] is None and balance["cashNetDzd"] == 2900 and balance["expectedDzd"] is None
+    today = balance["date"]
+    opening = {"action": "open", "date": today, "amountDzd": 1000}
+    movement = {"action": "move", "date": today, "amountDzd": 300, "kind": "deposit", "note": "Appoint", "requestKey": str(uuid.uuid4())}
+    expect(professional.request(drawer, movement), 409)
+    expect(professional.request(drawer, opening, csrf=False), 403)
+    expect(professional.request(drawer, opening), 201)
+    assert expect(professional.request(drawer, opening), 200)["duplicate"]
+    expect(professional.request(drawer, {**opening, "amountDzd": 2000}), 409)
+    movement_id = expect(professional.request(drawer, movement), 201)["id"]
+    assert expect(professional.request(drawer, movement), 200) == {"id": movement_id, "duplicate": True}
+    expect(professional.request(drawer, {**movement, "amountDzd": 400}), 409)
+    for kind, amount in (("withdrawal", 100), ("bank", 200)):
+        expect(professional.request(drawer, {**movement, "kind": kind, "amountDzd": amount, "requestKey": str(uuid.uuid4())}), 201)
+    balance = expect(professional.request(drawer), 200)
+    assert balance["expectedDzd"] == 3900 and len(balance["movements"]) == 3
+    assert balance["totals"] == {"deposit": 300, "withdrawal": 100, "bank": 200}
+    yesterday = (datetime.date.fromisoformat(today) - datetime.timedelta(days=1)).isoformat()
+    expect(professional.request(drawer, {**opening, "date": yesterday}), 409)
+    assert expect(professional.request(f"{drawer}?date={yesterday}"), 200)["movements"] == []
+    assert expect(other.request(drawer), 200)["opening"] is None
+    assert expect(other.request(drawer), 200)["movements"] == []
     replay = expect(professional.request(ENDPOINT, {**sale, "lines": [service_line, product_line]}), 200)
     assert replay == {"saleId": sale_id, "duplicate": True}
     expect(professional.request(ENDPOINT, {**sale, "paymentMethod": "card"}), 409)
@@ -75,6 +101,7 @@ def main():
     void = {"action": "void", "saleId": sale_id, "reason": "=Produit rendu"}
     assert expect(professional.request(ENDPOINT, void), 200)["duplicate"] is False
     assert expect(professional.request(ENDPOINT, void), 200)["duplicate"] is True
+    assert expect(professional.request(drawer), 200)["expectedDzd"] == 1000
     assert history(professional, product)["product"]["quantity"] == 3
     assert len(history(professional, product)["movements"]) == 3
     journal = expect(professional.request(ENDPOINT), 200)
@@ -90,6 +117,12 @@ def main():
         rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
     assert len(rows) == 3 and {row[4] for row in rows[1:]} == {"2900", "-2900"}
     assert next(row for row in rows[1:] if row[2] == "Annulation")[7] == "'=Produit rendu"
+    payments = ENDPOINT + "?view=payments"
+    cash_payments = expect(professional.request(payments + "&method=cash"), 200)
+    assert cash_payments["totals"] == {"collected": 0, "gift": 0}
+    assert sorted(int(row["collected_dzd"]) for row in cash_payments["entries"]) == [-2900, 2900]
+    assert expect(other.request(payments), 200)["entries"] == []
+    expect(professional.request(payments + "&method[]=cash"), 422)
 
     expect(professional.request(PRODUCTS, product_payload(id=product)), 200)
     second_session = Client()
@@ -168,6 +201,12 @@ def main():
     assert replay["duplicate"] and replay["code"] is None and replay["saleId"] == issued["saleId"]
     card_list = expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"]
     assert len(card_list) == 1 and "code" not in card_list[0]
+    assert expect(professional.request(ENDPOINT + "?view=cards&status=expired"), 200)["cards"] == []
+    assert expect(other.request(ENDPOINT + "?view=cards"), 200)["cards"] == []
+    with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=cards-csv") as response:
+        rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
+    assert len(rows) == 2 and rows[1][0] == str(issued["cardId"])
+    assert rows[1][3:] == ["2000", "2000", "Active"]
     voucher_sale = {
         "action": "record", "requestKey": str(uuid.uuid4()), "paymentMethod": "cash",
         "giftCardCode": f"{issued['code'][:8]} {issued['code'][8:]}",
@@ -180,6 +219,9 @@ def main():
     overview = expect(professional.request(ENDPOINT + "?view=overview"), 200)
     assert overview["summary"]["gift_card_dzd"] == 500
     assert overview["summary"]["received_dzd"] == 6700
+    gift_payments = expect(professional.request(payments + "&method=gift_card"), 200)
+    assert gift_payments["totals"] == {"collected": 0, "gift": 500}
+    assert len(gift_payments["entries"]) == 1
     remaining = expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"]
     assert remaining == 1500
     expect(professional.request(ENDPOINT, voucher_sale), 200)
@@ -187,6 +229,11 @@ def main():
     expect(professional.request(ENDPOINT, refund), 200)
     assert expect(professional.request(ENDPOINT + "?view=cards"), 200)["cards"][0]["balance_dzd"] == 2000
     assert expect(professional.request(ENDPOINT + "?view=overview"), 200)["summary"]["gift_card_dzd"] == 0
+    with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=payments-csv&method=gift_card") as response:
+        rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
+    assert len(rows) == 3 and {tuple(row[3:]) for row in rows[1:]} == {
+        ("Carte cadeau", "0", "500"), ("Carte cadeau", "0", "-500"),
+    }
     report = expect(professional.request(stats), 200)
     assert report["breakdown"]["other_dzd"] == 2000
 

@@ -760,8 +760,16 @@ button:disabled { cursor: wait; opacity: .6; }
   .agenda-mobile-heading { display: flex; flex: none; align-items: center; gap: 5px; padding: 6px; background: #fff; }
   .agenda-mobile-heading > div { flex: 1; min-width: 0; text-align: center; }
   .agenda-mobile-heading label { display: block; font-size: 0; }
-  .agenda-mobile-heading input, .agenda-mobile-heading select { display: block; width: 100%; min-height: 30px; border: 0; background: #fff; color: #381a2a; font: inherit; text-align: center; }
+  .agenda-mobile-heading input { display: block; width: 100%; min-height: 30px; border: 0; background: #fff; color: #381a2a; font: inherit; text-align: center; }
   .agenda-mobile-heading input { font-weight: 700; }
+  .agenda-mobile-heading .agenda-team-trigger { max-width: 100%; min-height: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agenda-team-dialog { inset: 0 auto 0 0; margin: 0; width: min(85vw, 320px); max-height: 100dvh; height: 100dvh; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); border: 0; color: inherit; }
+  .agenda-team-dialog::backdrop { background: #261b2477; }
+  .agenda-team-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+  .agenda-team-dialog h2 { margin: 0; font-size: 20px; }
+  .agenda-team-dialog header button { min-width: 44px; min-height: 44px; }
+  .agenda-team-dialog .agenda-filters { flex-direction: column; gap: 0; }
+  .agenda-team-dialog .agenda-filters label { min-height: 44px; gap: 8px; overflow-wrap: anywhere; }
   .pro-agenda .agenda-toolbar { display: none; flex: none; max-height: 28dvh; overflow-y: auto; padding: 8px; }
   .pro-agenda .agenda-toolbar.agenda-options-open { display: flex; }
   .pro-agenda .agenda-view { display: none; }
@@ -771,6 +779,7 @@ button:disabled { cursor: wait; opacity: .6; }
   .pro-agenda .agenda-scroll { flex: 1; min-height: 0; max-height: none; border: 0; border-radius: 0; }
   .pro-agenda .agenda-grid { width: 100%; }
   .pro-agenda .agenda-corner, .pro-agenda .agenda-column-title { display: none; }
+  .pro-agenda .agenda-grid-team .agenda-corner, .pro-agenda .agenda-grid-team .agenda-column-title { display: block; padding: 8px 4px; min-height: 0; overflow-wrap: anywhere; }
   .pro-agenda .agenda-time-label { left: 3px; font-size: 11px; }
   .pro-agenda .agenda-booking { flex-direction: row; align-items: baseline; gap: 4px; white-space: nowrap; }
   .pro-agenda .agenda-booking strong { flex: none; }

@@ -455,6 +455,8 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   const [focusedSlots, setFocusedSlots] = useState({});
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 760px)").matches);
   const [mobileStaff, setMobileStaff] = useState(null);
+  const teamDialog = useRef(null);
+  const teamTrigger = useRef(null);
   const [mobileOptions, setMobileOptions] = useState(false);
   const effectiveView = mobile ? "day" : view;
   const monday = weekStart(date);
@@ -496,8 +498,12 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   const team = days?.[0].staff.filter((member) => Number(member.is_active) || assigned.has(String(member.id))) ?? [];
   const hasActiveStaff = team.some((member) => Number(member.is_active));
   const people = [...team, ...(!hasActiveStaff || assigned.has("") ? [{ id: "", name: hasActiveStaff ? "Non attribués" : "Agenda du salon" }] : [])];
-  const selectedMobileStaff = people.find((member) => String(member.id) === mobileStaff) || people[0];
-  const visible = mobile ? people.filter((member) => member === selectedMobileStaff) : people.filter((member) => !hiddenStaff.includes(String(member.id)));
+  const mobileStaffIds = mobileStaff ?? people.slice(0, 1).map((member) => String(member.id));
+  const visible = people.filter((member) => mobile
+    ? mobileStaffIds === "all" || mobileStaffIds.includes(String(member.id))
+    : !hiddenStaff.includes(String(member.id)));
+  const visibleStaffIds = new Set(visible.map((member) => String(member.id)));
+  const multipleMobileColumns = mobile && visible.length > 1;
   const columns = days?.flatMap((day) => visible.map((member) => ({ day, member }))) ?? [];
   const ranges = days?.flatMap((day) => [
     ...(!day.closed && day.hours ? [[minutes(day.hours.opens_at), minutes(day.hours.closes_at)]] : []),
@@ -511,12 +517,18 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
   const selectedDay = days?.find((day) => day.date === selected?.sourceDate);
   const filters = days && <fieldset className="agenda-filters"><legend>Collaborateurs</legend>
     <label><input type="checkbox" checked={visible.length === people.length} ref={(input) => { if (input) input.indeterminate = visible.length > 0 && visible.length < people.length; }}
-      onChange={(event) => setHiddenStaff(event.target.checked ? [] : people.map((member) => String(member.id)))} /> Toute l’équipe</label>
+      onChange={(event) => {
+        if (mobile) setMobileStaff(event.target.checked ? "all" : []);
+        else setHiddenStaff(event.target.checked ? [] : people.map((member) => String(member.id)));
+      }} /> Toute l’équipe</label>
     {people.map((member) => <label key={member.id}>
-      <input type="checkbox" checked={!hiddenStaff.includes(String(member.id))} onChange={(event) => {
+      <input type="checkbox" checked={visibleStaffIds.has(String(member.id))} onChange={(event) => {
         const id = String(member.id);
         const checked = event.target.checked;
-        setHiddenStaff((ids) => checked ? ids.filter((value) => value !== id) : [...ids, id]);
+        if (mobile) {
+          const ids = mobileStaffIds === "all" ? people.map((person) => String(person.id)) : mobileStaffIds;
+          setMobileStaff(checked ? [...ids, id] : ids.filter((value) => value !== id));
+        } else setHiddenStaff((ids) => checked ? ids.filter((value) => value !== id) : [...ids, id]);
       }} /> {member.name}{member.id && !Number(member.is_active) ? " (inactif)" : ""}
     </label>)}
   </fieldset>;
@@ -537,9 +549,11 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
       <button type="button" className="admin-nav-link" aria-label="Jour précédent" onClick={() => navigateDate(dayOffset(date, -1))}>‹</button>
       <div>
         <label>Date de l’agenda<input aria-label="Date de l’agenda" type="date" value={date} onChange={(event) => { if (event.target.value) navigateDate(event.target.value); }} /></label>
-        {people.length > 0 && <select aria-label="Collaborateur affiché" value={String(selectedMobileStaff.id)} onChange={(event) => setMobileStaff(event.target.value)}>
-          {people.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-        </select>}
+        {mobile && days && <button ref={teamTrigger} type="button" className="admin-nav-link agenda-team-trigger" aria-haspopup="dialog"
+          aria-label="Filtrer les collaborateurs" onClick={() => teamDialog.current.showModal()}>
+          {visible.length === 1 ? visible[0].name : visible.length === people.length ? "Toute l’équipe"
+            : visible.length ? `${visible.length} collaborateurs` : "Aucun collaborateur"}
+        </button>}
       </div>
       <button type="button" className="admin-nav-link" aria-label="Jour suivant" onClick={() => navigateDate(dayOffset(date, 1))}>›</button>
       <button type="button" className="admin-nav-link" aria-expanded={mobileOptions} aria-controls="agenda-options" onClick={() => setMobileOptions(!mobileOptions)}>Options</button>
@@ -570,16 +584,25 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
       {!mobile && canAdd && <button className="admin-nav-link agenda-toolbar-add" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date })}>+ Rendez-vous</button>}
     </div>
     {mobile && <div className="agenda-planning-options">{fullDayOption}</div>}
-    {filtersTarget ? createPortal(filters, filtersTarget) : filters}
+    {mobile ? <dialog ref={teamDialog} className="agenda-team-dialog" aria-labelledby="agenda-team-title"
+      onClose={() => teamTrigger.current?.focus()}>
+      <header>
+        <h2 id="agenda-team-title">Équipe affichée</h2>
+        <button type="button" className="admin-nav-link" aria-label="Fermer le filtre équipe" onClick={() => teamDialog.current.close()}>×</button>
+      </header>
+      {filters}
+    </dialog> : filtersTarget ? createPortal(filters, filtersTarget) : filters}
     {notice && <p className="form-message form-success" role="status">{notice}</p>}
     {current?.error && <p className="form-message form-error" role="alert">{current.error}</p>}
     {!current && <p role="status">Chargement de l’agenda…</p>}
     {days && !columns.length && <p role="status">Cochez un collaborateur pour afficher sa colonne.</p>}
     {columns.length > 0 && <div className="agenda-scroll" tabIndex={0} aria-label="Grille des rendez-vous, défilement horizontal et vertical">
-      <div className="agenda-grid" style={{ "--agenda-row": `${15 * unit}px`, gridTemplateColumns: mobile ? "44px minmax(0, 1fr)" : `64px repeat(${columns.length}, minmax(${view === "day" ? 180 : 142}px, 1fr))` }}>
+      <div className={`agenda-grid${multipleMobileColumns ? " agenda-grid-team" : ""}`} style={{ "--agenda-row": `${15 * unit}px`,
+        gridTemplateColumns: multipleMobileColumns ? `44px repeat(${columns.length}, minmax(150px, 1fr))`
+          : mobile ? "44px minmax(0, 1fr)" : `64px repeat(${columns.length}, minmax(${view === "day" ? 180 : 142}px, 1fr))` }}>
         <div className="agenda-corner">Heure</div>
         {columns.map(({ day, member }) => <div className="agenda-column-title" key={`${day.date}:${member.id}`}>
-          {view === "week" && <button type="button" onClick={() => { navigateDate(day.date); setView("day"); }}>{shortDay.format(utcDate(day.date))}</button>}
+          {effectiveView === "week" && <button type="button" onClick={() => { navigateDate(day.date); setView("day"); }}>{shortDay.format(utcDate(day.date))}</button>}
           {member.name}{day.closed && <small> · Fermé</small>}
           {member.id && day.staffAbsences?.find((absence) => Number(absence.staff_id) === Number(member.id)) && <small> · Absent</small>}
         </div>)}
@@ -689,7 +712,9 @@ export default function ProfessionalAgenda({ csrfToken, date, setDate, filtersTa
         })}
       </div>
     </div>}
-    {mobile && canAdd && <button className="agenda-add-button" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({ date, staffId: String(selectedMobileStaff?.id || "") })}>+</button>}
+    {mobile && canAdd && <button className="agenda-add-button" type="button" aria-label="Créer un rendez-vous" onClick={() => setCreateSlot({
+      date, staffId: visible.length === 1 ? String(visible[0].id) : "",
+    })}>+</button>}
     {createSlot && days && <AppointmentCreate key={`${createSlot.date}:${createSlot.time || "new"}:${createSlot.staffId || ""}`} agenda={days.find((day) => day.date === createSlot.date) || days[0]} csrfToken={csrfToken} initial={createSlot} onClose={closeCreate} onCreated={(message, nextDate) => {
       setCreateSlot(null);
       setNotice(message);

@@ -328,6 +328,21 @@ try {
             historyPage: secondPage ? 2 : 1, hasMoreHistory: !secondPage,
           };
         }
+      } else if (url.pathname.endsWith("/api/professional-cash-drawer.php")) {
+        const today = "2026-11-19";
+        if (options?.method === "POST") {
+          const body = JSON.parse(options.body);
+          if (body.action === "open") window.drawerOpening = body.amountDzd;
+          else window.drawerMovement = body;
+          data = { duplicate: false };
+        } else {
+          const date = url.searchParams.get("date");
+          const opening = date === today && window.drawerOpening != null ? { opening_dzd: window.drawerOpening, opened_at: today + " 10:30:45" } : null;
+          const deposit = opening ? window.drawerMovement?.amountDzd || 0 : 0;
+          data = { today, date, opening, cashNetDzd: date === today ? 1000 : 0, totals: { deposit, withdrawal: 0, bank: 0 },
+            expectedDzd: opening ? opening.opening_dzd + 1000 + deposit : null, hasMore: false,
+            movements: deposit ? [{ id: 1, kind: "deposit", amount_dzd: deposit, note: window.drawerMovement.note, recorded_at: today + " 10:30:45" }] : [] };
+        }
       } else if (url.pathname.endsWith("/api/professional-cash.php")) {
         if (options?.method === "POST") {
           window.cashRequests.push(JSON.parse(options.body));
@@ -338,6 +353,14 @@ try {
           }
           appointmentSaleId = 21;
           data = { saleId: appointmentSaleId, duplicate: true };
+        } else if (url.searchParams.get("view") === "payments") {
+          data = { totals: { collected: 1000, gift: 0 }, entries: [
+            { id: 21, payment_method: "cash", event_kind: "sale", event_at: "2026-11-19 10:30:45", collected_dzd: 1000, gift_card_applied_dzd: 0 },
+          ], hasMore: false };
+        } else if (url.searchParams.get("view") === "cards") {
+          data = { cards: url.searchParams.get("status") === "expired" ? [
+            { id: 5, balance_dzd: 300, initial_value_dzd: 500, expires_on: "2026-11-18", status: "expired" },
+          ] : [], hasMore: false };
         } else if (["overview", "statistics"].includes(url.searchParams.get("view"))) {
           data = { summary: { gross_dzd: 1000, net_dzd: 1000, received_dzd: 1000, void_dzd: 0, gift_card_dzd: 0, sale_count: 1, void_count: 0 }, payments: [], days: [] };
           if (url.searchParams.get("view") === "statistics") {
@@ -746,10 +769,22 @@ try {
   await waitFor("document.querySelectorAll('.agenda-day-column').length === 1");
   assert.equal(await evaluate("document.querySelector('[aria-label=\"Période en cours\"]')"), null);
   assert.equal(await evaluate("!!document.querySelector('.agenda-add-button') && !document.querySelector('.agenda-toolbar-add')"), true);
-  await evaluate("(() => { const select = document.querySelector('[aria-label=\"Collaborateur affiché\"]'); select.value = '2'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await evaluate("document.querySelector('.agenda-team-trigger').click()");
+  await waitFor("document.querySelector('.agenda-team-dialog').open");
+  const toggleTeam = (label) => evaluate(`Array.from(document.querySelectorAll('.agenda-team-dialog label')).find(label => label.textContent.trim() === ${JSON.stringify(label)}).querySelector('input').click()`);
+  assert.equal(await evaluate("document.querySelector('.agenda-team-dialog input').indeterminate"), true);
+  await toggleTeam("Toute l’équipe");
+  await waitFor("document.querySelectorAll('.agenda-day-column').length === 2");
+  assert.match(await evaluate("document.querySelector('.agenda-grid-team').textContent"), /Lina.*Absent/);
+  await toggleTeam("Sonia");
   await waitFor("!!document.querySelector('.agenda-day-column-absent')");
   assert.equal(await evaluate("document.querySelectorAll('.agenda-slot-free').length"), 0);
-  await evaluate("(() => { const select = document.querySelector('[aria-label=\"Collaborateur affiché\"]'); select.value = '1'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await toggleTeam("Toute l’équipe");
+  await toggleTeam("Toute l’équipe");
+  await waitFor("document.querySelector('.pro-agenda [role=status]')?.textContent.includes('Cochez un collaborateur')");
+  await toggleTeam("Sonia");
+  await evaluate("document.querySelector('.agenda-team-dialog header button').click()");
+  await waitFor("document.activeElement === document.querySelector('.agenda-team-trigger')");
   await waitFor("!!document.querySelector('.agenda-slot-free')");
   await evaluate("document.querySelector('.agenda-booking').click()");
   await waitFor("!!document.querySelector('.agenda-detail')");
@@ -869,9 +904,49 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await waitFor("!!document.querySelector('.cash-mobile-nav[open] nav')?.getClientRects().length");
   assert.equal(await evaluate("Array.from(document.querySelectorAll('.cash-mobile-nav p')).filter(p => p.textContent.endsWith('(bientôt disponible)') && !p.querySelector('a,button')).length"), 4);
-  await evaluate("Array.from(document.querySelectorAll('.cash-mobile-nav button')).find(b => b.textContent === 'Tickets et règlements').click()");
+  await evaluate("Array.from(document.querySelectorAll('.cash-mobile-nav button')).find(b => b.textContent === 'Journal de caisse').click()");
   await waitFor("!!document.querySelector('.cash-journal') && !document.querySelector('.cash-mobile-nav').open");
   assert.equal(await evaluate("!!document.querySelector('.appointment-card')"), false, "normal cash navigation must not reopen an old sale");
+  const openMobileCash = async (label) => {
+    await evaluate("document.querySelector('.cash-mobile-nav summary').click()");
+    await waitFor("document.querySelector('.cash-mobile-nav').open");
+    await evaluate(`Array.from(document.querySelectorAll('.cash-mobile-nav button')).find(b => b.textContent === ${JSON.stringify(label)}).click()`);
+  };
+  await openMobileCash("Règlements");
+  await waitFor("document.querySelector('.cash-payments tbody button')?.textContent === 'n° 21'");
+  await evaluate(`(() => {
+    const form = document.querySelector('.cash-payments form');
+    form.elements.method.value = 'cash';
+    form.requestSubmit();
+  })()`);
+  await waitFor("document.querySelector('.cash-payments a')?.href.includes('method=cash')");
+  await openMobileCash("Cartes cadeaux en salon");
+  await evaluate(`(() => {
+    const select = Array.from(document.querySelectorAll('.pro-panel select')).find(e => e.querySelector('option[value="expired"]'));
+    select.value = 'expired';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelector('.pro-panel a[href*=cards-csv]')?.href.includes('status=expired') && document.querySelector('.pro-panel .service-row')?.textContent.includes('Expirée')");
+  await openMobileCash("Fond de caisse");
+  await waitFor("document.querySelector('.cash-drawer form h3')?.textContent.includes('fond d’ouverture')");
+  const submitDrawer = (amount, note) => evaluate(`(() => {
+    const form = document.querySelector('.cash-drawer form');
+    form.elements.amount.value = ${JSON.stringify(amount)};
+    if (form.elements.note) form.elements.note.value = ${JSON.stringify(note)};
+    form.requestSubmit();
+  })()`);
+  await submitDrawer(200, "");
+  await waitFor("document.querySelector('.cash-drawer form h3')?.textContent === 'Enregistrer un mouvement'");
+  await submitDrawer(50, "Appoint");
+  await waitFor("document.querySelector('.cash-drawer tbody')?.textContent.includes('Appoint')");
+  assert.match(await evaluate("document.querySelector('.cash-drawer .cash-kpis article:last-child').textContent"), /Espèces attendues1.?250 DA/);
+  await evaluate(`(() => {
+    const input = document.querySelector('.cash-drawer input[type=date]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '2026-11-18');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("document.querySelector('.cash-drawer')?.textContent.includes('consultation uniquement') && !document.querySelector('.cash-drawer form')");
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&page=2` });

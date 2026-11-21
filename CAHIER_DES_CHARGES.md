@@ -13,7 +13,11 @@ jours ouvrés d’intégration et de tests locaux, hors dépendances externes.
 | Agenda | Conserver le planning quotidien sur mobile et les vues existantes sur PC. Ajouter un panneau latéral de sélection de plusieurs collaborateurs ou de toute l’équipe. Vérifier les pauses, absences, créneaux et changements de date en heure d’Algérie. | À réestimer |
 | Statistiques | Les raccourcis **Jour / Semaine / Mois / Année** sont des filtres de statistiques, pas des vues de rendez-vous. Ils couvrent la période en cours jusqu’à aujourd’hui, en heure d’Algérie (semaine à partir du lundi). Prévoir aussi une période personnalisée, les filtres d’équipe, le panier moyen, la ventilation prestations / produits / divers et un export dont le périmètre correspond à l’écran. Afficher en DA et distinguer chiffre d’affaires, encaissements et annulations. Ne pas assimiler un rendez-vous passé à une visite effective. Ne pas afficher HT, TVA ou TTC tant que leur calcul et leur définition ne sont pas validés. | 2–4 j |
 
-Total prioritaire initial : **5–9 jours**, hors cadrage fiscal et services externes.
+La navigation mobile et les statistiques sont publiées sur GitHub. Le panneau
+équipe de l’Agenda mobile est intégré localement : il permet d’afficher un ou
+plusieurs collaborateurs ou toute l’équipe, avec défilement horizontal si
+nécessaire. Par défaut, une seule colonne est affichée pour garder le planning
+lisible. Le filtre ne modifie ni la date ni la disponibilité des créneaux.
 
 L’écran Statistiques et son CSV utilisent la même période et le même filtre
 d’équipe. Une vente est attribuée d’après le collaborateur du rendez-vous
@@ -36,6 +40,19 @@ ventes de caisse, pas d’un chiffre d’affaires fiscal.
 | 57–68 · Établissement | La fiche, le descriptif et les photos modérés, les horaires et fermetures existent. Ajouter recadrage et téléchargement des photos, lien CGV du salon, horaires exceptionnels partiels, jours fériés, ouverture de réservation distincte de la publication, délais et fréquence des créneaux, liste d’attente. | 5–9 j |
 | 61, 69–71 et menus Admin · Exploitation | E-mails transactionnels, campagnes et abonnements super-admin existent. Ajouter préférences de notification, cloche mobile, comptes employés et révocation des sessions, paiements et factures côté pro. SMS/push, Google/Meta, site dédié et publicité à cadrer séparément. | 6–10 j hors services externes |
 | 83–84 · Accueil | Préserver la grande image PC, la FAQ sous le premier écran et les raccourcis métiers sous la recherche. « Offrir » n’a pas de parcours public actif ; voir le lot en attente. | Non chiffré |
+
+Les premiers sous-lots de caisse sont intégrés localement : **Règlements**
+est distinct du journal et exportable par période et mode ; les annulations
+sont déduites à leur date, avec les cartes cadeaux séparées des montants
+encaissés. Les **cartes cadeaux en salon** sont filtrables sur les cartes
+expirées et exportables sans code d’utilisation. Le **fond de caisse**
+enregistre le montant initial une fois par journée (heure d’Algérie). Les
+**mouvements d’espèces** sont horodatés et motivés ; les dépôts s’ajoutent
+au solde, les retraits et remises en banque s’en déduisent. Les ventes en
+espèces et leurs annulations sont comptées à leur date d’enregistrement,
+sans inclure les cartes cadeaux utilisées. Le solde attendu n’est pas un
+comptage réel. Les journées passées sont consultables en lecture seule.
+Les échéances et les impayés restent à traiter.
 
 ## Paiements à garder en attente
 
