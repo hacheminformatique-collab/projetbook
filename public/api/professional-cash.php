@@ -713,11 +713,50 @@ function bookili_cash_csv_output(string $filename)
     return $output;
 }
 
-function bookili_cash_journal(PDO $pdo, int $salonId, bool $csv, bool $payments = false): never
+function bookili_cash_items_report(PDO $pdo, int $salonId, bool $csv): never
+{
+    [$from, $to, $page] = bookili_cash_period();
+    $kind = $_GET['kind'] ?? 'service';
+    if (!in_array($kind, ['service', 'product'], true)) {
+        bookili_json_response(422, ['error' => 'Choisissez Prestations ou Produits.']);
+    }
+    $events = bookili_cash_event_sql();
+    $statement = $pdo->prepare(
+        "SELECT line.item_id, line.item_name,
+                SUM(CASE WHEN events.event_kind = 'sale' THEN line.quantity ELSE 0 END) AS sold_quantity,
+                SUM(CASE WHEN events.event_kind = 'void' THEN line.quantity ELSE 0 END) AS void_quantity,
+                SUM(CASE WHEN events.event_kind = 'sale' THEN line.quantity * line.unit_price_dzd ELSE 0 END) AS gross_dzd,
+                SUM(CASE WHEN events.event_kind = 'void' THEN line.quantity * line.unit_price_dzd ELSE 0 END) AS void_dzd
+         FROM ($events) AS events JOIN cash_sale_lines line ON line.sale_id = events.id
+         WHERE line.item_kind = :kind
+         GROUP BY line.item_id, BINARY line.item_name, line.item_name
+         ORDER BY line.item_name, line.item_id, BINARY line.item_name"
+         . ($csv ? '' : ' LIMIT 51 OFFSET ' . (($page - 1) * 50))
+    );
+    $statement->execute(bookili_cash_event_params($salonId, $from, $to) + ['kind' => $kind]);
+    if ($csv) {
+        $output = bookili_cash_csv_output($kind === 'service' ? 'bookili-ventes-prestations.csv' : 'bookili-ventes-produits.csv');
+        fputcsv($output, ['Référence', 'Nom à la vente', 'Quantité vendue', 'Quantité annulée', 'Brut (DA)', 'Annulations (DA)', 'Net (DA)'], ';', '"', '');
+        while ($row = $statement->fetch()) {
+            fputcsv($output, [$row['item_id'], bookili_csv_text($row['item_name']), $row['sold_quantity'],
+                $row['void_quantity'], $row['gross_dzd'], $row['void_dzd'], (int) $row['gross_dzd'] - (int) $row['void_dzd']], ';', '"', '');
+        }
+        fclose($output);
+        exit;
+    }
+    $rows = $statement->fetchAll();
+    bookili_json_response(200, ['entries' => array_slice($rows, 0, 50), 'hasMore' => count($rows) > 50]);
+}
+
+function bookili_cash_journal(PDO $pdo, int $salonId, bool $csv, string $scope = 'all'): never
 {
     [$from, $to, $page] = bookili_cash_period();
     $sql = bookili_cash_event_sql();
     $params = bookili_cash_event_params($salonId, $from, $to);
+    $payments = $scope === 'payments';
+    if ($scope === 'voids') {
+        $sql = "SELECT * FROM ($sql) AS events WHERE event_kind = 'void'";
+    }
     if ($payments) {
         $method = $_GET['method'] ?? '';
         if (!is_string($method) || ($method !== '' && !isset(BOOKILI_CASH_METHODS[$method]))) {
@@ -737,7 +776,11 @@ function bookili_cash_journal(PDO $pdo, int $salonId, bool $csv, bool $payments 
         . ($csv ? '' : ' LIMIT 51 OFFSET ' . (($page - 1) * 50)));
     $statement->execute($params);
     if ($csv) {
-        $output = bookili_cash_csv_output($payments ? 'bookili-reglements.csv' : 'bookili-journal-caisse.csv');
+        $output = bookili_cash_csv_output(match ($scope) {
+            'payments' => 'bookili-reglements.csv',
+            'voids' => 'bookili-annulations.csv',
+            default => 'bookili-journal-caisse.csv',
+        });
         $columns = ['Date (Algérie)', 'Vente', 'Opération', 'Mode de règlement'];
         fputcsv($output, [...$columns, ...($payments ? ['Encaissé (DA)', 'Carte cadeau (DA)']
             : ['Montant brut (DA)', 'Encaissé (DA)', 'Carte cadeau (DA)', 'Motif'])], ';', '"', '');
@@ -824,7 +867,9 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === 'professional-cas
         if ($view === 'overview') bookili_cash_overview($pdo, $salonId);
         if ($view === 'statistics' || $view === 'statistics-csv') bookili_cash_overview($pdo, $salonId, true, $view === 'statistics-csv');
         if ($view === 'cards' || $view === 'cards-csv') bookili_cash_cards($pdo, $salonId, $view === 'cards-csv');
-        if ($view === 'payments' || $view === 'payments-csv') bookili_cash_journal($pdo, $salonId, $view === 'payments-csv', true);
+        if ($view === 'payments' || $view === 'payments-csv') bookili_cash_journal($pdo, $salonId, $view === 'payments-csv', 'payments');
+        if ($view === 'items-report' || $view === 'items-report-csv') bookili_cash_items_report($pdo, $salonId, $view === 'items-report-csv');
+        if ($view === 'voids' || $view === 'voids-csv') bookili_cash_journal($pdo, $salonId, $view === 'voids-csv', 'voids');
         if ($view === 'journal' || $view === 'csv') bookili_cash_journal($pdo, $salonId, $view === 'csv');
         bookili_json_response(422, ['error' => 'Vue de caisse invalide.']);
     } catch (Throwable $error) {

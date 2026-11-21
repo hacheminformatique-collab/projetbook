@@ -83,6 +83,13 @@ def main():
     assert saved["total_dzd"] == 2900 and saved["lines"][0]["item_name"] == "Shampooing"
     assert saved["lines"][0]["unit_price_dzd"] == 1200
     assert expect(professional.request(ENDPOINT), 200)["netDzd"] == 2900
+    items = ENDPOINT + "?view=items-report"
+    products = expect(professional.request(items + "&kind=product"), 200)["entries"]
+    assert [(row["item_name"], int(row["sold_quantity"]), int(row["gross_dzd"])) for row in products] == [("Shampooing", 2, 2400)]
+    assert expect(other.request(items + "&kind=product"), 200)["entries"] == []
+    expect(professional.request(items + "&kind[]=product"), 422)
+    void_report = ENDPOINT + "?view=voids"
+    assert expect(professional.request(void_report), 200)["entries"] == []
     overview = expect(professional.request(ENDPOINT + "?view=overview"), 200)
     assert overview["summary"] == {
         "gross_dzd": 2900, "void_dzd": 0, "net_dzd": 2900, "received_dzd": 2900,
@@ -102,6 +109,17 @@ def main():
     assert expect(professional.request(ENDPOINT, void), 200)["duplicate"] is False
     assert expect(professional.request(ENDPOINT, void), 200)["duplicate"] is True
     assert expect(professional.request(drawer), 200)["expectedDzd"] == 1000
+    service_report = expect(professional.request(items + "&kind=service"), 200)["entries"]
+    assert [(row["item_name"], int(row["void_quantity"]), int(row["void_dzd"])) for row in service_report] == [("Coupe", 1, 500)]
+    cancelled = expect(professional.request(void_report), 200)["entries"]
+    assert [(row["id"], row["amount_dzd"], row["reason"]) for row in cancelled] == [(sale_id, -2900, "=Produit rendu")]
+    assert expect(other.request(void_report), 200)["entries"] == []
+    with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=items-report-csv&kind=product") as response:
+        rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
+    assert rows[1:] == [[str(product), "Shampooing", "2", "2", "2400", "2400", "0"]]
+    with professional.opener.open(f"{account_tests.BASE}/api/{ENDPOINT}?view=voids-csv") as response:
+        rows = list(csv.reader(io.StringIO(response.read().decode("utf-8-sig")), delimiter=";"))
+    assert len(rows) == 2 and rows[1][4:] == ["-2900", "-2900", "0", "'=Produit rendu"]
     assert history(professional, product)["product"]["quantity"] == 3
     assert len(history(professional, product)["movements"]) == 3
     journal = expect(professional.request(ENDPOINT), 200)

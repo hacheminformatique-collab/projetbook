@@ -44,11 +44,12 @@ export default function CashRegister({ csrfToken, appointment = null, initialSal
   const mobileGroups = [
     ["Encaissement", [["sale", "Nouveau ticket"], ["tickets", "Tickets en attente"]]],
     ["Transactions", [["journal", "Journal de caisse"], ["payments", "Règlements"], ["drawer", "Fond de caisse"], ["gift-cards", "Cartes cadeaux en salon"]]],
+    ["Rapports", [["reports", "Rapports de caisse"]]],
     ["Gestion des stocks", [["inventory", "État des stocks"]]],
   ];
   return <>
     <nav className="workspace-tabs cash-desktop-nav" aria-label="Caisse professionnelle">
-      {[["sale", "Vente"], ["tickets", "Tickets en attente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["payments", "Règlements"], ["drawer", "Fond de caisse"], ["inventory", "Stocks"]].map(([value, name]) =>
+      {[["sale", "Vente"], ["tickets", "Tickets en attente"], ["overview", "Synthèse"], ["gift-cards", "Cartes cadeaux"], ["journal", "Journal"], ["payments", "Règlements"], ["drawer", "Fond de caisse"], ["reports", "Rapports"], ["inventory", "Stocks"]].map(([value, name]) =>
         <button key={value} type="button" disabled={!canOpen(value)} aria-current={view === value ? "page" : undefined} onClick={() => open(value)}>{name}</button>
       )}
     </nav>
@@ -91,6 +92,7 @@ export default function CashRegister({ csrfToken, appointment = null, initialSal
     {view === "journal" && <Journal csrfToken={csrfToken} saleId={saleId} recorded={recorded} onSelect={setSaleId} revision={revision} onChanged={refresh} onBusy={setBusy} busy={busy} />}
     {view === "payments" && <Payments revision={revision} onSelect={(id) => { setSaleId(id); open("journal"); }} />}
     {view === "drawer" && <CashDrawer csrfToken={csrfToken} onBusy={setBusy} />}
+    {view === "reports" && <CashReports revision={revision} onSelect={(id) => { setSaleId(id); open("journal"); }} />}
     {view === "inventory" && <Inventory csrfToken={csrfToken} />}
   </>;
 }
@@ -600,6 +602,56 @@ function CashDrawer({ csrfToken, onBusy }) {
         </nav>
       </section>
     </>}
+  </section>;
+}
+
+function CashReports({ revision, onSelect }) {
+  const [period, setPeriod] = useState(() => currentCashPeriod("month"));
+  const [kind, setKind] = useState("service");
+  const [page, setPage] = useState(1);
+  const isVoids = kind === "voids";
+  const view = isVoids ? "voids" : "items-report";
+  const filters = isVoids ? period : { ...period, kind };
+  const { data, error } = useCashData(new URLSearchParams({ view, ...filters, page }).toString(), revision);
+  return <section className="client-card cash-reports">
+    <h2>Rapports de caisse</h2>
+    <form className="booking-toolbar" onSubmit={(event) => {
+      event.preventDefault();
+      const fields = new FormData(event.currentTarget);
+      setPeriod({ from: fields.get("from"), to: fields.get("to") });
+      setPage(1);
+    }}>
+      <label>Rapport<select value={kind} onChange={(event) => { setKind(event.target.value); setPage(1); }}>
+        <option value="service">Ventes par prestation</option>
+        <option value="product">Ventes par produit</option>
+        <option value="voids">Journal des annulations</option>
+      </select></label>
+      <label>Du<input name="from" type="date" required defaultValue={period.from} max={algerianDate()} /></label>
+      <label>Au<input name="to" type="date" required defaultValue={period.to} max={algerianDate()} /></label>
+      <button className="admin-nav-link" type="submit">Afficher</button>
+      {data && <a className="admin-nav-link" href={apiUrl(`${endpoint}?${new URLSearchParams({ view: `${view}-csv`, ...filters })}`)}>Exporter le rapport (CSV)</a>}
+    </form>
+    <p>{isVoids ? "Les annulations de ventes sont affichées à leur date d’enregistrement."
+      : "Les libellés et les prix sont ceux enregistrés à la vente. Les annulations sont déduites à leur date d’enregistrement."}</p>
+    {error && <Feedback notice={{ kind: "error", text: error }} />}
+    {!data && !error && <p role="status">Chargement du rapport…</p>}
+    {data?.entries.length === 0 && <p>{isVoids ? "Aucune annulation de vente sur cette période." : "Aucune opération sur cette période."}</p>}
+    {data?.entries.length > 0 && <div className="cash-journal-table"><table>
+      <thead><tr>{(isVoids ? ["Vente", "Mode", "Montant (déduction)", "Motif"]
+        : ["Nom à la vente", "Qté vendue", "Qté annulée", "Brut", "Annulations", "Net"]).map((column) => <th scope="col" key={column}>{column}</th>)}</tr></thead>
+      <tbody>{isVoids ? data.entries.map((row) => <tr key={row.id}>
+        <th scope="row"><button className="cash-journal-sale-link" type="button" onClick={() => onSelect(row.id)}>n° {row.id}</button><small>{appointmentDate(row.event_at)}</small></th>
+        <td>{methods[row.payment_method]}</td><td>{priceLabel(row.amount_dzd)}</td><td>{row.reason}</td>
+      </tr>) : data.entries.map((row) => <tr key={`${row.item_id}:${row.item_name}`}>
+        <th scope="row">{row.item_name}<small>n° {row.item_id}</small></th>
+        <td>{row.sold_quantity}</td><td>{row.void_quantity}</td>
+        <td>{priceLabel(row.gross_dzd)}</td><td>{priceLabel(row.void_dzd)}</td><td>{priceLabel(row.gross_dzd - row.void_dzd)}</td>
+      </tr>)}</tbody>
+    </table></div>}
+    <nav className="pagination" aria-label="Pages des rapports">
+      {page > 1 && <button className="admin-nav-link" type="button" onClick={() => setPage(page - 1)}>Précédent</button>}
+      {data?.hasMore && <button className="admin-nav-link" type="button" onClick={() => setPage(page + 1)}>Suivant</button>}
+    </nav>
   </section>;
 }
 
