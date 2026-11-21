@@ -61,10 +61,15 @@ les libellés et prix enregistrés sur les tickets ; les annulations sont
 comptées à leur date d’enregistrement, même si la vente est antérieure.
 Le journal affiche le motif saisi et donne accès au détail de la vente.
 
-Deux sous-lots de rapports sont intégrés localement : ventes par collaborateur
+Deux sous-lots de rapports sont publiés : ventes par collaborateur
 (attribution d’après le rendez-vous) et comparaison avec la période précédente
 de même durée. Les deux vues disposent d’un export CSV et ne nécessitent
 pas de migration supplémentaire.
+
+Deux sous-lots de stock sont intégrés localement : catégories libres avec
+filtre, et stock maximum facultatif avec alerte au-delà de la valeur définie.
+Le maximum ne bloque pas les mouvements. Les deux champs figurent dans le
+CSV des stocks et utilisent la migration `028_product_stock_settings.sql`.
 
 ## Paiements à garder en attente
 

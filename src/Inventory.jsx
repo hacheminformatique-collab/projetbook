@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { apiRequest, apiUrl, appointmentDate, priceLabel } from "./api-client.js";
 
-const emptyProduct = { name: "", reference: "", price: 0, threshold: 0, isActive: true };
+const emptyProduct = { name: "", reference: "", category: "", price: 0, threshold: 0, maximum: "", isActive: true };
 const numericValue = (value) => value === "" ? "" : Number(value);
 
 export default function Inventory({ csrfToken }) {
-  const [filters, setFilters] = useState({ q: "", stock: "all", includeArchived: "0" });
+  const [filters, setFilters] = useState({ q: "", category: "", stock: "all", includeArchived: "0" });
   const [page, setPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState(null);
@@ -33,7 +33,9 @@ export default function Inventory({ csrfToken }) {
   function edit(product) {
     setEditing({
       id: product.id, name: product.name, reference: product.reference,
+      category: product.category,
       price: Number(product.price_dzd), threshold: Number(product.low_stock_threshold),
+      maximum: product.max_stock_quantity == null ? "" : Number(product.max_stock_quantity),
       isActive: Number(product.is_active) === 1,
     });
     setNotice(null);
@@ -43,7 +45,9 @@ export default function Inventory({ csrfToken }) {
     setSaving(true);
     setNotice(null);
     try {
-      const saved = await apiRequest("professional-products.php", { csrfToken, body: editing });
+      const saved = await apiRequest("professional-products.php", {
+        csrfToken, body: { ...editing, maximum: editing.maximum === "" ? null : editing.maximum },
+      });
       setEditing(emptyProduct);
       setSelectedId(saved.productId);
       setRefresh((value) => value + 1);
@@ -57,15 +61,18 @@ export default function Inventory({ csrfToken }) {
       <section className="client-card">
         <h2>Produits et stocks</h2>
         <p>Suivez vos produits à l’unité. Les entrées et sorties sont manuelles : aucune vente ni aucun encaissement n’est enregistré dans ce module.</p>
-        {result && <p role="status"><strong>{result.lowStockCount}</strong> produit(s) actif(s) au seuil d’alerte ou en dessous, dans tout le salon.</p>}
+        {result && <p role="status">Dans le salon : <strong>{result.lowStockCount}</strong> produit(s) actif(s) au seuil d’alerte ou en dessous · <strong>{result.overStockCount}</strong> au-dessus du maximum.</p>}
         <form className="booking-toolbar" onSubmit={(event) => {
           event.preventDefault();
-          filter({ q: new FormData(event.currentTarget).get("q").trim() });
+          const fields = new FormData(event.currentTarget);
+          filter({ q: fields.get("q").trim(), category: fields.get("category").trim() });
         }}>
           <label>Nom ou référence<input name="q" maxLength={180} placeholder="Rechercher un produit" /></label>
+          <label>Catégorie exacte<input name="category" maxLength={80} placeholder="Toutes les catégories" /></label>
           <button type="submit" className="admin-nav-link">Rechercher</button>
           <label>Stock<select value={filters.stock} onChange={(event) => filter({ stock: event.target.value })}>
             <option value="all">Tous les stocks</option><option value="low">Stock bas uniquement</option>
+            <option value="over">Au-dessus du maximum</option>
           </select></label>
           <label>Produits<select value={filters.includeArchived} onChange={(event) => filter({ includeArchived: event.target.value })}>
             <option value="0">Actifs</option><option value="1">Actifs et archivés</option>
@@ -81,8 +88,13 @@ export default function Inventory({ csrfToken }) {
           {result?.products.map((product) => (
             <article className="service-row" key={product.id}>
               <span><strong>{product.name}</strong>{product.reference && <> · {product.reference}</>}<br />
-                {priceLabel(product.price_dzd)} · Stock : <strong>{product.quantity}</strong> · Seuil : {product.low_stock_threshold}<br />
-                {!Number(product.is_active) ? "Archivé" : Number(product.quantity) <= Number(product.low_stock_threshold) ? <span className="stock-warning">Stock bas</span> : "En stock"}
+                {product.category && <>{product.category}<br /></>}
+                {priceLabel(product.price_dzd)} · Stock : <strong>{product.quantity}</strong> · Seuil : {product.low_stock_threshold}
+                {product.max_stock_quantity != null && <> · Maximum : {product.max_stock_quantity}</>}<br />
+                {!Number(product.is_active) ? "Archivé" : Number(product.quantity) <= Number(product.low_stock_threshold)
+                  ? <span className="stock-warning">Stock bas</span>
+                  : product.max_stock_quantity != null && Number(product.quantity) > Number(product.max_stock_quantity)
+                    ? <span className="stock-warning">Au-dessus du maximum</span> : "En stock"}
               </span>
               <div className="review-buttons">
                 <button type="button" className="admin-nav-link" disabled={saving} onClick={() => edit(product)}>Modifier</button>
@@ -104,10 +116,13 @@ export default function Inventory({ csrfToken }) {
           <fieldset disabled={saving} className="form-fieldset">
             <label>Nom du produit<input required maxLength={180} value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
             <label>Référence (facultative)<input maxLength={80} value={editing.reference} onChange={(event) => setEditing({ ...editing, reference: event.target.value })} /></label>
+            <label>Catégorie (facultative)<input maxLength={80} value={editing.category} onChange={(event) => setEditing({ ...editing, category: event.target.value })} /></label>
             <div className="auth-grid">
               <label>Prix de vente unitaire (DA)<input required type="number" min={0} max={10000000} step={1} value={editing.price} onChange={(event) => setEditing({ ...editing, price: numericValue(event.target.value) })} /></label>
               <label>Seuil d’alerte (unités)<input required type="number" min={0} max={1000000} step={1} value={editing.threshold} onChange={(event) => setEditing({ ...editing, threshold: numericValue(event.target.value) })} /></label>
+              <label>Stock maximum (facultatif)<input type="number" min={editing.threshold || 0} max={1000000} step={1} value={editing.maximum} onChange={(event) => setEditing({ ...editing, maximum: numericValue(event.target.value) })} /></label>
             </div>
+            <p className="field-hint">Le maximum déclenche une alerte de surstock sans bloquer les entrées.</p>
             <label className="checkbox-label"><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} />Produit actif</label>
             <div className="review-buttons">
               <button type="submit" className="auth-submit">{saving ? "Enregistrement…" : "Enregistrer le produit"}</button>

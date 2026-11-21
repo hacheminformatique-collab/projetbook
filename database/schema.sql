@@ -330,6 +330,8 @@ CREATE TABLE IF NOT EXISTS products (
   price_dzd BIGINT UNSIGNED NOT NULL DEFAULT 0,
   quantity INT UNSIGNED NOT NULL DEFAULT 0,
   low_stock_threshold INT UNSIGNED NOT NULL DEFAULT 0,
+  category VARCHAR(80) NOT NULL DEFAULT '',
+  max_stock_quantity INT UNSIGNED NULL DEFAULT NULL,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   PRIMARY KEY (id),
   KEY products_salon_active (salon_id, is_active, id),

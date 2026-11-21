@@ -248,8 +248,9 @@ migrations à importer dans phpMyAdmin est :
 `database/migrations/024_staff_absences.sql` et
 `database/migrations/025_daily_schedule_pauses.sql` et
 `database/migrations/026_campaign_request_key.sql`, puis
-`database/migrations/027_cash_drawer.sql`. Les nouvelles installations
-obtiennent ces tables directement via `database/schema.sql`.
+`database/migrations/027_cash_drawer.sql`, puis
+`database/migrations/028_product_stock_settings.sql`. Les nouvelles installations
+utilisent directement `database/schema.sql`.
 
 Après avoir téléversé `dist/`, exécuter le contrôle structurel avec le même
 PHP CLI 8.1+ que celui configuré pour le site :
@@ -789,5 +790,6 @@ base ayant déjà reçu la première version du schéma MySQL, appliquez
 `database/migrations/024_staff_absences.sql`,
 `database/migrations/025_daily_schedule_pauses.sql` et
 `database/migrations/026_campaign_request_key.sql` et
-`database/migrations/027_cash_drawer.sql`, dans cet ordre,
+`database/migrations/027_cash_drawer.sql` et
+`database/migrations/028_product_stock_settings.sql`, dans cet ordre,
 uniquement si ces migrations ne sont pas déjà appliquées.

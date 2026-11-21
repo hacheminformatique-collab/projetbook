@@ -65,15 +65,18 @@ def main():
     expect(client.request(PRODUCTS + "?format=csv"), 403)
     expect(professional.request(PRODUCTS, product_payload(), csrf=False), 403)
     for changes in ({"price": -1}, {"price": 1.5}, {"price": "12"}, {"threshold": True},
-                    {"threshold": 1000001}, {"name": ""}, {"reference": []}, {"isActive": 1}):
+                    {"threshold": 1000001}, {"name": ""}, {"reference": []}, {"isActive": 1},
+                    {"category": []}, {"maximum": 1}, {"maximum": 1000001}, {"maximum": "5"}):
         expect(professional.request(PRODUCTS, product_payload(**changes)), 422)
     for query in ("page=0", "page=10001", "q[]=bad", "stock=invalid", "format=invalid", "includeArchived=yes"):
         expect(professional.request(f"{PRODUCTS}?{query}"), 422)
 
-    product_id = expect(professional.request(PRODUCTS, product_payload(quantity=999)), 200)["productId"]
+    product_id = expect(professional.request(PRODUCTS, product_payload(quantity=999, category=" Soins ", maximum=5)), 200)["productId"]
     initial = expect(professional.request(PRODUCTS), 200)
     assert len(initial["products"]) == 1 and initial["lowStockCount"] == 1
     assert initial["products"][0]["quantity"] == 0
+    assert initial["products"][0]["category"] == "Soins" and initial["products"][0]["max_stock_quantity"] == 5
+    assert initial["overStockCount"] == 0
     assert expect(other.request(PRODUCTS), 200)["products"] == []
     expect(other.request(PRODUCTS, product_payload(id=product_id)), 404)
     expect(other.request(f"{MOVEMENTS}?productId={product_id}"), 404)
@@ -100,6 +103,11 @@ def main():
     assert len(received["movements"]) == 1 and received["product"]["quantity"] == 10
     assert received["movements"][0]["quantity_after"] == 10
     assert expect(professional.request(PRODUCTS), 200)["lowStockCount"] == 0
+    over = expect(professional.request(PRODUCTS + "?stock=over&category=soins"), 200)
+    assert over["overStockCount"] == 1 and [int(row["id"]) for row in over["products"]] == [product_id]
+    assert expect(professional.request(PRODUCTS + "?stock=over&category=Autres"), 200)["products"] == []
+    assert export(professional, stock="over", category="Soins")[1][-3:] == ["Soins", "5", "Actif"]
+    assert expect(other.request(PRODUCTS + "?stock=over&category=Soins"), 200)["overStockCount"] == 0
     expect(move(professional, product_id, 11, direction="out"), 409)
     expect(move(professional, product_id, 1000000), 409)
     assert len(history(professional, product_id)["movements"]) == 1
@@ -133,6 +141,7 @@ def main():
     assert all(status == 200 for status, _ in results), results
     assert sorted(result["duplicate"] for _, result in results) == [False, True]
     assert history(professional, product_id)["product"]["quantity"] == 5
+    assert expect(professional.request(PRODUCTS + "?stock=over"), 200)["products"] == []
 
     expect(professional.request(PRODUCTS, product_payload(id=product_id, isActive=False, quantity=99)), 200)
     assert expect(professional.request(PRODUCTS), 200)["products"] == []
@@ -142,7 +151,9 @@ def main():
     assert len(export(professional)) == 1
     archived = export(professional, includeArchived="1")
     assert archived[1][0] == product_payload()["name"] and archived[1][-1] == "Archivé"
-    expect(professional.request(PRODUCTS, product_payload(id=product_id)), 200)
+    assert archived[1][-3:-1] == ["Soins", "5"]
+    expect(professional.request(PRODUCTS, product_payload(id=product_id, maximum=None, category="")), 200)
+    assert history(professional, product_id)["product"]["max_stock_quantity"] is None
     expect(move(professional, product_id, 999995), 200)
     expect(move(professional, product_id, 1), 409)
     assert history(professional, product_id)["product"]["quantity"] == 1000000

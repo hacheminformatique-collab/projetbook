@@ -328,6 +328,11 @@ try {
             historyPage: secondPage ? 2 : 1, hasMoreHistory: !secondPage,
           };
         }
+      } else if (url.pathname.endsWith("/api/professional-products.php")) {
+        window.inventoryQuery = Object.fromEntries(url.searchParams);
+        data = { products: [{ id: 1, name: "Lotion test", reference: "LOT-1", category: "Soins", quantity: 8,
+          max_stock_quantity: 5, low_stock_threshold: 2, price_dzd: 1200, is_active: 1 }],
+        lowStockCount: 0, overStockCount: 1, hasMore: false };
       } else if (url.pathname.endsWith("/api/professional-cash-drawer.php")) {
         const today = "2026-11-19";
         if (options?.method === "POST") {
@@ -977,6 +982,18 @@ try {
   await selectReport("comparison");
   await waitFor("document.querySelector('.cash-reports table')?.textContent.includes('13/10/2026 – 31/10/2026') && document.querySelector('.cash-reports a')?.href.includes('view=comparison-csv')");
   assert.match(await evaluate("document.querySelector('.cash-reports tbody').textContent"), /\+300 DA/);
+  await openMobileCash("État des stocks");
+  await waitFor("document.querySelector('.pro-panel .service-row')?.textContent.includes('Maximum : 5')");
+  await evaluate(`(() => {
+    const input = document.querySelector('.pro-panel input[name=category]');
+    input.value = 'Soins';
+    input.form.requestSubmit();
+    const stock = Array.from(input.form.querySelectorAll('select')).find(select => select.querySelector('option[value=over]'));
+    stock.value = 'over';
+    stock.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor("window.inventoryQuery?.category === 'Soins' && window.inventoryQuery?.stock === 'over'");
+  assert.match(await evaluate("document.querySelector('.pro-panel a[href*=format]').href"), /category=Soins&stock=over/);
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&page=2` });

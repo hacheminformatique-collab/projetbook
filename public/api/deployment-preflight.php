@@ -137,6 +137,7 @@ if ($pdo instanceof PDO) {
 
     $requiredColumns = [
         'accounts' => ['session_version'],
+        'products' => ['category', 'max_stock_quantity'],
         'appointments' => ['notification_version'],
         'salon_hours' => ['pause_starts_at', 'pause_ends_at'],
         'staff_hours' => ['pause_starts_at', 'pause_ends_at'],

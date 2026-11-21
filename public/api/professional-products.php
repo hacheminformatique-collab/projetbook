@@ -20,17 +20,27 @@ try {
         $id = isset($data['id']) ? bookili_id($data['id']) : null;
         $pdo->beginTransaction();
         $salon = bookili_own_salon($pdo, (int) $account['id'], true);
+        $previous = $id === null ? null : bookili_own_product($pdo, (int) $salon['id'], $id, true);
+        $category = array_key_exists('category', $data) ? $data['category'] : ($previous['category'] ?? '');
+        $maximum = array_key_exists('maximum', $data) ? $data['maximum']
+            : (isset($previous['max_stock_quantity']) ? (int) $previous['max_stock_quantity'] : null);
+        if (!is_string($category) || strlen(trim($category)) > 80 || str_contains($category, "\0")
+            || ($maximum !== null && (!is_int($maximum) || $maximum < $threshold || $maximum > 1000000))) {
+            $pdo->rollBack();
+            bookili_json_response(422, ['error' => 'Vérifiez la catégorie (80 octets maximum) et indiquez un maximum au moins égal au seuil d’alerte, jusqu’à 1 000 000 unités.']);
+        }
         if ($id !== null) {
-            bookili_own_product($pdo, (int) $salon['id'], $id, true);
             $sql = 'UPDATE products SET name = :name, reference = :reference, price_dzd = :price,
-                    low_stock_threshold = :threshold, is_active = :active WHERE id = :id AND salon_id = :salon_id';
+                    low_stock_threshold = :threshold, category = :category, max_stock_quantity = :maximum,
+                    is_active = :active WHERE id = :id AND salon_id = :salon_id';
         } else {
-            $sql = 'INSERT INTO products (salon_id, name, reference, price_dzd, low_stock_threshold, is_active)
-                    VALUES (:salon_id, :name, :reference, :price, :threshold, :active)';
+            $sql = 'INSERT INTO products (salon_id, name, reference, price_dzd, low_stock_threshold, category, max_stock_quantity, is_active)
+                    VALUES (:salon_id, :name, :reference, :price, :threshold, :category, :maximum, :active)';
         }
         $params = [
             'salon_id' => $salon['id'], 'name' => $name, 'reference' => trim($reference),
             'price' => $price, 'threshold' => $threshold, 'active' => (int) $data['isActive'],
+            'category' => trim($category), 'maximum' => $maximum,
         ];
         if ($id !== null) $params['id'] = $id;
         $pdo->prepare($sql)->execute($params);
@@ -43,10 +53,12 @@ try {
     $page = isset($_GET['page']) ? bookili_id($_GET['page']) : 1;
     $query = $_GET['q'] ?? '';
     $stock = $_GET['stock'] ?? 'all';
+    $category = $_GET['category'] ?? '';
     $archived = $_GET['includeArchived'] ?? '0';
     $format = $_GET['format'] ?? 'json';
     if ($page > 10000 || !is_string($query) || strlen($query) > 180
-        || !in_array($stock, ['all', 'low'], true) || !in_array($archived, ['0', '1'], true)
+        || !is_string($category) || strlen($category) > 80
+        || !in_array($stock, ['all', 'low', 'over'], true) || !in_array($archived, ['0', '1'], true)
         || !in_array($format, ['json', 'csv'], true)) {
         bookili_json_response(422, ['error' => 'Filtres de produits invalides.']);
     }
@@ -54,12 +66,17 @@ try {
     $params = ['salon_id' => $salon['id']];
     if ($archived === '0') $where .= ' AND is_active = 1';
     if ($stock === 'low') $where .= ' AND is_active = 1 AND quantity <= low_stock_threshold';
+    if ($stock === 'over') $where .= ' AND is_active = 1 AND quantity > max_stock_quantity';
+    if (trim($category) !== '') {
+        $where .= ' AND category = :category';
+        $params['category'] = trim($category);
+    }
     if (trim($query) !== '') {
         $where .= ' AND (LOCATE(:name_query, name) > 0 OR LOCATE(:reference_query, reference) > 0)';
         $params['name_query'] = $params['reference_query'] = trim($query);
     }
     $statement = $pdo->prepare(
-        'SELECT id, name, reference, price_dzd, quantity, low_stock_threshold, is_active
+        'SELECT id, name, reference, price_dzd, quantity, low_stock_threshold, category, max_stock_quantity, is_active
          FROM products WHERE ' . $where . ' ORDER BY id DESC'
         . ($format === 'csv' ? '' : ' LIMIT 51 OFFSET ' . (($page - 1) * 50))
     );
@@ -73,11 +90,12 @@ try {
         header('Cache-Control: no-store');
         header('X-Content-Type-Options: nosniff');
         fwrite($output, "\xEF\xBB\xBF");
-        fputcsv($output, ['Produit', 'Référence', 'Prix unitaire (DA)', 'Stock', 'Seuil d’alerte', 'Statut'], ';', '"', '');
+        fputcsv($output, ['Produit', 'Référence', 'Prix unitaire (DA)', 'Stock', 'Seuil d’alerte', 'Catégorie', 'Stock maximum', 'Statut'], ';', '"', '');
         foreach ($products as $product) {
             fputcsv($output, [
                 bookili_csv_text($product['name']), bookili_csv_text($product['reference']),
                 $product['price_dzd'], $product['quantity'], $product['low_stock_threshold'],
+                bookili_csv_text($product['category']), $product['max_stock_quantity'],
                 (int) $product['is_active'] === 1 ? 'Actif' : 'Archivé',
             ], ';', '"', '');
         }
@@ -85,12 +103,15 @@ try {
         exit;
     }
     $statement = $pdo->prepare(
-        'SELECT COUNT(*) FROM products WHERE salon_id = :id AND is_active = 1 AND quantity <= low_stock_threshold'
+        'SELECT COUNT(CASE WHEN quantity <= low_stock_threshold THEN 1 END) AS low_count,
+                COUNT(CASE WHEN quantity > max_stock_quantity THEN 1 END) AS over_count
+         FROM products WHERE salon_id = :id AND is_active = 1'
     );
     $statement->execute(['id' => $salon['id']]);
+    $counts = $statement->fetch();
     bookili_json_response(200, [
         'products' => array_slice($products, 0, 50), 'hasMore' => count($products) > 50,
-        'lowStockCount' => (int) $statement->fetchColumn(),
+        'lowStockCount' => (int) $counts['low_count'], 'overStockCount' => (int) $counts['over_count'],
     ]);
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();

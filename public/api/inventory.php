@@ -14,7 +14,7 @@ function bookili_inventory_integer(array $data, string $key, int $maximum, int $
 function bookili_own_product(PDO $pdo, int $salonId, int $productId, bool $lock = false): array
 {
     $statement = $pdo->prepare(
-        'SELECT id, name, reference, price_dzd, quantity, low_stock_threshold, is_active
+        'SELECT id, name, reference, price_dzd, quantity, low_stock_threshold, category, max_stock_quantity, is_active
          FROM products WHERE id = :id AND salon_id = :salon_id' . ($lock ? ' FOR UPDATE' : '')
     );
     $statement->execute(['id' => $productId, 'salon_id' => $salonId]);
