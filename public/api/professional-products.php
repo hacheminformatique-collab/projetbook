@@ -94,7 +94,8 @@ try {
     }
     $statement = $pdo->prepare(
         'SELECT id, name, reference, price_dzd, quantity, low_stock_threshold, category, max_stock_quantity, supplier_id, is_active,
-                (SELECT s.name FROM stock_suppliers s WHERE s.id = products.supplier_id AND s.salon_id = products.salon_id) AS supplier_name
+                (SELECT s.name FROM stock_suppliers s WHERE s.id = products.supplier_id AND s.salon_id = products.salon_id) AS supplier_name'
+         . ($format === 'json' ? ', CAST(COALESCE((SELECT m.id FROM stock_movements m WHERE m.product_id = products.id ORDER BY m.id DESC LIMIT 1), 0) AS CHAR) AS stock_version' : '') . '
          FROM products WHERE ' . $where . ' ORDER BY id DESC'
         . ($format === 'csv' ? '' : ' LIMIT 51 OFFSET ' . (($page - 1) * 50))
     );

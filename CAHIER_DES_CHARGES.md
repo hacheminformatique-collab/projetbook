@@ -84,7 +84,12 @@ Publiés : saisie des commandes fournisseurs et réception partielle ou
 totale. Chaque réception met à jour les stocks et leur historique ; il est
 possible d’annuler le reste sans retirer les unités déjà reçues. Aucun envoi
 au fournisseur ni paiement n’est déclenché. Migration : `031_stock_orders.sql`.
-Les opérations de stock en masse restent à traiter.
+
+Publiés : les entrées et sorties de stock en masse, et le comptage
+physique de plusieurs produits en une seule opération. Un aperçu présente les
+quantités avant et après. Si une ligne a changé ou est invalide, le lot entier
+est refusé ; chaque ligne validée apparaît dans l’historique du produit.
+Migration : `032_stock_batches.sql`.
 
 ## Paiements à garder en attente
 

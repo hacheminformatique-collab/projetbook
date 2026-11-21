@@ -274,7 +274,51 @@ def main():
     capped_order = expect(professional.request(orders, {**create, "requestKey": str(uuid.uuid4()), "items": capped_items}), 200)["orderId"]
     expect(professional.request(orders, {**receive, "orderId": capped_order, "requestKey": str(uuid.uuid4()), "items": capped_items}), 409)
     assert expect(professional.request(f"{orders}?orderId={capped_order}"), 200)["order"]["status"] == "open"
-    print("Inventory checks passed, including supplier orders, atomic receipts and concurrent retries.")
+    batches = "professional-stock-batches.php"
+
+    def batch_item(pid, quantity):
+        record = history(professional, pid)
+        return {"productId": pid, "quantity": quantity, "stockVersion": record["stockVersion"]}
+
+    def stock(pid):
+        return int(history(professional, pid)["product"]["quantity"])
+
+    original = [stock(product_id), stock(second_id)]
+    batch = {"kind": "in", "reason": "Réassort du lot", "requestKey": str(uuid.uuid4()),
+             "items": [batch_item(product_id, 2), batch_item(second_id, 1)]}
+    listed = expect(professional.request(f"{PRODUCTS}?q=@stock"), 200)["products"][0]
+    assert listed["stock_version"] == batch["items"][0]["stockVersion"]
+    expect(client.request(batches, batch), 403)
+    expect(professional.request(batches, batch, csrf=False), 403)
+    expect(other.request(batches, batch), 404)
+    expect(professional.request(batches, {**batch, "items": [batch["items"][0]] * 2}), 422)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda session: expect(session.request(batches, batch), 200), [professional, second_session]))
+    assert sorted(row["duplicate"] for row in responses) == [False, True]
+    assert responses[0]["batchId"] == responses[1]["batchId"]
+    expect(professional.request(batches, {**batch, "reason": "Autre motif"}), 409)
+    assert [stock(product_id), stock(second_id)] == [original[0] + 2, original[1] + 1]
+
+    withdrawal = {**batch, "kind": "out", "requestKey": str(uuid.uuid4()),
+                  "items": [batch_item(product_id, 1), batch_item(second_id, 1000)]}
+    expect(professional.request(batches, withdrawal), 409)
+    assert stock(product_id) == original[0] + 2
+    withdrawal["items"][1]["quantity"] = 1
+    expect(professional.request(batches, withdrawal), 200)
+    assert [stock(product_id), stock(second_id)] == [original[0] + 1, original[1]]
+
+    reconciliation = {**batch, "kind": "count", "requestKey": str(uuid.uuid4()),
+                      "items": [batch_item(product_id, 0), batch_item(second_id, original[1])]}
+    expect(move(professional, second_id, 1), 200)
+    expect(move(professional, second_id, 1, direction="out"), 200)
+    expect(professional.request(batches, reconciliation), 409)
+    assert stock(product_id) == original[0] + 1
+    reconciliation["items"][1] = batch_item(second_id, original[1])
+    expect(professional.request(batches, reconciliation), 200)
+    assert stock(product_id) == 0 and stock(second_id) == original[1]
+    unchanged = history(professional, second_id)["movements"][0]
+    assert (unchanged["is_count"], unchanged["quantity_delta"]) == (1, 0)
+    print("Inventory checks passed, including supplier orders and atomic stock batches.")
 
 
 if __name__ == "__main__":

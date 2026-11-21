@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest, apiUrl, appointmentDate, priceLabel } from "./api-client.js";
 import StockOrders from "./StockOrders.jsx";
+import StockBatches from "./StockBatches.jsx";
 
 const emptyProduct = { name: "", reference: "", category: "", supplierId: "", price: 0, threshold: 0, maximum: "", isActive: true };
 const numericValue = (value) => value === "" ? "" : Number(value);
@@ -168,6 +169,7 @@ export default function Inventory({ csrfToken }) {
       <Suppliers csrfToken={csrfToken} suppliers={suppliers} error={supplierError} onReload={() => reloadSuppliers((n) => n + 1)}
         onSaved={() => { reloadSuppliers((n) => n + 1); setRefresh((n) => n + 1); }} />
       <StockOrders csrfToken={csrfToken} suppliers={suppliers} onStockChanged={() => setRefresh((n) => n + 1)} />
+      <StockBatches csrfToken={csrfToken} onChanged={() => setRefresh((n) => n + 1)} />
     </>
   );
 }

@@ -117,7 +117,7 @@ if ($pdo instanceof PDO) {
         'salons', 'salon_profile_entries', 'salon_photos', 'services', 'salon_hours', 'salon_closures',
         'staff_members', 'staff_hours', 'staff_absences', 'appointments', 'appointment_private_notes',
         'professional_client_notes', 'appointment_services', 'notification_outbox', 'products', 'stock_movements', 'stock_suppliers',
-        'stock_orders', 'stock_order_items', 'stock_order_receipts',
+        'stock_orders', 'stock_order_items', 'stock_order_receipts', 'stock_batches',
         'cash_sales', 'cash_sale_lines', 'cash_tickets', 'cash_ticket_lines', 'gift_cards', 'gift_card_events',
         'subscription_plans', 'professional_subscriptions', 'subscription_payments', 'admin_account_events',
         'marketing_campaigns', 'marketing_campaign_recipients', 'marketing_unsubscribe_tokens',

@@ -347,11 +347,17 @@ try {
         } else {
           data = { orders: window.stockOrder ? [window.stockOrder] : [], hasMore: false };
         }
+      } else if (url.pathname.endsWith("/api/professional-stock-batches.php")) {
+        window.stockBatch = JSON.parse(options.body);
+        data = { batchId: 42 };
       } else if (url.pathname.endsWith("/api/professional-products.php")) {
         window.inventoryQuery = Object.fromEntries(url.searchParams);
         data = { products: [{ id: 1, name: "Lotion test", reference: "LOT-1", category: "Soins", quantity: 8,
-          max_stock_quantity: 5, low_stock_threshold: 2, price_dzd: 1200, is_active: 1 }],
+          max_stock_quantity: 5, low_stock_threshold: 2, price_dzd: 1200, is_active: 1, stock_version: "19" }],
         lowStockCount: 0, overStockCount: 1, hasMore: false };
+        if (url.searchParams.get("q") === "" && url.searchParams.get("page") === "1" && !url.searchParams.has("stock")) {
+          data.products.push({ id: 2, name: "Crème test", quantity: 3, stock_version: "20", is_active: 1 });
+        }
       } else if (url.pathname.endsWith("/api/professional-cash-drawer.php")) {
         const today = "2026-11-19";
         if (options?.method === "POST") {
@@ -1044,6 +1050,31 @@ try {
   await setOrderQuantity(2);
   await orderButton("Enregistrer la réception");
   await waitFor(`${orderSection}.textContent.includes('2 reçue(s) sur 4 commandée(s)') && window.stockReceipt?.orderId === 3`);
+  const batchSection = `document.querySelector('section[aria-label="Opérations de stock en masse"]')`;
+  const batchButton = (text) => evaluate(`Array.from(${batchSection}.querySelectorAll('button')).find(button => button.textContent === ${JSON.stringify(text)}).click()`);
+  await batchButton("Préparer une opération");
+  await waitFor(`!!${batchSection}.querySelector('option[value="2"]')`);
+  for (const value of ["count", "1", "2"]) {
+    await evaluate(`(() => {
+      const select = ${batchSection}.querySelector('select:has(option[value="${value}"])');
+      select.value = '${value}';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+  }
+  await evaluate(`(() => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    [...${batchSection}.querySelectorAll('form.auth-form input')].forEach((input, index) => {
+      set.call(input, ['0', '3', 'Inventaire du soir'][index]);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  })()`);
+  await batchButton("Vérifier le lot");
+  await waitFor(`${batchSection}.textContent.includes('Lotion test : 8 → 0 unité(s)') && !window.stockBatch`);
+  await batchButton("Confirmer l’opération");
+  await waitFor(`${batchSection}.textContent.includes('Opération n° 42 enregistrée.')`);
+  assert.deepEqual(await evaluate("window.stockBatch.items"), [
+    { productId: 1, quantity: 0, stockVersion: "19" }, { productId: 2, quantity: 3, stockVersion: "20" },
+  ]);
   console.log("Agenda keyboard, mobile, rescheduling and checkout checks passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/recherche?q=Coupe&ville=S%C3%A9tif&wilaya=19&categorie=coiffeur&page=2` });
