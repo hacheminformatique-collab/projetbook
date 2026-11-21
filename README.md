@@ -570,6 +570,11 @@ comptes ou les rendez-vous d’autres salons.
   modification volontaire de la réservation adopte les caractéristiques
   affichées de la prestation choisie ; un changement de tarif ou de durée
   entre affichage et confirmation oblige à recharger la fiche.
+- Dans **Admin → Prestations**, le catalogue est regroupé par catégorie et
+  indique la durée, le tarif et la visibilité en ligne. Dans **Collaborateurs**,
+  la liste indique qui est actif et la fiche permet de régler les horaires et
+  les pauses. Sur ordinateur, la fiche s’ouvre à côté de la liste ; sur
+  mobile, elle s’affiche seule.
 - Modifier des horaires ou masquer un salon ne supprime pas ses rendez-vous
   déjà confirmés. Les pauses nouvellement définies ne les annulent pas non plus ;
   les conflits existants restent visibles et doivent être gérés par le salon.

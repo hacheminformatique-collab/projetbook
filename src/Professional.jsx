@@ -145,10 +145,34 @@ function staffHoursForm(staffHours = []) {
   });
 }
 
+function useSettingsEditor() {
+  const [open, setOpen] = useState(false);
+  const heading = useRef(null);
+  const trigger = useRef(null);
+  useEffect(() => {
+    if (open) heading.current?.focus();
+    else trigger.current?.focus();
+  }, [open]);
+  return {
+    open, heading,
+    start(event) {
+      trigger.current = event.currentTarget;
+      if (open) heading.current?.focus();
+      setOpen(true);
+    },
+    close: () => setOpen(false),
+  };
+}
+
+function SettingsStatus({ active, activeText, inactiveText }) {
+  return <span className={`pro-settings-status${active ? " pro-settings-status-active" : ""}`}>{active ? activeText : inactiveText}</span>;
+}
+
 function StaffSettings({ csrfToken, salonHours }) {
   const defaultHours = () => staffHoursForm(salonHours).map((hour) => ({ ...hour, pause_starts_at: "", pause_ends_at: "" }));
   const [staff, setStaff] = useState(null);
   const [editing, setEditing] = useState(() => ({ name: "", isActive: true, hours: defaultHours() }));
+  const editor = useSettingsEditor();
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   useEffect(() => {
@@ -177,28 +201,47 @@ function StaffSettings({ csrfToken, salonHours }) {
         },
       });
       setStaff(result.staff);
-      setEditing({ name: "", isActive: true, hours: defaultHours() });
+      editor.close();
       setNotice({ kind: "success", text: result.message });
     } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
     finally { setSaving(false); }
   }
-  return <section className="client-card">
-    <h2>Collaborateurs</h2>
-    <p>Définissez les horaires et une pause facultative par jour pour chaque collaborateur. Les créneaux respecteront ses horaires, sa pause et ceux du salon. Les rendez-vous déjà pris restent visibles si un collaborateur est désactivé.</p>
+  function openEditor(event, member) {
+    setEditing(member
+      ? { staffId: Number(member.id), name: member.name, isActive: Number(member.is_active) === 1, hours: staffHoursForm(member.hours) }
+      : { name: "", isActive: true, hours: defaultHours() });
+    setNotice(null);
+    editor.start(event);
+  }
+  return <section className={`client-card pro-settings${editor.open ? " pro-settings-open" : ""}`}>
+    <div className="pro-settings-header">
+      <h2>Collaborateurs</h2>
+      {staff && <button className="auth-submit" disabled={saving} type="button" onClick={(event) => openEditor(event)}>+ Ajouter un collaborateur</button>}
+    </div>
     {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
-    {staff === null && <p>Chargement…</p>}
-    <div className="service-list">{staff?.map((member) => <div className="service-row" key={member.id}>
-      <span><strong>{member.name}</strong><br />{Number(member.is_active) ? "Actif et réservable" : "Inactif"}</span>
-      <button type="button" className="admin-nav-link" disabled={saving} onClick={() => {
-        setEditing({ staffId: Number(member.id), name: member.name, isActive: Number(member.is_active) === 1, hours: staffHoursForm(member.hours) });
-      }}>Modifier</button>
-    </div>)}</div>
-    {staff !== null && <form className="auth-form" onSubmit={submit}>
-      <h3>{editing.staffId ? "Modifier le collaborateur" : "Ajouter un collaborateur"}</h3>
+    {staff === null && !notice && <p role="status">Chargement…</p>}
+    <div className="pro-settings-body">
+    {staff && <div className="pro-settings-list service-list">
+      <h3>Équipe</h3>
+      {staff.length === 0 && <p>Aucun collaborateur. Ajoutez votre premier membre d’équipe.</p>}
+      {staff.map((member) => <div className={`pro-settings-row${editor.open && editing.staffId === Number(member.id) ? " pro-settings-selected" : ""}`} key={member.id}>
+        <strong>{member.name}</strong>
+        <SettingsStatus active={Number(member.is_active) === 1} activeText="Actif" inactiveText="Inactif" />
+        <button type="button" className="admin-nav-link" disabled={saving} aria-label={`Modifier ${member.name}`} onClick={(event) => openEditor(event, member)}>Modifier</button>
+      </div>)}
+    </div>}
+    {editor.open && <form className="auth-form pro-settings-editor" onSubmit={submit}>
+      <div>
+        <button className="pro-settings-back admin-nav-link" type="button" disabled={saving} onClick={editor.close}>← Retour aux collaborateurs</button>
+        <h3 ref={editor.heading} tabIndex={-1}>{editing.staffId ? "Modifier le collaborateur" : "Ajouter un collaborateur"}</h3>
+      </div>
       <fieldset className="form-fieldset" disabled={saving}>
         <label>Nom affiché<input required maxLength={120} value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
         <label className="checkbox-label"><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} />Collaborateur actif et réservable</label>
+        {editing.staffId && <p className="pro-settings-note">Une désactivation retire ses futurs créneaux de la réservation en ligne sans annuler les rendez-vous déjà pris.</p>}
         <div className="hours-list">
+          <h4>Horaires et pauses</h4>
+          <p className="field-hint">Les créneaux respectent les horaires du salon, ceux du collaborateur et ses pauses.</p>
           {editing.hours.map((hour, index) => (
             <div className="hours-row" key={hour.weekday}>
               <label className="checkbox-label"><input type="checkbox" checked={hour.enabled} onChange={(event) => changeHour(index, { enabled: event.target.checked })} />{weekDays[index]}</label>
@@ -211,10 +254,11 @@ function StaffSettings({ csrfToken, salonHours }) {
         </div>
         <div className="review-buttons">
           <button type="submit" className="auth-submit">{saving ? "Enregistrement…" : "Enregistrer"}</button>
-          {editing.staffId && <button type="button" className="admin-nav-link" onClick={() => setEditing({ name: "", isActive: true, hours: defaultHours() })}>Annuler</button>}
+          <button type="button" className="admin-nav-link" onClick={editor.close}>Annuler</button>
         </div>
       </fieldset>
     </form>}
+    </div>
   </section>;
 }
 
@@ -425,6 +469,7 @@ const emptyService = { name: "", category: "coiffeur", duration: 30, price: 0, i
 function ServiceSettings({ csrfToken }) {
   const [services, setServices] = useState(null);
   const [editing, setEditing] = useState(emptyService);
+  const editor = useSettingsEditor();
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   useEffect(() => {
@@ -434,9 +479,15 @@ function ServiceSettings({ csrfToken }) {
       .catch((cause) => { if (!controller.signal.aborted) setNotice({ kind: "error", text: cause.message }); });
     return () => controller.abort();
   }, []);
-  function edit(service) {
-    setEditing({ id: service.id, name: service.name, category: service.category, duration: Number(service.duration_minutes), price: Number(service.price_dzd), isActive: Number(service.is_active) === 1 });
+  const groups = new Map(serviceCategories.map(([category, label]) => [category, { label, items: [] }]));
+  for (const service of services ?? []) {
+    if (!groups.has(service.category)) groups.set(service.category, { label: service.category, items: [] });
+    groups.get(service.category).items.push(service);
+  }
+  function openEditor(event, service) {
+    setEditing(service ? { id: service.id, name: service.name, category: service.category, duration: Number(service.duration_minutes), price: Number(service.price_dzd), isActive: Number(service.is_active) === 1 } : emptyService);
     setNotice(null);
+    editor.start(event);
   }
   async function submit(event) {
     event.preventDefault();
@@ -445,27 +496,37 @@ function ServiceSettings({ csrfToken }) {
     try {
       const result = await apiRequest("professional-services.php", { csrfToken, body: editing });
       setServices(result.services);
-      setEditing(emptyService);
+      editor.close();
       setNotice({ kind: "success", text: "La prestation a été enregistrée. Les rendez-vous existants conservent leur prix et leur durée." });
     } catch (cause) { setNotice({ kind: "error", text: cause.message }); }
     finally { setSaving(false); }
   }
   return (
-    <section className="client-card">
-      <h2>Mes prestations</h2>
+    <section className={`client-card pro-settings${editor.open ? " pro-settings-open" : ""}`}>
+      <div className="pro-settings-header">
+        <h2>Mes prestations</h2>
+        {services && <button className="auth-submit" disabled={saving} type="button" onClick={(event) => openEditor(event)}>+ Ajouter une prestation</button>}
+      </div>
       {notice && <p className={`form-message form-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>}
       {services === null && !notice && <p>Chargement…</p>}
-      {services?.length === 0 && <p>Ajoutez votre première prestation.</p>}
-      <div className="service-list">
-        {services?.map((service) => (
-          <div className="service-row" key={service.id}>
-            <span><strong>{service.name}</strong><br />{service.duration_minutes} min · {priceLabel(service.price_dzd)} · {Number(service.is_active) ? "Active" : "Masquée"}</span>
-            <button type="button" className="admin-nav-link" disabled={saving} onClick={() => edit(service)}>Modifier</button>
-          </div>
-        ))}
-      </div>
-      {services !== null && <form className="auth-form" onSubmit={submit}>
-        <h3>{editing.id ? "Modifier la prestation" : "Ajouter une prestation"}</h3>
+      <div className="pro-settings-body">
+      {services && <div className="pro-settings-list service-list">
+        <h3>Catalogue</h3>
+        {services.length === 0 && <p>Ajoutez votre première prestation.</p>}
+        {[...groups].map(([category, { label, items }]) => items.length > 0 && <div key={category}>
+          <h4 className="pro-settings-category">{label}</h4>
+          {items.map((service) => <div className={`pro-settings-row${editor.open && editing.id === service.id ? " pro-settings-selected" : ""}`} key={service.id}>
+            <span><strong>{service.name}</strong><br />{service.duration_minutes} min · {priceLabel(service.price_dzd)}</span>
+            <SettingsStatus active={Number(service.is_active) === 1} activeText="En ligne" inactiveText="Masquée" />
+            <button type="button" className="admin-nav-link" disabled={saving} aria-label={`Modifier ${service.name}`} onClick={(event) => openEditor(event, service)}>Modifier</button>
+          </div>)}
+        </div>)}
+      </div>}
+      {editor.open && <form className="auth-form pro-settings-editor" onSubmit={submit}>
+        <div>
+          <button className="pro-settings-back admin-nav-link" type="button" disabled={saving} onClick={editor.close}>← Retour aux prestations</button>
+          <h3 ref={editor.heading} tabIndex={-1}>{editing.id ? "Modifier la prestation" : "Ajouter une prestation"}</h3>
+        </div>
         <fieldset disabled={saving} className="form-fieldset">
           <label>Nom<input required maxLength={180} value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
           <label>Catégorie<select value={editing.category} onChange={(event) => setEditing({ ...editing, category: event.target.value })}>{serviceCategories.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>
@@ -474,12 +535,14 @@ function ServiceSettings({ csrfToken }) {
             <label>Prix (DA)<input required type="number" min={0} max={10000000} step={1} value={editing.price} onChange={(event) => setEditing({ ...editing, price: event.target.value === "" ? "" : Number(event.target.value) })} /></label>
           </div>
           <label className="checkbox-label"><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} />Prestation disponible en ligne</label>
+          {editing.id && <p className="pro-settings-note">Les rendez-vous déjà pris gardent leur tarif et leur durée.</p>}
           <div className="review-buttons">
             <button className="auth-submit" type="submit">{saving ? "Enregistrement…" : "Enregistrer la prestation"}</button>
-            {editing.id && <button className="admin-nav-link" type="button" onClick={() => setEditing(emptyService)}>Annuler l’édition</button>}
+            <button className="admin-nav-link" type="button" onClick={editor.close}>Annuler</button>
           </div>
         </fieldset>
       </form>}
+      </div>
     </section>
   );
 }

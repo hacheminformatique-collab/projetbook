@@ -221,7 +221,10 @@ try {
         data = { salon: { id: 1, name: "Salon test", city: saved?.city || "Sétif", wilaya_code: "19", is_public: saved?.isPublic ? 1 : 0, address: "10 rue de test", phone_number: "0550123456" }, hours: saved?.hours || [] };
       } else if (url.pathname.endsWith("/api/professional-services.php")) {
         if (options?.method === "POST") window.savedSalonService = JSON.parse(options.body);
-        data = { services: window.savedSalonService ? [{ id: 1, name: window.savedSalonService.name, category: "coiffeur", duration_minutes: 30, price_dzd: 1000, is_active: 1 }] : [] };
+        data = { services: window.savedSalonService ? [
+          { id: 1, name: window.savedSalonService.name, category: "coiffeur", duration_minutes: 30, price_dzd: 1000, is_active: 1 },
+          { id: 2, name: "Soin interne", category: "institut", duration_minutes: 45, price_dzd: 2500, is_active: 0 },
+        ] : [] };
       } else if (url.pathname.endsWith("/api/professional-staff.php")) {
         const hours = Array.from({ length: 7 }, (_, index) => ({
           weekday: index + 1, opens_at: "09:00:00", closes_at: "18:00:00",
@@ -558,11 +561,20 @@ try {
   await evaluate("document.querySelector('.agenda-booking').dispatchEvent(new DragEvent('dragend', { bubbles: true }))");
   await evaluate("window.agendaPauses = false; Array.from(document.querySelectorAll('.agenda-toolbar button')).find(b => b.textContent === 'Actualiser').click()");
   await waitFor("document.querySelectorAll('.agenda-slot-pause').length === 0");
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await evaluate("Array.from(document.querySelectorAll('.pro-tabs button')).find(b => b.textContent === 'Admin').click()");
   await evaluate("document.querySelector('.pro-mobile-menu').click()");
   await evaluate("Array.from(document.querySelectorAll('.pro-sidebar nav button')).find(b => b.textContent === 'Collaborateurs').click()");
   await waitFor("document.querySelector('.pro-panel h2')?.textContent === 'Collaborateurs'");
+  await waitFor("!!document.querySelector('.pro-settings-list button')");
+  assert.equal(await evaluate("!!document.querySelector('.pro-settings-editor')"), false);
   await evaluate("Array.from(document.querySelectorAll('.service-list button')).find(b => b.textContent === 'Modifier').click()");
+  assert.equal(await evaluate("document.activeElement.matches('.pro-settings-editor h3')"), true);
+  assert.equal(await evaluate("document.querySelector('.pro-settings-list').getClientRects().length"), 0);
+  assert.match(await evaluate("document.querySelector('.pro-settings-note').textContent"), /sans annuler les rendez-vous déjà pris/);
+  await evaluate("document.querySelector('.pro-settings-back').click()");
+  assert.equal(await evaluate("document.activeElement.getAttribute('aria-label')"), "Modifier Sonia");
+  await evaluate("document.querySelector('.pro-settings-list button').click()");
   assert.equal(await evaluate("document.querySelector('input[aria-label=\"Début pause Lundi\"]').value"), "12:00");
   assert.equal(await evaluate("document.querySelector('input[aria-label=\"Fin pause Lundi\"]').value"), "13:00");
   await evaluate(`(() => {
@@ -582,6 +594,8 @@ try {
   await waitFor("document.querySelector('.salon-publication-steps')?.textContent.includes('Aucune prestation active.')");
   assert.equal(await evaluate("document.querySelector('.salon-settings input[name=isPublic]').disabled"), true);
   await evaluate("void Array.from(document.querySelectorAll('.salon-publication-steps button')).find(b => b.textContent === 'Voir les prestations').click()");
+  await waitFor("!!document.querySelector('.pro-settings-header button')");
+  await evaluate("document.querySelector('.pro-settings-header button').click()");
   await waitFor("document.querySelector('.pro-panel .auth-form input')?.required");
   await evaluate(`(() => {
     const input = document.querySelector('.pro-panel .auth-form input');
@@ -590,6 +604,15 @@ try {
     document.querySelector('.pro-panel .auth-form button[type=submit]').click();
   })()`);
   await waitFor("window.savedSalonService?.name === 'Coupe'");
+  await waitFor("document.querySelectorAll('.pro-settings-category').length === 2");
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.pro-settings-category')).map(item => item.textContent)"), ["Coiffure", "Institut de beauté"]);
+  assert.match(await evaluate("document.querySelector('.pro-settings-list').textContent"), /Coupe.*30 min.*1.?000 DA.*En ligne.*Soin interne.*Masquée/);
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await evaluate("document.querySelector('button[aria-label=\"Modifier Soin interne\"]').click()");
+  assert.equal(await evaluate("document.querySelector('.pro-settings-editor .checkbox-label input').checked"), false);
+  assert.equal(await evaluate("document.querySelector('.pro-settings-list').getBoundingClientRect().right < document.querySelector('.pro-settings-editor').getBoundingClientRect().left"), true);
+  await evaluate("Array.from(document.querySelectorAll('.pro-settings-editor button')).find(button => button.textContent === 'Annuler').click()");
+  assert.equal(await evaluate("window.savedSalonService.name"), "Coupe");
   await evaluate("void Array.from(document.querySelectorAll('.pro-sidebar nav button')).find(b => b.textContent === 'Salon et horaires').click()");
   await waitFor("document.querySelector('.salon-step-marker').dataset.complete === 'true'");
   assert.equal(await evaluate("document.querySelector('.pro-panel input[name=city]').value"), "Sétif");
