@@ -817,6 +817,8 @@ try {
   assert.equal(await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').checked"), true);
   assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), false);
   assert.equal(await evaluate("document.querySelector('.booking-time-selected span').textContent"), "10:30");
+  assert.match(await evaluate("document.querySelector('.booking-summary').textContent"), /1.?000 DA.*Paiement sur place/);
+  assert.equal(await evaluate("!!document.querySelector('.booking-review')"), false);
   console.log("Mobile booking time selection passed.");
 
   await send("Page.navigate", { url: `${origin}/masalledereception/salons/1?bookingTest=guest` });
@@ -852,11 +854,18 @@ try {
   await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
   await waitFor("window.location.pathname === '/masalledereception/salons/1' && !!document.querySelector('.booking-content h1')");
   await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
+  await waitFor("!!document.querySelector('.booking-review')");
+  const review = await evaluate("document.querySelector('.booking-review').textContent");
+  assert.match(review, /Vos choix ont été retrouvés.*Coupe test.*19 novembre 2026.*10:30.*Sonia.*1.?000 DA.*Paiement sur place/);
+  assert.equal(await evaluate("document.querySelector('.booking-choices').getClientRects().length"), 0);
   assert.equal(await evaluate("document.querySelector('.booking-content input[name=bookingService][value=\"1\"]').checked"), true);
   assert.equal(await evaluate("document.querySelector('.booking-content select').value"), "1");
   assert.equal(await evaluate("document.querySelector('.booking-content input[type=date]').value"), "2026-11-19");
   assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), false);
   assert.deepEqual(await evaluate("window.loginPayload"), { email: "client@example.test", password: "test-password" });
+  await evaluate("document.querySelector('.booking-content button[type=button].admin-nav-link').click()");
+  await waitFor("!document.querySelector('.booking-review') && document.activeElement.name === 'bookingService'");
+  assert.equal(await evaluate("document.querySelector('.booking-time-option input[value=\"10:30\"]').checked"), true);
   await evaluate("window.bookingConfirmationTest = true; document.querySelector('.booking-content button[type=submit]').click()");
   await waitFor("!!document.querySelector('.booking-confirmation')");
   const confirmation = await evaluate("document.querySelector('.booking-confirmation').textContent");
@@ -867,7 +876,8 @@ try {
   assert.match(confirmation, /Sonia/);
   assert.match(confirmation, /30 min/);
   assert.match(confirmation, /1.?000 DA/);
-  await evaluate("Array.from(document.querySelectorAll('.booking-confirmation + button')).find(button => button.textContent.includes('calendrier')).click()");
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.booking-confirmation .booking-actions > :is(a,button)')).map(action => action.textContent)"), ["Voir mes rendez-vous", "Ajouter au calendrier (.ics)"]);
+  await evaluate("document.querySelector('.booking-confirmation .booking-actions button').click()");
   await waitFor("window.calendarFiles.length === 1");
   const calendarFile = await evaluate("window.calendarFiles[0]");
   assert.equal(calendarFile.type, "text/calendar;charset=utf-8");
@@ -882,6 +892,17 @@ try {
 
   await evaluate("Array.from(document.querySelectorAll('.booking-content a')).find(link => link.textContent === 'Voir mes rendez-vous').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
+  assert.match(await evaluate("document.querySelector('.appointment-next .appointment-preview').textContent"), /Prochain rendez-vous.*Confirmé.*20 novembre 2026/);
+  assert.equal(await evaluate("document.querySelectorAll('.appointment-detail:not([hidden])').length"), 0);
+  await evaluate("document.querySelector('.appointment-next .appointment-open').click()");
+  await waitFor("document.activeElement.matches('.appointment-detail h2') && document.querySelectorAll('.appointment-card:not([hidden])').length === 1");
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.appointment-detail:not([hidden]) .appointment-detail-actions > :is(a,button)')).map(action => action.textContent)"), [
+    "Modifier le rendez-vous", "Ajouter au calendrier (.ics)", "Appeler le salon", "Annuler le rendez-vous",
+  ]);
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth"), true);
+  await evaluate("document.querySelector('.appointment-return').click()");
+  await waitFor("document.activeElement.matches('.appointment-next .appointment-open') && document.querySelectorAll('.appointment-card:not([hidden])').length === 2");
+  await evaluate("document.querySelector('.appointment-next .appointment-open').click()");
   assert.equal(await evaluate("new URL(document.querySelector('.appointment-list a[href*=\"appointmentId=\"]').href).searchParams.get('version')"), "1");
   await evaluate("window.clientAppointments[0].version = null; document.querySelector('.booking-toolbar button').click()");
   await waitFor("Array.from(document.querySelectorAll('.appointment-list [role=alert]')).some(item => item.textContent.includes('version'))");
@@ -1015,7 +1036,7 @@ try {
   assert.equal(await evaluate("window.bookingPayload.expectedDuration"), 75);
   assert.equal(await evaluate("window.bookingPayload.expectedPrice"), 2500);
   assert.match(await evaluate("document.querySelector('.booking-confirmation .booking-service-breakdown').textContent"), /Coupe test · 30 min.*Soin test · 45 min/);
-  await evaluate("document.querySelector('.booking-confirmation + button').click()");
+  await evaluate("document.querySelector('.booking-confirmation .booking-actions button').click()");
   await waitFor("window.calendarFiles.length === 2");
   const multiCalendar = await evaluate("window.calendarFiles[1].text.replace(/\\r\\n[ \\t]/g, '')");
   assert.match(multiCalendar, /SUMMARY:Coupe test \+ Soin test - Salon test/);
@@ -1047,7 +1068,8 @@ try {
   await evaluate("window.hideService = false; document.querySelector('.commercial-header a.admin-nav-link').click()");
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
   console.log("Client rescheduling defaults and unavailable selections passed.");
-  assert.equal(await evaluate("document.querySelectorAll('.appointment-list button').length"), 2, "only the future confirmed appointment offers calendar and cancellation");
+  assert.equal(await evaluate("document.querySelectorAll('.appointment-detail-actions button').length"), 2, "only the future confirmed appointment offers calendar and cancellation");
+  await evaluate("document.querySelector('.appointment-next .appointment-open').click()");
   await evaluate("Array.from(document.querySelectorAll('.appointment-list button')).find(button => button.textContent.includes('calendrier')).click()");
   await waitFor("window.calendarFiles.length === 2");
   const accountCalendar = await evaluate("window.calendarFiles[1].text.replace(/\\r\\n[ \\t]/g, '')");
@@ -1074,28 +1096,30 @@ try {
     document.querySelector('.booking-toolbar button').click();
   })()`);
   await waitFor("document.querySelector('.appointment-list .appointment-card')?.textContent.includes('22 novembre')");
-  await evaluate("document.querySelector('.appointment-list button').click()");
+  await evaluate("document.querySelector('.appointment-detail-actions button').click()");
   await waitFor("Array.from(document.querySelectorAll('.appointment-list [role=alert]')).some(item => item.textContent.includes('Impossible de préparer'))");
   assert.equal(await evaluate("window.calendarFiles.length"), 3, "invalid appointment data must not create a calendar file");
   await evaluate(`(() => {
-    const filter = document.querySelector('[aria-label="Filtre des rendez-vous"]');
-    filter.value = 'past';
-    filter.dispatchEvent(new Event('change', { bubbles: true }));
+    document.querySelector('.appointment-return').click();
+    document.querySelectorAll('.appointment-filters button')[1].click();
   })()`);
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 1");
-  assert.equal(await evaluate("document.querySelectorAll('.appointment-list button').length"), 0, "past appointments do not offer calendar downloads");
+  assert.match(await evaluate("document.querySelector('.appointment-preview').textContent"), /Passé/);
+  await evaluate("document.querySelector('.appointment-open').click()");
+  await waitFor("!!document.querySelector('.appointment-detail:not([hidden])')");
+  assert.equal(await evaluate("document.querySelectorAll('.appointment-detail-actions button').length"), 0, "past appointments do not offer calendar downloads");
   assert.equal(await evaluate("document.querySelectorAll('.appointment-list .booking-service-breakdown li').length"), 2);
   console.log("Client appointment calendar downloads passed.");
 
   await evaluate(`(() => {
-    const filter = document.querySelector('[aria-label="Filtre des rendez-vous"]');
-    filter.value = 'upcoming';
-    filter.dispatchEvent(new Event('change', { bubbles: true }));
+    document.querySelector('.appointment-return').click();
+    document.querySelectorAll('.appointment-filters button')[0].click();
     window.cancelTestMode = 'fail';
     window.confirmAnswer = false;
     window.confirm = message => { window.confirmMessage = message; return window.confirmAnswer; };
   })()`);
   await waitFor("document.querySelectorAll('.appointment-list .appointment-card').length === 2");
+  await evaluate("document.querySelector('.appointment-next .appointment-open').click()");
   const mutationsBeforeCancellation = await evaluate("window.appointmentMutations");
   await evaluate("document.querySelector('.appointment-list .review-reject').click()");
   const cancelConfirmation = await evaluate("window.confirmMessage");
@@ -1256,7 +1280,7 @@ try {
   assert.match(confirmedDetails[0], /Coupe enregistrée · 35 min · 800 DA/);
   assert.match(confirmedDetails[1], /Soin enregistré · 10 min · 700 DA/);
   assert.match(await evaluate("document.querySelector('.booking-confirmation').textContent"), /45 min.*1.?500 DA/);
-  await evaluate("document.querySelector('.booking-confirmation + button').click()");
+  await evaluate("document.querySelector('.booking-confirmation .booking-actions button').click()");
   await waitFor("window.calendarFiles.length === 1");
   const bookingMultiCalendar = await evaluate("window.calendarFiles[0].text.replace(/\\r\\n[ \\t]/g, '')");
   assert.match(bookingMultiCalendar, /SUMMARY:Coupe enregistrée \+ Soin enregistré - Salon test/);
@@ -1271,7 +1295,7 @@ try {
   await waitFor("document.querySelector('.booking-time-option input[value=\"10:30\"]')?.checked");
   await evaluate("window.bookingConfirmationTest = true; window.missingConfirmationDetails = true; document.querySelector('.booking-content button[type=submit]').click()");
   await waitFor("document.querySelector('.booking-confirmation [role=alert]')?.textContent.includes('rendez-vous est confirmé')");
-  assert.equal(await evaluate("!!document.querySelector('.booking-confirmation + button')"), false);
+  assert.equal(await evaluate("!!document.querySelector('.booking-confirmation .booking-actions button')"), false);
   assert.equal(await evaluate("!!document.querySelector('.booking-confirmation .booking-service-breakdown')"), false);
   console.log("Missing confirmation details are reported without a misleading calendar.");
 
@@ -1342,10 +1366,25 @@ try {
   await waitFor("window.location.pathname === '/masalledereception/espace-client'");
 
   await send("Page.navigate", {
-    url: `${origin}/masalledereception/salons/1?serviceId=1&date=2026-11-19&time=17%3A00`,
+    url: `${origin}/masalledereception/compte?retour=${encodeURIComponent("/salons/1?serviceId=1&date=2026-11-19&time=17%3A00")}`,
   });
+  await waitFor("!!document.querySelector('.auth-form input[name=email]')");
+  await evaluate(`(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    for (const [name, value] of [['email', 'client@example.test'], ['password', 'test-password']]) {
+      const input = document.querySelector('.auth-form input[name=' + name + ']');
+      setValue.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  })()`);
+  await waitFor("!document.querySelector('.auth-form button[type=submit]').disabled");
+  await evaluate("document.querySelector('.auth-form button[type=submit]').click()");
   await waitFor("document.querySelector('.booking-content .field-hint[role=status]')?.textContent.includes('n’est plus disponible')");
   assert.equal(await evaluate("document.querySelectorAll('.booking-time-option input:checked').length"), 0);
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), true);
+  await evaluate("document.querySelector('.booking-time-option input').click()");
+  assert.equal(await evaluate("!!document.querySelector('.booking-review')"), false);
+  assert.equal(await evaluate("document.querySelector('.booking-content button[type=submit]').disabled"), false);
 
   await send("Page.navigate", {
     url: `${origin}/masalledereception/compte?retour=${encodeURIComponent("https://example.test/")}`,

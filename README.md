@@ -462,16 +462,20 @@ et ne nécessite pas de nouvelle migration.
 Sur la fiche d'un salon, le client peut choisir jusqu’à six prestations ; leur
 durée et leur tarif sont cumulés pour déterminer les créneaux disponibles,
 proposés sous forme de boutons radio accessibles et faciles à toucher. Si le
-client doit se connecter avant de confirmer, ses choix de prestations, date,
-collaborateur et horaire sont restaurés à son retour. Un client
-connecté voit un récapitulatif de l’établissement, de la prestation, de la date,
-de l’horaire, du collaborateur et du tarif après confirmation et peut télécharger
-une invitation `.ics` pour l’ajouter à son calendrier. Lorsque plusieurs
+client doit se connecter avant de confirmer, un récapitulatif lui permet de
+vérifier les choix retrouvés ou de les modifier. Si le créneau a disparu, il
+doit en sélectionner un autre. Le total et le paiement sur place sont indiqués
+avant confirmation. Après confirmation, le client peut ouvrir ses rendez-vous
+ou télécharger une invitation `.ics` pour l’ajouter à son calendrier. Lorsque plusieurs
 prestations sont réservées, le détail de chacune avec sa durée et son tarif
 enregistrés apparaît dans le récapitulatif, dans l’espace client et dans les
 invitations calendrier. Il peut aussi
-télécharger l’invitation d’un rendez-vous confirmé à venir depuis `/espace-client`. Les
-fichiers téléchargés ne se mettent pas à jour automatiquement après modification
+télécharger l’invitation d’un rendez-vous confirmé à venir depuis `/espace-client`.
+Dans **Mes rendez-vous**, le prochain rendez-vous confirmé est mis en avant.
+Les vues **À venir** et **Historique** donnent accès à une fiche séparée avec
+le tarif, le lieu et le contact du salon. La modification, le téléchargement
+calendrier et l’annulation ne sont proposés que pour un rendez-vous confirmé à venir.
+Les fichiers téléchargés ne se mettent pas à jour automatiquement après modification
 ou annulation : le client doit actualiser son calendrier lui-même.
 Il peut retrouver ses rendez-vous à venir ou passés dans `/espace-client`, puis
 modifier la prestation et le créneau ou annuler avant le début. La modification

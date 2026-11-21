@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, apiUrl, algerianDate, appointmentDate, priceLabel, weekDays } from "./api-client.js";
 import { createBookingCalendarEvent } from "./lib/booking-calendar.js";
 import { validAppointmentPrice, validAppointmentServiceDetails, validAppointmentVersion, validServiceDetails } from "./lib/appointment-services.js";
@@ -74,12 +74,14 @@ export function DirectoryResults({ search }) {
 
 export function SalonPage() {
   const { salonId } = useParams();
+  const { state } = useLocation();
   const [params] = useSearchParams();
   const appointmentId = params.get("appointmentId");
   const requestedDate = params.get("date") || "";
   const parsedRequestedDate = new Date(`${requestedDate}T00:00:00Z`);
   const validRequestedDate = !Number.isNaN(parsedRequestedDate.valueOf())
     && parsedRequestedDate.toISOString().slice(0, 10) === requestedDate;
+  const dateInRange = validRequestedDate && requestedDate >= algerianDate() && requestedDate <= algerianDate(60);
   const requestedServices = params.has("serviceIds")
     ? params.get("serviceIds").split(",")
     : params.has("serviceId") ? [params.get("serviceId")] : [];
@@ -125,13 +127,13 @@ export function SalonPage() {
             </div>}
             <section className="client-card">
               <h2>{appointmentId ? "Modifier mon rendez-vous" : "Prendre rendez-vous"}</h2>
-              <p>Horaires d’Algérie · Réservation jusqu’à 60 jours à l’avance.</p>
               <BookingForm
                 key={`${salonId}-${appointmentId || "new"}`}
                 salonId={salonId}
                 services={result.services}
                 session={session}
                 appointmentId={appointmentId}
+                resumedBooking={state?.resumedBooking === true && !appointmentId}
                 salonName={result.salon.name}
                 salonAddress={`${result.salon.address}, ${result.salon.city}`}
                 bookingMessage={result.salon.booking_message}
@@ -141,10 +143,9 @@ export function SalonPage() {
                   unknownServices: appointmentId && (params.get("unknownServices") === "1" || params.get("multipleServices") === "1"),
                   appointmentVersion: validAppointmentVersion(params.get("version")) ? Number(params.get("version")) : null,
                   staffId: /^[1-9][0-9]*$/.test(params.get("staffId") || "") ? params.get("staffId") : "",
-                  date: validRequestedDate && requestedDate >= algerianDate() && requestedDate <= algerianDate(60)
-                    ? requestedDate
-                    : algerianDate(),
-                  time: /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(params.get("time") || "") ? params.get("time") : "",
+                  date: dateInRange ? requestedDate : algerianDate(),
+                  dateUnavailable: !!requestedDate && !dateInRange,
+                  time: (!requestedDate || dateInRange) && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(params.get("time") || "") ? params.get("time") : "",
                 }}
               />
             </section>
@@ -221,7 +222,7 @@ function CalendarDownloadButton({ details }) {
   </>;
 }
 
-function BookingForm({ salonId, salonName, salonAddress, services, session, appointmentId, bookingMessage, initialSelection }) {
+function BookingForm({ salonId, salonName, salonAddress, services, session, appointmentId, resumedBooking, bookingMessage, initialSelection }) {
   const [serviceIds, setServiceIds] = useState(initialSelection.serviceIds);
   const [staffId, setStaffId] = useState(initialSelection.staffId);
   const [staffMembers, setStaffMembers] = useState([]);
@@ -235,10 +236,14 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   const [refresh, setRefresh] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
   const [stale, setStale] = useState(false);
-  const [timeRestoreNotice, setTimeRestoreNotice] = useState("");
+  const [timeRestoreNotice, setTimeRestoreNotice] = useState(initialSelection.dateUnavailable
+    ? "La date choisie n’est plus disponible. Sélectionnez une autre date et un créneau." : "");
+  const [restoredTime, setRestoredTime] = useState(false);
+  const [reviewDismissed, setReviewDismissed] = useState(false);
   const [confirmedAppointmentId, setConfirmedAppointmentId] = useState(null);
   const [confirmedServices, setConfirmedServices] = useState(null);
   const timeToRestore = useRef(initialSelection.time);
+  const bookingChoices = useRef(null);
   const selectedServices = serviceIds.map((id) => services.find((service) => String(service.id) === id)).filter(Boolean);
   const selected = selectedServices.length > 0 && selectedServices.length === serviceIds.length ? {
     name: selectedServices.map((service) => service.name).join(" + "),
@@ -248,6 +253,10 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   const serviceKey = serviceIds.join(",");
   const selectedStaff = staffMembers.find((member) => String(member.id) === staffId);
   const client = session?.authenticated && session.account?.role === "client";
+  const canConfirm = client && selected && slots.includes(time) && (!staffMembers.length || selectedStaff)
+    && !loading && !saving && !slotError && (!appointmentId || (initialSelection.appointmentVersion && !stale));
+  const reviewing = resumedBooking && restoredTime && !reviewDismissed && client && selected && slots.includes(time)
+    && (!staffMembers.length || selectedStaff) && !loading && !slotError;
   const returnParams = new URLSearchParams();
   if (appointmentId) returnParams.set("appointmentId", appointmentId);
   if (appointmentId && initialSelection.appointmentVersion) returnParams.set("version", String(initialSelection.appointmentVersion));
@@ -287,7 +296,10 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         const requestedTime = timeToRestore.current;
         timeToRestore.current = "";
         if (requestedTime) {
-          if (result.slots.includes(requestedTime)) setTime(requestedTime);
+          if (result.slots.includes(requestedTime)) {
+            setTime(requestedTime);
+            setRestoredTime(true);
+          }
           else setTimeRestoreNotice("Le créneau choisi n’est plus disponible. Sélectionnez un autre horaire.");
         }
       })
@@ -303,9 +315,13 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
     return () => controller.abort();
   }, [salonId, serviceKey, date, staffId, appointmentId, refresh]);
 
+  useEffect(() => {
+    if (reviewDismissed) bookingChoices.current?.querySelector("input")?.focus();
+  }, [reviewDismissed]);
+
   async function submit(event) {
     event.preventDefault();
-    if (appointmentId && (!initialSelection.appointmentVersion || stale)) return;
+    if (!canConfirm) return;
     setSaving(true);
     setNotice(null);
     try {
@@ -325,6 +341,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
       setConfirmed(true);
       setNotice({ kind: "success", text: appointmentId ? "Votre rendez-vous a bien été modifié." : result.message });
     } catch (cause) {
+      if (reviewing) setReviewDismissed(true);
       setNotice({ kind: "error", text: cause.message });
       if (cause.code === "appointment_changed") setStale(true);
       setRefresh((value) => value + 1);
@@ -334,8 +351,7 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
   }
   if (confirmed) {
     const confirmedName = confirmedServices?.map((service) => service.name).join(" + ");
-    return <>
-      <div className="booking-confirmation">
+    return <div className="booking-confirmation">
         <p className="form-message form-success" role="status">{notice.text}</p>
         <h3>Récapitulatif du rendez-vous</h3>
         {!confirmedServices && <p className="form-message form-error" role="alert">Le rendez-vous est confirmé, mais le détail des prestations est indisponible. Consultez vos rendez-vous dans l’espace client.</p>}
@@ -348,20 +364,18 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
           <div><dt>Durée</dt><dd>{selected.duration_minutes} min</dd></div>
           <div><dt>Tarif</dt><dd>{priceLabel(selected.price_dzd)} · paiement sur place</dd></div>
         </dl>
-        <p className="field-hint">
-          Un e-mail de {appointmentId ? "modification" : "confirmation"} sera envoyé selon la fréquence du cron.
-          Les rappels sont programmés à J−7 et J−1 lorsque la date le permet.
-        </p>
+        <div className="booking-actions">
+          <Link className="auth-submit booking-primary-link" to="/espace-client">Voir mes rendez-vous</Link>
+          {confirmedAppointmentId && confirmedServices && <CalendarDownloadButton details={{
+            appointmentId: confirmedAppointmentId, salonId, salonName, salonAddress,
+            serviceName: confirmedName, date, time, durationMinutes: Number(selected.duration_minutes),
+            staffName: selectedStaff?.name || "Non attribué", priceLabel: priceLabel(selected.price_dzd),
+            serviceDetails: calendarServiceDetails(confirmedServices),
+          }} />}
+        </div>
+        <p className="field-hint">Un e-mail de {appointmentId ? "modification" : "confirmation"} vous sera envoyé. Des rappels sont prévus 7 jours et 1 jour avant le rendez-vous, si la date le permet.</p>
         {appointmentId && <p className="field-hint">Si vous avez ajouté l’ancien rendez-vous à votre calendrier, mettez-le à jour manuellement : il n’est pas synchronisé automatiquement.</p>}
-      </div>
-      {confirmedAppointmentId && confirmedServices && <CalendarDownloadButton details={{
-        appointmentId: confirmedAppointmentId, salonId, salonName, salonAddress,
-        serviceName: confirmedName, date, time, durationMinutes: Number(selected.duration_minutes),
-        staffName: selectedStaff?.name || "Non attribué", priceLabel: priceLabel(selected.price_dzd),
-        serviceDetails: calendarServiceDetails(confirmedServices),
-      }} />}
-      <Link className="back-link" to="/espace-client">Voir mes rendez-vous</Link>
-    </>;
+    </div>;
   }
   return (
     <>
@@ -375,6 +389,8 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
         ? "Certaines prestations initiales ne sont plus disponibles ou sont invalides. Sélectionnez les prestations que vous souhaitez conserver."
         : "Certaines prestations choisies ne sont plus disponibles ou sont invalides. Sélectionnez à nouveau vos prestations."}</p>}
       <form className="auth-form" onSubmit={submit}>
+        <fieldset className="form-fieldset booking-choices" ref={bookingChoices} hidden={!!reviewing} disabled={!!reviewing}>
+        <p className="field-hint">Horaires d’Algérie · Réservation jusqu’à 60 jours à l’avance.</p>
         <fieldset className="agenda-service-picker booking-service-picker" disabled={saving}>
           <legend>Prestations · 6 maximum</legend>
           {services.map((service) => <label className="checkbox-label" key={service.id}>
@@ -420,11 +436,34 @@ function BookingForm({ salonId, salonName, salonAddress, services, session, appo
             </label>)}
           </div>
         </fieldset>}
-        {selected && <p>{selected.name} · {selected.duration_minutes} minutes · <strong>{priceLabel(selected.price_dzd)}</strong><br />Paiement sur place. Aucun paiement en ligne.</p>}
+        </fieldset>
+        {reviewing ? <section className="booking-summary booking-review" aria-labelledby="booking-review-title">
+          <h3 id="booking-review-title">Vérifiez votre rendez-vous</h3>
+          <p className="form-message form-success" role="status">Vos choix ont été retrouvés. Confirmez pour réserver.</p>
+          <dl className="client-details">
+            <div><dt>{serviceIds.length > 1 ? "Prestations" : "Prestation"}</dt><dd>{serviceIds.length > 1 ? <ServiceBreakdown services={selectedServices} /> : selected.name}</dd></div>
+            <div><dt>Date et heure</dt><dd>{appointmentDate(`${date} ${time}:00`)}</dd></div>
+            <div><dt>Collaborateur</dt><dd>{selectedStaff?.name || "Non attribué"}</dd></div>
+            <div><dt>Durée</dt><dd>{selected.duration_minutes} min</dd></div>
+            <div><dt>Total</dt><dd><strong>{priceLabel(selected.price_dzd)}</strong></dd></div>
+          </dl>
+          <p className="field-hint">Paiement sur place. Aucun paiement en ligne.</p>
+        </section> : selected && <div className="booking-summary">
+          <h3>Votre rendez-vous</h3>
+          <p>{selected.name} · {selected.duration_minutes} minutes · <strong>{priceLabel(selected.price_dzd)}</strong></p>
+          {time && <p className="field-hint">{appointmentDate(`${date} ${time}:00`)}{selectedStaff && ` · ${selectedStaff.name}`}</p>}
+          <p className="field-hint">Paiement sur place. Aucun paiement en ligne.</p>
+        </div>}
         {time && bookingMessage && <p className="field-hint booking-message"><strong>Message de l’établissement</strong><br />{bookingMessage}</p>}
-        {client ? <button className="auth-submit" disabled={!selected || !time || loading || saving || !!slotError || !!(appointmentId && (!initialSelection.appointmentVersion || stale))} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
-          <p className="form-message">Connectez-vous avec un compte client pour réserver. <Link className="inline-link" to={`/compte?retour=${encodeURIComponent(returnTo)}`}>Connexion ou inscription</Link></p>
-        )}
+        <div className="booking-actions">
+          {client ? <button className="auth-submit" disabled={!canConfirm} type="submit">{saving ? "Enregistrement…" : appointmentId ? "Confirmer la modification" : "Confirmer le rendez-vous"}</button> : (
+            <>
+              <Link className="auth-submit inline-link booking-primary-link" to={`/compte?retour=${encodeURIComponent(returnTo)}`}>Connexion ou inscription pour continuer</Link>
+              {time && <p className="field-hint">Vos choix seront conservés si le créneau est toujours disponible.</p>}
+            </>
+          )}
+          {reviewing && <button className="admin-nav-link" type="button" disabled={saving} onClick={() => setReviewDismissed(true)}>Modifier mes choix</button>}
+        </div>
       </form>
     </>
   );
@@ -442,6 +481,37 @@ export function Appointments({ csrfToken, professional = false }) {
   const [working, setWorking] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [staleIds, setStaleIds] = useState([]);
+  const [openId, setOpenId] = useState(null);
+  const detailHeading = useRef(null);
+  const appointmentList = useRef(null);
+  const lastOpenedId = useRef(null);
+  const focusDetail = useRef(false);
+  const appointments = result?.appointments ?? [];
+  const openAppointment = !professional && appointments.find((appointment) => appointment.id === openId);
+  const showDetail = !!openAppointment;
+  const now = new Date();
+  const isUpcomingConfirmed = (appointment) => appointment.status === "confirmed"
+    && new Date(appointment.starts_at.replace(" ", "T") + "+01:00") > now;
+  const nextId = !professional && filter === "upcoming" && page === 1
+    ? appointments.find(isUpcomingConfirmed)?.id : null;
+
+  useEffect(() => {
+    if (showDetail && focusDetail.current) {
+      detailHeading.current?.focus();
+      focusDetail.current = false;
+    } else if (!showDetail && openId === null && lastOpenedId.current !== null) {
+      Array.from(appointmentList.current?.querySelectorAll(".appointment-open") ?? [])
+        .find((button) => button.value === String(lastOpenedId.current))?.focus();
+      lastOpenedId.current = null;
+    }
+  }, [showDetail, openId]);
+
+  function changeFilter(value) {
+    if (value === filter) return;
+    setOpenId(null);
+    setFilter(value);
+    setPage(1);
+  }
   useEffect(() => {
     if (!professional) return undefined;
     const controller = new AbortController();
@@ -495,49 +565,81 @@ export function Appointments({ csrfToken, professional = false }) {
     return `/salons/${appointment.salon_id}?${params}`;
   }
   return (
-    <section className="client-card">
-      <h2>{professional ? "Agenda" : "Mes rendez-vous"}</h2>
-      <p className="field-hint">Horaires d’Algérie (UTC+1). Confirmation et rappels envoyés par e-mail par la tâche cron du site.</p>
+    <section className={`client-card${professional ? "" : " client-appointments"}`}>
+      <h2 hidden={showDetail}>{professional ? "Agenda" : "Mes rendez-vous"}</h2>
+      <p className="field-hint" hidden={showDetail}>{professional
+        ? "Horaires d’Algérie (UTC+1). Confirmation et rappels envoyés par e-mail par la tâche cron du site."
+        : "Tous les horaires sont en heure d’Algérie."}</p>
+      {!professional && <div className="appointment-filters" role="group" aria-label="Filtre des rendez-vous" hidden={showDetail}>
+        <button type="button" aria-pressed={filter === "upcoming"} onClick={() => changeFilter("upcoming")}>À venir</button>
+        <button type="button" aria-pressed={filter === "past"} onClick={() => changeFilter("past")}>Historique</button>
+      </div>}
       <div className="booking-toolbar">
-        {professional ? <><label>Journée <input aria-label="Journée de l’agenda" type="date" required value={date} onChange={(event) => { setDate(event.target.value); setPage(1); }} /></label>
+        {professional && <><label>Journée <input aria-label="Journée de l’agenda" type="date" required value={date} onChange={(event) => { setDate(event.target.value); setPage(1); }} /></label>
           {staffMembers.length > 0 && <label>Collaborateur<select aria-label="Filtrer par collaborateur" value={staffId} onChange={(event) => { setStaffId(event.target.value); setPage(1); }}>
             <option value="">Toute l’équipe</option>{staffMembers.map((member) => <option key={member.id} value={member.id}>{member.name}{Number(member.is_active) ? "" : " (inactif)"}</option>)}
           </select></label>}
-        </> : (
-          <label>Afficher <select aria-label="Filtre des rendez-vous" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }}>
-            <option value="upcoming">À venir</option><option value="past">Passés</option>
-          </select></label>
-        )}
+        </>}
         <button className="admin-nav-link" type="button" disabled={working} onClick={() => setRefresh((value) => value + 1)}>Actualiser</button>
       </div>
       {error && <p className="form-message form-error" role="alert">{error}</p>}
       {notice && <p className="form-message form-success" role="status">{notice}</p>}
-      {!result && !error && <p>Chargement des rendez-vous…</p>}
-      {result?.appointments.length === 0 && <p>Aucun rendez-vous dans cette sélection.</p>}
-      <div className="appointment-list">
-        {result?.appointments.map((appointment) => {
-          const editable = appointment.status === "confirmed" && new Date(appointment.starts_at.replace(" ", "T") + "+01:00") > new Date();
+      {!result && !error && <p role="status">Chargement des rendez-vous…</p>}
+      {result && appointments.length === 0 && <p>{professional ? "Aucun rendez-vous dans cette sélection."
+        : filter === "upcoming" ? "Vous n’avez aucun rendez-vous à venir." : "Vous n’avez aucun rendez-vous dans l’historique."}</p>}
+      {showDetail && <button className="appointment-return" type="button" onClick={() => setOpenId(null)}>← Retour à mes rendez-vous</button>}
+      <div className="appointment-list" ref={appointmentList}>
+        {appointments.map((appointment) => {
+          const editable = isUpcomingConfirmed(appointment);
+          const expanded = showDetail && appointment.id === openId;
+          const next = appointment.id === nextId;
           const duration = (new Date(appointment.ends_at.replace(" ", "T") + "+01:00") - new Date(appointment.starts_at.replace(" ", "T") + "+01:00")) / 60000;
           const hasDetails = validAppointmentServiceDetails(appointment, duration, appointment.service_count);
           const hasVersion = validAppointmentVersion(appointment.version);
           const stale = staleIds.includes(appointment.id);
           const appointmentPrice = validAppointmentPrice(appointment.price_dzd) ? priceLabel(appointment.price_dzd) : "Tarif indisponible";
+          const cancelled = appointment.status === "cancelled";
+          const past = !professional && filter === "past";
+          const status = <span className={`application-status ${cancelled ? "status-rejected" : past ? "appointment-status-past" : "status-approved"}`}>{cancelled ? "Annulé" : past ? "Passé" : "Confirmé"}</span>;
+          const durationLabel = Number.isSafeInteger(duration) && duration > 0 ? `${duration} min` : "Durée indisponible";
           return (
-            <article className="appointment-card" key={appointment.id}>
-              <p className={`application-status ${appointment.status === "cancelled" ? "status-rejected" : "status-approved"}`}>{appointment.status === "cancelled" ? "Annulé" : "Confirmé"}</p>
-              <h3>{appointment.service_name}</h3>
-              <p>{appointmentDate(appointment.starts_at)}{Number.isSafeInteger(duration) && duration > 0 && <> · {duration} min</>} · {appointmentPrice}{appointment.staff_name && <> · {appointment.staff_name}</>}</p>
-              {!professional && (!hasDetails
-                ? <p className="form-message form-error" role="alert">Le détail des prestations est indisponible ou incohérent. Actualisez la liste ou contactez l’établissement.</p>
-                : appointment.services.length > 1 && <ServiceBreakdown services={appointment.services} />)}
+            <article className={`appointment-card${next && !expanded ? " appointment-next" : ""}`} key={appointment.id} hidden={showDetail && !expanded}>
+              {!professional && <div className="appointment-preview" hidden={expanded}>
+                <div className="appointment-card-heading">{next && <strong className="appointment-next-label">Prochain rendez-vous</strong>}{status}</div>
+                <p className="appointment-when">{appointmentDate(appointment.starts_at)}</p>
+                <h3>{appointment.service_name}</h3>
+                <p>{appointment.salon_name} · {appointment.city}</p>
+                <button className={next ? "auth-submit appointment-open" : "admin-nav-link appointment-open"} type="button" value={appointment.id}
+                  aria-label={`Voir le détail : ${appointment.service_name}, ${appointmentDate(appointment.starts_at)}`}
+                  onClick={() => {
+                    lastOpenedId.current = appointment.id;
+                    focusDetail.current = true;
+                    setOpenId(appointment.id);
+                  }}>Voir le détail</button>
+              </div>}
+              <div className="appointment-detail" hidden={!professional && !expanded}>
+              {professional ? <>
+                {status}
+                <h3>{appointment.service_name}</h3>
+                <p>{appointmentDate(appointment.starts_at)} · {durationLabel} · {appointmentPrice}{appointment.staff_name && <> · {appointment.staff_name}</>}</p>
+              </> : <>
+                <div className="appointment-card-heading"><h2 tabIndex={-1} ref={expanded ? detailHeading : null}>{appointment.salon_name}</h2>{status}</div>
+                <p className="appointment-when">{appointmentDate(appointment.starts_at)} <span className="field-hint">· heure d’Algérie</span></p>
+                <dl className="client-details appointment-facts">
+                  <div><dt>{appointment.service_count > 1 ? "Prestations" : "Prestation"}</dt><dd>{hasDetails && appointment.services.length > 1 ? <ServiceBreakdown services={appointment.services} /> : appointment.service_name}</dd></div>
+                  <div><dt>Collaborateur</dt><dd>{appointment.staff_name || "Non attribué"}</dd></div>
+                  <div><dt>Durée</dt><dd>{durationLabel}</dd></div>
+                  <div><dt>Total</dt><dd>{appointmentPrice}{validAppointmentPrice(appointment.price_dzd) && " · paiement sur place"}</dd></div>
+                  <div><dt>Adresse</dt><dd>{appointment.address}, {appointment.city}</dd></div>
+                </dl>
+                {!hasDetails && <p className="form-message form-error" role="alert">Le détail des prestations est indisponible ou incohérent. Actualisez la liste ou contactez l’établissement.</p>}
+              </>}
               {editable && !hasVersion && <p className="form-message form-error" role="alert">Impossible de vérifier la version du rendez-vous. Actualisez la liste avant de continuer.</p>}
               {editable && stale && <p className="form-message form-error" role="alert">Actualisez la liste avant de continuer.</p>}
-              {professional ? <p>{appointment.first_name} {appointment.last_name} · <a className="inline-link" href={`tel:${appointment.client_phone}`}>{appointment.client_phone}</a></p> : (
-                <p>{appointment.salon_name} · {appointment.address}, {appointment.city}<br /><a className="inline-link" href={`tel:${appointment.salon_phone}`}>{appointment.salon_phone}</a></p>
-              )}
-              {editable && <div className="review-buttons">
-                {!professional && hasVersion && !stale && <Link className="admin-nav-link" to={modificationLink(appointment, hasDetails)}>Modifier</Link>}
-                {!professional && <CalendarDownloadButton details={{
+              {professional && <p>{appointment.first_name} {appointment.last_name} · <a className="inline-link" href={`tel:${appointment.client_phone}`}>{appointment.client_phone}</a></p>}
+              {(!professional || editable) && <div className={professional ? "review-buttons" : "booking-actions appointment-detail-actions"}>
+                {!professional && editable && hasVersion && !stale && <Link className="auth-submit booking-primary-link admin-nav-link" to={modificationLink(appointment, hasDetails)}>Modifier le rendez-vous</Link>}
+                {!professional && editable && <CalendarDownloadButton details={{
                   appointmentId: appointment.id, salonId: appointment.salon_id, salonName: appointment.salon_name,
                   salonAddress: `${appointment.address}, ${appointment.city}`, serviceName: appointment.service_name,
                   date: appointment.starts_at.slice(0, 10), time: appointment.starts_at.slice(11, 16),
@@ -546,13 +648,15 @@ export function Appointments({ csrfToken, professional = false }) {
                   serviceDetails: hasDetails ? calendarServiceDetails(appointment.services)
                     : ["Le détail des prestations est indisponible. Consultez votre espace client ou contactez l’établissement."],
                 }} />}
-                <button className="review-reject" type="button" disabled={working || !hasVersion || stale} onClick={() => cancel(appointment)}>Annuler</button>
+                {!professional && appointment.salon_phone && <a className="appointment-call admin-nav-link" href={`tel:${appointment.salon_phone}`}>Appeler le salon</a>}
+                {editable && <button className="review-reject" type="button" disabled={working || !hasVersion || stale} onClick={() => cancel(appointment)}>{professional ? "Annuler" : "Annuler le rendez-vous"}</button>}
               </div>}
+              </div>
             </article>
           );
         })}
       </div>
-      {result && <nav className="pagination" aria-label="Pages des rendez-vous">
+      {result && !showDetail && (page > 1 || result.hasMore) && <nav className="pagination" aria-label="Pages des rendez-vous">
         {page > 1 && <button className="admin-nav-link" onClick={() => setPage(page - 1)} type="button">Précédent</button>}
         {result.hasMore && <button className="admin-nav-link" onClick={() => setPage(page + 1)} type="button">Suivant</button>}
       </nav>}

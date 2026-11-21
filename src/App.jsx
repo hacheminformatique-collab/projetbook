@@ -323,7 +323,8 @@ function AuthPage({ professional = false, commercial = false, superAdmin = false
         } else {
           const returnTo = searchParams.get("retour") || "";
           const safeReturn = isSafeClientReturn(returnTo);
-          navigate(isClient ? safeReturn ? returnTo : "/espace-client" : "/espace-professionnel");
+          if (isClient && safeReturn) navigate(returnTo, { state: { resumedBooking: true } });
+          else navigate(isClient ? "/espace-client" : "/espace-professionnel");
         }
         return;
       }
